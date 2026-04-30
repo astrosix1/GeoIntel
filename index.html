@@ -1,0 +1,2243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GeoIntel — Geopolitical Intelligence Platform</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+
+:root {
+  --bg:     #07090f;
+  --panel:  rgba(12,18,40,0.94);
+  --border: rgba(80,130,255,0.18);
+  --accent: #4e9eff;
+  --dim:    #4a5580;
+  --text:   #c8d8f0;
+  --text2:  #7a90b8;
+  --red:    #ff3b3b;
+  --orange: #ff8833;
+  --yellow: #ffd93d;
+  --green:  #3dffaa;
+  --purple: #b94eff;
+  --pink:   #ff4ea0;
+  --left-w: 210px;
+  --left-collapsed: 36px;
+}
+
+body { font-family:'Segoe UI',system-ui,sans-serif; background:var(--bg); height:100vh; overflow:hidden; color:var(--text); font-size:12px; }
+
+/* ── Layout ── */
+.root { display:flex; height:100vh; gap:0; padding:6px; position:relative; overflow:hidden; }
+
+/* ── Panels ── */
+.pane {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius:10px;
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+}
+
+.pane-hdr {
+  padding:8px 10px 6px;
+  border-bottom:1px solid var(--border);
+  display:flex;
+  align-items:center;
+  gap:6px;
+  flex-shrink:0;
+}
+
+.pane-hdr h2 { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:var(--accent); }
+
+.pane-body { flex:1; overflow-y:auto; padding:8px; display:flex; flex-direction:column; gap:6px; }
+.pane-body::-webkit-scrollbar { width:4px; }
+.pane-body::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+
+/* ── Left column (collapsible) ── */
+.col-left {
+  width: var(--left-w);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: width 0.25s ease;
+  overflow: hidden;
+  margin-right: 6px;
+  position: relative;
+  z-index: 5;
+}
+.col-left.collapsed { width: var(--left-collapsed); }
+.col-left.collapsed .pane-body,
+.col-left.collapsed .logo-text,
+.col-left.collapsed .logo-sub,
+.col-left.collapsed .pane-hdr h2,
+.col-left.collapsed #crisisCount,
+.col-left.collapsed .tab-bar { display: none; }
+.col-left.collapsed .logo { justify-content: center; }
+.col-left.collapsed .logo-mark { font-size: 20px; }
+
+/* Toggle button */
+.sidebar-toggle {
+  position: absolute;
+  top: 50%;
+  right: -12px;
+  transform: translateY(-50%);
+  width: 20px; height: 36px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 0 6px 6px 0;
+  color: var(--accent);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px;
+  z-index: 20;
+  transition: all .15s;
+}
+.sidebar-toggle:hover { background: rgba(78,158,255,.15); }
+
+/* ── Globe wrapper ── */
+.globe-col { flex:1; min-width:0; position:relative; }
+#canvas { display:block; width:100%; height:100%; }
+
+/* ── Right panel (floating overlay) ── */
+.col-right {
+  position: absolute;
+  top: 6px; right: 6px; bottom: 6px;
+  width: 250px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 15;
+  transform: translateX(calc(100% + 12px));
+  transition: transform 0.25s ease;
+  pointer-events: none;
+}
+.col-right.open {
+  transform: translateX(0);
+  pointer-events: all;
+}
+
+/* Close button for right panel */
+.panel-close {
+  position: absolute;
+  top: 8px; left: -28px;
+  width: 24px; height: 24px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px 0 0 6px;
+  color: var(--accent);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px;
+  z-index: 16;
+  transition: all .15s;
+  pointer-events: all;
+}
+.panel-close:hover { background: rgba(255,60,60,.15); color: #ff6666; }
+
+/* ── Tab bar ── */
+.tab-bar { display:flex; gap:3px; padding:6px 8px 0; flex-shrink:0; }
+.tab {
+  padding:4px 8px;
+  font-size:9px;
+  font-weight:700;
+  letter-spacing:.5px;
+  text-transform:uppercase;
+  color:var(--dim);
+  cursor:pointer;
+  border-bottom:2px solid transparent;
+  transition:all .15s;
+}
+.tab.active { color:var(--accent); border-bottom-color:var(--accent); }
+.tab-content { display:none; }
+.tab-content.active { display:flex; flex-direction:column; gap:6px; }
+
+/* ── Search ── */
+.search-row { display:flex; gap:4px; }
+.search-row input {
+  flex:1; padding:5px 8px;
+  background:rgba(255,255,255,.04);
+  border:1px solid var(--border);
+  border-radius:6px; color:var(--text); font-size:11px; outline:none;
+}
+.search-row input::placeholder { color:var(--dim); }
+.search-row input:focus { border-color:var(--accent); }
+
+/* ── Domain chips ── */
+.domain-chips { display:flex; flex-wrap:wrap; gap:4px; }
+.chip {
+  padding:3px 7px;
+  border-radius:20px;
+  font-size:9px;
+  font-weight:700;
+  letter-spacing:.3px;
+  cursor:pointer;
+  border:1px solid;
+  transition:all .15s;
+  opacity:.45;
+}
+.chip.on { opacity:1; }
+
+/* ── Event list ── */
+.evt-item {
+  padding:7px 8px;
+  background:rgba(255,255,255,.03);
+  border-left:2px solid transparent;
+  border-radius:4px;
+  cursor:pointer;
+  transition:all .15s;
+}
+.evt-item:hover { background:rgba(78,158,255,.08); }
+.evt-item.sel { background:rgba(78,158,255,.12); border-left-color:var(--accent); }
+.evt-name { font-weight:600; color:#e0eaff; font-size:11px; }
+.evt-sub { color:var(--dim); font-size:10px; margin-top:1px; display:flex; align-items:center; gap:4px; }
+.sev-badge {
+  display:inline-block; padding:1px 5px;
+  border-radius:3px; font-size:9px; font-weight:700;
+}
+
+/* ── Section label ── */
+.section-lbl {
+  font-size:9px; font-weight:700; text-transform:uppercase;
+  letter-spacing:1px; color:var(--dim);
+  padding:2px 0;
+}
+
+/* ── Bar ── */
+.bar-row { display:flex; align-items:center; gap:6px; }
+.bar-track { flex:1; height:4px; background:rgba(255,255,255,.06); border-radius:2px; overflow:hidden; }
+.bar-fill { height:100%; border-radius:2px; transition:width .4s; }
+.bar-label { width:28px; text-align:right; font-size:10px; color:var(--text2); }
+
+/* ── Stakeholder tags ── */
+.tags { display:flex; flex-wrap:wrap; gap:4px; }
+.tag {
+  padding:2px 7px; border-radius:3px; font-size:9px; font-weight:700;
+  background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.1);
+  color:var(--text2);
+}
+.tag.us { background:rgba(0,100,255,.2); border-color:rgba(0,100,255,.4); color:#88aaff; }
+.tag.cn { background:rgba(255,50,50,.2); border-color:rgba(255,50,50,.4); color:#ff9999; }
+.tag.ru { background:rgba(255,140,0,.2); border-color:rgba(255,140,0,.4); color:#ffcc88; }
+.tag.eu { background:rgba(50,150,255,.15); border-color:rgba(50,150,255,.3); color:#88ccff; }
+.tag.x  { background:rgba(180,78,255,.15); border-color:rgba(180,78,255,.3); color:#cc99ff; }
+
+/* ── Forecast item ── */
+.forecast-item { padding:6px 0; border-bottom:1px solid var(--border); }
+.forecast-q { font-size:10px; color:var(--text); margin-bottom:5px; line-height:1.3; }
+.prob-bars { display:flex; flex-direction:column; gap:3px; }
+.prob-row { display:flex; align-items:center; gap:5px; }
+.prob-lbl { width:50px; font-size:9px; color:var(--text2); }
+.prob-track { flex:1; height:8px; background:rgba(255,255,255,.05); border-radius:4px; overflow:hidden; }
+.prob-fill { height:100%; border-radius:4px; }
+.prob-pct { width:28px; text-align:right; font-size:10px; font-weight:700; }
+
+/* ── Domain impact row ── */
+.domain-row { display:flex; align-items:center; gap:6px; padding:4px 0; border-bottom:1px solid var(--border); }
+.domain-icon { width:20px; text-align:center; font-size:13px; }
+.domain-name { width:70px; font-size:10px; color:var(--text2); }
+.domain-bar-track { flex:1; height:5px; background:rgba(255,255,255,.05); border-radius:3px; overflow:hidden; }
+.domain-bar-fill { height:100%; border-radius:3px; }
+.domain-score { width:24px; text-align:right; font-size:10px; }
+
+/* ── Network canvas ── */
+#netCanvas { width:100%; display:block; border-radius:6px; background:rgba(0,0,0,.3); }
+
+/* ── Causality chain ── */
+.causal-chain { display:flex; flex-direction:column; gap:3px; }
+.causal-step { display:flex; align-items:flex-start; gap:6px; padding:5px 6px; background:rgba(255,255,255,.03); border-radius:4px; }
+.causal-num { color:var(--accent); font-weight:700; font-size:10px; min-width:14px; }
+.causal-txt { font-size:10px; color:var(--text2); line-height:1.4; }
+
+/* ── Scenario builder ── */
+.scenario-btn {
+  padding:6px 10px;
+  background:rgba(78,158,255,.12);
+  border:1px solid rgba(78,158,255,.3);
+  border-radius:6px;
+  color:var(--accent);
+  font-size:10px;
+  font-weight:700;
+  cursor:pointer;
+  text-align:center;
+  transition:all .15s;
+}
+.scenario-btn:hover { background:rgba(78,158,255,.22); }
+.scenario-btn.active { background:rgba(255,80,80,.2); border-color:rgba(255,80,80,.5); color:#ff8888; }
+
+/* ── Confidence badge ── */
+.conf-badge {
+  display:inline-flex; align-items:center; gap:4px;
+  padding:2px 7px; border-radius:3px; font-size:9px; font-weight:700;
+  background:rgba(78,158,255,.12); border:1px solid rgba(78,158,255,.25); color:var(--accent);
+}
+
+/* ── Historical analogy ── */
+.analogy-card {
+  padding:7px 8px;
+  background:rgba(180,78,255,.07);
+  border:1px solid rgba(180,78,255,.2);
+  border-radius:6px;
+}
+.analogy-match { font-size:11px; font-weight:700; color:#cc99ff; margin-bottom:4px; }
+.analogy-pct { float:right; font-size:10px; color:#b94eff; font-weight:700; }
+.analogy-desc { font-size:10px; color:var(--text2); line-height:1.4; }
+
+/* ── Empty state ── */
+.empty { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; color:var(--dim); gap:6px; text-align:center; }
+.empty-icon { font-size:24px; opacity:.4; }
+
+/* ── Globe controls ── */
+.globe-controls {
+  position:absolute; top:10px; right:10px;
+  display:flex; flex-direction:column; gap:5px; z-index:10;
+}
+.gc-btn {
+  width:28px; height:28px;
+  background:rgba(12,18,40,.9);
+  border:1px solid var(--border);
+  border-radius:6px;
+  color:var(--accent);
+  cursor:pointer; font-size:13px;
+  display:flex; align-items:center; justify-content:center;
+  transition:all .15s;
+}
+.gc-btn:hover { background:rgba(78,158,255,.18); border-color:var(--accent); }
+.gc-btn.active { background:rgba(255,80,80,.18); border-color:#ff5555; color:#ff8888; }
+
+/* ── Globe bottom bar ── */
+.globe-bottom {
+  position:absolute; bottom:8px; left:50%;
+  transform:translateX(-50%);
+  width:75%; max-width:280px;
+  background:rgba(12,18,40,.92);
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:7px 10px;
+  z-index:10;
+}
+.timeline-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:5px; }
+.timeline-year { font-size:11px; font-weight:700; color:var(--accent); }
+.timeline-play {
+  width:20px; height:20px;
+  background:rgba(78,158,255,.15); border:1px solid var(--border);
+  border-radius:4px; color:var(--accent); cursor:pointer; font-size:11px;
+  display:flex; align-items:center; justify-content:center;
+}
+input[type=range] { width:100%; -webkit-appearance:none; height:3px; background:rgba(78,158,255,.2); border-radius:2px; outline:none; }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:10px; height:10px; border-radius:50%; background:var(--accent); cursor:pointer; }
+input[type=range]::-moz-range-thumb { width:10px; height:10px; border-radius:50%; background:var(--accent); cursor:pointer; border:none; }
+.timeline-hint { font-size:9px; color:var(--dim); text-align:center; margin-top:3px; }
+
+/* ── Logo ── */
+.logo { display:flex; align-items:center; gap:6px; padding:8px 10px 6px; flex-shrink:0; border-bottom:1px solid var(--border); }
+.logo-mark { font-size:16px; }
+.logo-text { font-size:12px; font-weight:700; letter-spacing:.5px; color:#e0f0ff; }
+.logo-sub { font-size:8px; color:var(--dim); text-transform:uppercase; letter-spacing:1px; }
+
+/* ── Alert strip ── */
+.alert-strip {
+  padding:4px 8px;
+  background:rgba(255,60,60,.1);
+  border:1px solid rgba(255,60,60,.25);
+  border-radius:5px;
+  font-size:9px;
+  color:#ff8888;
+  display:flex; align-items:center; gap:5px;
+}
+
+/* ── Relationship type ── */
+.rel-line-legend { display:flex; flex-direction:column; gap:3px; margin-top:4px; }
+.rel-line-item { display:flex; align-items:center; gap:6px; font-size:9px; color:var(--text2); }
+.rel-swatch { height:2px; width:20px; border-radius:1px; }
+</style>
+</head>
+<body>
+<div class="root">
+
+<!-- ══════════════════════════════════
+     LEFT COLUMN
+══════════════════════════════════ -->
+<div class="col-left" id="colLeft">
+  <button class="sidebar-toggle" id="sidebarToggle">◀</button>
+
+  <!-- Logo -->
+  <div class="pane" style="flex:0 0 auto">
+    <div class="logo">
+      <span class="logo-mark">🌐</span>
+      <div>
+        <div class="logo-text">GeoIntel</div>
+        <div class="logo-sub">Global Intelligence Platform</div>
+      </div>
+    </div>
+    <div class="pane-body" style="padding:7px 8px; gap:5px;">
+      <div class="search-row">
+        <input id="searchInput" placeholder="Search crises, actors...">
+      </div>
+      <div class="section-lbl">Domains</div>
+      <div class="domain-chips" id="domainChips"></div>
+      <div class="section-lbl">Crisis Types</div>
+      <div class="domain-chips" id="typeChips"></div>
+    </div>
+  </div>
+
+  <!-- Events list -->
+  <div class="pane" style="flex:1">
+    <div class="pane-hdr"><h2>Active Crises</h2><span id="crisisCount" style="font-size:9px;color:var(--dim);margin-left:auto"></span></div>
+    <div class="pane-body" id="eventsList"></div>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════════════
+     GLOBE CENTER
+══════════════════════════════════ -->
+<div class="globe-col">
+  <canvas id="canvas"></canvas>
+  <div class="globe-controls">
+    <button class="gc-btn" id="resetBtn" title="Reset">↺</button>
+    <button class="gc-btn" id="arcBtn"   title="Relationships">⟳</button>
+    <button class="gc-btn" id="heatBtn"  title="Power Heatmap">◉</button>
+    <button class="gc-btn" id="cascBtn"  title="Cascade Sim">⚡</button>
+  </div>
+  <div class="globe-bottom">
+    <div class="timeline-header">
+      <span class="timeline-year" id="yearLabel">2026</span>
+      <button class="timeline-play" id="playBtn">▶</button>
+    </div>
+    <input type="range" id="timeSlider" min="0" max="100" value="100">
+    <div class="timeline-hint">Drag to rotate • Scroll to zoom • Click pins for analysis</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════
+     RIGHT COLUMN (floating overlay)
+══════════════════════════════════ -->
+<div class="col-right" id="colRight">
+  <button class="panel-close" id="panelClose" title="Close">✕</button>
+
+  <!-- Analysis pane (tabbed) -->
+  <div class="pane" style="flex:1">
+    <div class="tab-bar" id="tabBar">
+      <div class="tab active" data-tab="overview">Overview</div>
+      <div class="tab" data-tab="reliability">Source</div>
+      <div class="tab" data-tab="escalation">Trend</div>
+      <div class="tab" data-tab="economic">Impact</div>
+      <div class="tab" data-tab="briefing">Brief</div>
+      <div class="tab" data-tab="forecast">Forecast</div>
+      <div class="tab" data-tab="network">Network</div>
+      <div class="tab" data-tab="domains">Domains</div>
+      <div class="tab" data-tab="cascade">Cascade</div>
+    </div>
+
+    <!-- OVERVIEW -->
+    <div class="pane-body tab-content active" id="tab-overview">
+      <div class="empty" id="emptyState">
+        <div class="empty-icon">🎯</div>
+        <div>Click a crisis pin<br>or select from list</div>
+      </div>
+      <div id="overviewContent" style="display:none;gap:6px;display:none;flex-direction:column">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <span id="ov-type-badge" class="sev-badge"></span>
+          <span id="ov-conf" class="conf-badge">⬛ — confidence</span>
+        </div>
+        <div id="ov-title" style="font-size:13px;font-weight:700;color:#e8f4ff;line-height:1.3"></div>
+        <div id="ov-date" style="font-size:9px;color:var(--dim)"></div>
+        <div>
+          <div class="section-lbl">Severity</div>
+          <div class="bar-row"><div class="bar-track" style="flex:1"><div class="bar-fill" id="ov-sev-bar"></div></div><span id="ov-sev-num" class="bar-label"></span></div>
+        </div>
+        <div>
+          <div class="section-lbl">Stakeholders</div>
+          <div class="tags" id="ov-stakeholders"></div>
+        </div>
+        <div>
+          <div class="section-lbl">Analysis</div>
+          <div id="ov-analysis" style="font-size:10px;color:var(--text2);line-height:1.5"></div>
+        </div>
+        <div>
+          <div class="section-lbl">Regional Impact</div>
+          <div id="ov-impact" style="font-size:10px;color:var(--text2);line-height:1.5"></div>
+        </div>
+        <div>
+          <div class="section-lbl">Historical Analogy</div>
+          <div id="ov-analogy" class="analogy-card"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SOURCE RELIABILITY -->
+    <div class="pane-body tab-content" id="tab-reliability">
+      <div class="empty" id="reliabilityEmpty">
+        <div class="empty-icon">✓</div>
+        <div>Select a crisis to view<br>source verification status</div>
+      </div>
+      <div id="reliabilityContent" style="display:none;flex-direction:column;gap:8px">
+        <div>
+          <div class="section-lbl">Verification Status</div>
+          <div id="rel-status" style="font-size:11px;color:var(--green);font-weight:700"></div>
+        </div>
+        <div>
+          <div class="section-lbl">Reliability Score</div>
+          <div class="bar-row"><div class="bar-track" style="flex:1"><div class="bar-fill" id="rel-score-bar"></div></div><span id="rel-score-num" class="bar-label"></span></div>
+        </div>
+        <div>
+          <div class="section-lbl">Reporting Sources</div>
+          <div id="rel-sources" style="display:flex;flex-wrap:wrap;gap:4px"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ESCALATION TREND -->
+    <div class="pane-body tab-content" id="tab-escalation">
+      <div class="empty" id="escalationEmpty">
+        <div class="empty-icon">📈</div>
+        <div>Select a crisis to view<br>escalation trajectory</div>
+      </div>
+      <div id="escalationContent" style="display:none;flex-direction:column;gap:6px">
+        <div>
+          <div class="section-lbl">Trend</div>
+          <div id="esc-trend" style="font-size:12px;font-weight:700;color:var(--accent)"></div>
+        </div>
+        <div id="esc-warning" style="display:none;background:#ff3b3b22;border:1px solid #ff3b3b66;border-radius:6px;padding:6px;color:#ff8888;font-size:10px;font-weight:700"></div>
+        <div>
+          <div class="section-lbl">Change (7d)</div>
+          <div id="esc-change" style="font-size:11px;color:var(--text2)"></div>
+        </div>
+        <div>
+          <div class="section-lbl">Velocity</div>
+          <div id="esc-velocity" style="font-size:11px;color:var(--text2)"></div>
+        </div>
+        <div>
+          <div class="section-lbl">History</div>
+          <canvas id="escalationChart" height="60" style="border:1px solid var(--border);border-radius:4px;margin-top:4px"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- ECONOMIC IMPACT -->
+    <div class="pane-body tab-content" id="tab-economic">
+      <div class="empty" id="economicEmpty">
+        <div class="empty-icon">💹</div>
+        <div>Select a crisis to view<br>economic impact analysis</div>
+      </div>
+      <div id="economicContent" style="display:none;flex-direction:column;gap:6px">
+        <div>
+          <div class="section-lbl">Impact Severity</div>
+          <div id="econ-severity" style="font-size:12px;font-weight:700"></div>
+        </div>
+        <div>
+          <div class="section-lbl">Affected Sectors</div>
+          <div id="econ-sectors" style="display:flex;flex-wrap:wrap;gap:4px"></div>
+        </div>
+        <div>
+          <div class="section-lbl">Market Impact</div>
+          <div id="econ-estimates" style="font-size:10px;color:var(--text2)"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI BRIEFING -->
+    <div class="pane-body tab-content" id="tab-briefing">
+      <div class="empty" id="briefingEmpty">
+        <div class="empty-icon">🤖</div>
+        <div>Select a crisis to generate<br>AI briefing summary</div>
+      </div>
+      <div id="briefingContent" style="display:none;flex-direction:column;gap:6px">
+        <div id="briefing-text" style="font-size:10px;color:var(--text);line-height:1.6;white-space:pre-wrap;overflow-y:auto;max-height:300px"></div>
+        <div id="briefing-loading" style="display:none;color:var(--dim);font-size:10px;text-align:center">
+          <div style="margin:20px 0">⏳ Generating briefing...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FORECAST -->
+    <div class="pane-body tab-content" id="tab-forecast">
+      <div class="empty" id="forecastEmpty">
+        <div class="empty-icon">📈</div>
+        <div>Select a crisis to<br>view probabilistic forecasts</div>
+      </div>
+      <div id="forecastContent" style="display:none;flex-direction:column;gap:4px"></div>
+    </div>
+
+    <!-- NETWORK -->
+    <div class="pane-body tab-content" id="tab-network">
+      <div class="section-lbl">Actor Relationship Map</div>
+      <canvas id="netCanvas" height="180"></canvas>
+      <div class="rel-line-legend">
+        <div class="rel-line-item"><div class="rel-swatch" style="background:#ff3b3b"></div>Conflict / Opposition</div>
+        <div class="rel-line-item"><div class="rel-swatch" style="background:#ffd93d"></div>Tension / Competition</div>
+        <div class="rel-line-item"><div class="rel-swatch" style="background:#3dffaa"></div>Alliance / Support</div>
+        <div class="rel-line-item"><div class="rel-swatch" style="background:#4e9eff"></div>Economic Dependency</div>
+        <div class="rel-line-item"><div class="rel-swatch" style="background:#b94eff"></div>Proxy / Indirect</div>
+      </div>
+      <div id="netDetails" class="section-lbl" style="margin-top:4px"></div>
+    </div>
+
+    <!-- DOMAINS -->
+    <div class="pane-body tab-content" id="tab-domains">
+      <div class="empty" id="domainsEmpty">
+        <div class="empty-icon">🔬</div>
+        <div>Select a crisis to view<br>multi-domain impact analysis</div>
+      </div>
+      <div id="domainsContent" style="display:none;flex-direction:column;gap:2px"></div>
+    </div>
+
+    <!-- CASCADE -->
+    <div class="pane-body tab-content" id="tab-cascade">
+      <div id="cascadeIntro">
+        <div class="section-lbl" style="margin-bottom:6px">Scenario Builder</div>
+        <div style="font-size:10px;color:var(--text2);line-height:1.5;margin-bottom:8px">
+          Select a crisis and simulate escalation to see how regional instability cascades across neighboring states and global systems.
+        </div>
+        <div class="empty-icon" style="text-align:center;font-size:20px;margin:10px 0;opacity:.4">⚡</div>
+      </div>
+      <div class="scenario-btn" id="simBtn">⚡ Simulate Escalation</div>
+      <div id="cascadeResults" style="display:none;flex-direction:column;gap:4px;margin-top:6px"></div>
+      <div style="margin-top:6px">
+        <div class="section-lbl">Causality Chain</div>
+        <div class="causal-chain" id="causalChain"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Alert strip -->
+  <div class="pane" style="flex:0 0 auto">
+    <div class="pane-hdr"><h2>⚠️ Active Alerts</h2></div>
+    <div class="pane-body" id="alertsList" style="gap:4px;padding:6px"></div>
+  </div>
+
+<!-- Breaking Alert Toast -->
+<div id="breakingAlert" style="display:none;position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#ff3b3b;border:2px solid #ff6666;border-radius:8px;padding:16px 24px;z-index:2000;box-shadow:0 8px 32px rgba(255,59,59,0.4);max-width:500px;animation:slideIn 0.3s ease-out">
+  <div style="color:#fff;font-weight:700;font-size:13px;margin-bottom:4px">🔴 BREAKING: <span id="alertTitle"></span></div>
+  <div style="color:#ffcccc;font-size:11px"><span id="alertLoc"></span> · Just now</div>
+</div>
+
+<style>
+@keyframes slideIn {
+  from { transform: translateX(-50%) translateY(-100%); opacity:0; }
+  to { transform: translateX(-50%) translateY(0); opacity:1; }
+}
+@keyframes fadeOut {
+  from { opacity:1; }
+  to { opacity:0; }
+}
+
+/* Breaking alert auto-dismiss */
+#breakingAlert.dismissing { animation:fadeOut 0.3s ease-in forwards; }
+
+/* Source reliability badge */
+.source-badge {
+  display:inline-block;
+  padding:3px 7px;
+  border-radius:4px;
+  font-size:9px;
+  font-weight:700;
+  margin:2px;
+  border:1px solid;
+}
+.source-badge.verified { background:#3dffaa22;color:#3dffaa;border-color:#3dffaa66; }
+.source-badge.corroborated { background:#ffd93d22;color:#ffd93d;border-color:#ffd93d66; }
+.source-badge.reported { background:#ff883322;color:#ff8833;border-color:#ff883366; }
+.source-badge.unverified { background:#ff3b3b22;color:#ff3b3b;border-color:#ff3b3b66; }
+
+/* Escalation trend colors */
+.trend-escalating { color:#ff3b3b; }
+.trend-deescalating { color:#3dffaa; }
+.trend-stable { color:#ffd93d; }
+
+/* Sector tag */
+.sector-tag {
+  display:inline-block;
+  padding:4px 8px;
+  background:rgba(78,158,255,0.2);
+  border:1px solid rgba(78,158,255,0.4);
+  border-radius:4px;
+  font-size:9px;
+  color:#b8d8ff;
+  margin:2px;
+}
+
+/* Briefing text formatting */
+#briefing-text strong {
+  color:#fff;
+  font-weight:700;
+}
+#briefing-text em {
+  color:var(--accent);
+  font-style:italic;
+}
+</style>
+
+</div>
+</div>
+
+<script src="topojson.min.js"></script>
+<script src="frontend-api.js"></script>
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+<script>
+// ════════════════════════════════════════════════════════════
+// DATA LAYER
+// ════════════════════════════════════════════════════════════
+
+const DOMAINS = {
+  military:   { icon:'⚔️', color:'#ff3b3b', name:'Military'  },
+  economic:   { icon:'💹', color:'#ffd93d', name:'Economic'  },
+  political:  { icon:'🏛️', color:'#4e9eff', name:'Political'  },
+  environment:{ icon:'🌿', color:'#3dffaa', name:'Environment'},
+  technology: { icon:'💻', color:'#b94eff', name:'Technology' },
+  information:{ icon:'📡', color:'#ff8833', name:'Info Ops'  },
+};
+
+const TYPE_META = {
+  conflict:   { name:'Conflict',    color:'#ff3b3b' },
+  military:   { name:'Military',    color:'#ff4ea0' },
+  diplomatic: { name:'Diplomatic',  color:'#ff8833' },
+  economic:   { name:'Economic',    color:'#ffd93d' },
+  resource:   { name:'Resource',    color:'#ff6b35' },
+  alliance:   { name:'Alliance',    color:'#4e9eff' },
+  proxy:      { name:'Proxy',       color:'#b94eff' },
+  technology: { name:'Tech War',    color:'#3dffaa' },
+};
+
+let ACTORS = [
+  { id:'US',  name:'USA',     color:'#4488ff', lat:38,   lon:-97  },
+  { id:'CN',  name:'China',   color:'#ff4444', lat:35,   lon:105  },
+  { id:'RU',  name:'Russia',  color:'#ff9933', lat:60,   lon:90   },
+  { id:'EU',  name:'EU',      color:'#88ccff', lat:50,   lon:10   },
+  { id:'IN',  name:'India',   color:'#ff7744', lat:20,   lon:77   },
+  { id:'IR',  name:'Iran',    color:'#cc44ff', lat:32,   lon:53   },
+  { id:'IL',  name:'Israel',  color:'#4488ff', lat:31.5, lon:35   },
+  { id:'NK',  name:'N.Korea', color:'#ff4444', lat:39,   lon:127  },
+];
+
+let RELATIONSHIPS = [
+  { a:'US',  b:'CN',  type:'conflict',   label:'Strategic Rivalry / Tech War'       },
+  { a:'US',  b:'RU',  type:'conflict',   label:'Ukraine Proxy Conflict'              },
+  { a:'CN',  b:'RU',  type:'alliance',   label:'No-Limits Partnership'               },
+  { a:'US',  b:'EU',  type:'alliance',   label:'NATO / Transatlantic Alliance'       },
+  { a:'US',  b:'IL',  type:'alliance',   label:'Defense Commitment'                  },
+  { a:'IR',  b:'RU',  type:'alliance',   label:'Weapons & Energy Cooperation'        },
+  { a:'CN',  b:'IR',  type:'economic',   label:'Oil & Infrastructure Investment'     },
+  { a:'US',  b:'IN',  type:'alliance',   label:'Quad Partnership'                    },
+  { a:'CN',  b:'IN',  type:'tension',    label:'Border Disputes / Rivalry'           },
+  { a:'IR',  b:'IL',  type:'conflict',   label:'Direct Military Confrontation'       },
+  { a:'NK',  b:'RU',  type:'alliance',   label:'Weapons Supply'                      },
+  { a:'NK',  b:'CN',  type:'economic',   label:'Economic Lifeline'                   },
+  { a:'US',  b:'NK',  type:'conflict',   label:'Nuclear Standoff'                    },
+];
+
+// CRISES will be loaded from backend API via loadRealData()
+let CRISES = [];
+
+// Global state
+let zoom = 1, rotX = 0.25, rotY = 0;
+let selected = null;
+let drag = false, lastMX = 0, lastMY = 0;
+let mx = 0, my = 0;
+let currentYear = 2026, playDir = 1;
+let worldTopo = null;
+
+// Infinite scroll state
+let crisisDisplayLimit = 50;  // Start with 50 crises
+let crisisDisplayOffset = 0;
+
+// Debug logging state
+let lastLoggedZoom = null;
+let lastLoggedLimit = null;
+
+// City-level coordinates mapping
+const CITY_COORDS = {
+  // NORTH AMERICA
+  'United States': [
+    {name: 'New York', lat: 40.7128, lon: -74.0060},
+    {name: 'Los Angeles', lat: 34.0522, lon: -118.2437},
+    {name: 'Washington DC', lat: 38.9072, lon: -77.0369},
+    {name: 'Chicago', lat: 41.8781, lon: -87.6298},
+    {name: 'Houston', lat: 29.7604, lon: -95.3698},
+    {name: 'Dallas', lat: 32.7767, lon: -96.7970},
+    {name: 'Miami', lat: 25.7617, lon: -80.1918},
+    {name: 'Phoenix', lat: 33.4484, lon: -112.0742},
+    {name: 'Philadelphia', lat: 39.9526, lon: -75.1652},
+    {name: 'San Francisco', lat: 37.7749, lon: -122.4194},
+    {name: 'Seattle', lat: 47.6062, lon: -122.3321},
+    {name: 'Denver', lat: 39.7392, lon: -104.9903},
+    {name: 'Atlanta', lat: 33.7490, lon: -84.3880},
+    {name: 'Boston', lat: 42.3601, lon: -71.0589},
+  ],
+  'Canada': [
+    {name: 'Toronto', lat: 43.6532, lon: -79.3832},
+    {name: 'Vancouver', lat: 49.2827, lon: -123.1207},
+    {name: 'Montreal', lat: 45.5017, lon: -73.5673},
+  ],
+  'Mexico': [
+    {name: 'Mexico City', lat: 19.4326, lon: -99.1332},
+    {name: 'Guadalajara', lat: 20.6596, lon: -103.2494},
+  ],
+
+  // SOUTH AMERICA
+  'Brazil': [
+    {name: 'São Paulo', lat: -23.5505, lon: -46.6333},
+    {name: 'Rio de Janeiro', lat: -22.9068, lon: -43.1729},
+    {name: 'Brasília', lat: -15.7942, lon: -47.8822},
+  ],
+  'Argentina': [
+    {name: 'Buenos Aires', lat: -34.6037, lon: -58.3816},
+    {name: 'Córdoba', lat: -31.4135, lon: -64.1811},
+  ],
+  'Colombia': [
+    {name: 'Bogotá', lat: 4.7110, lon: -74.0721},
+    {name: 'Medellín', lat: 6.2442, lon: -75.5812},
+  ],
+  'Peru': [
+    {name: 'Lima', lat: -12.0464, lon: -77.0428},
+  ],
+  'Chile': [
+    {name: 'Santiago', lat: -33.8688, lon: -51.2093},
+  ],
+  'Venezuela': [
+    {name: 'Caracas', lat: 10.4806, lon: -66.9036},
+  ],
+
+  // EUROPE
+  'United Kingdom': [
+    {name: 'London', lat: 51.5074, lon: -0.1278},
+    {name: 'Manchester', lat: 53.4808, lon: -2.2426},
+    {name: 'Edinburgh', lat: 55.9533, lon: -3.1883},
+  ],
+  'France': [
+    {name: 'Paris', lat: 48.8566, lon: 2.3522},
+    {name: 'Marseille', lat: 43.2965, lon: 5.3698},
+    {name: 'Lyon', lat: 45.7640, lon: 4.8357},
+  ],
+  'Germany': [
+    {name: 'Berlin', lat: 52.5200, lon: 13.4050},
+    {name: 'Munich', lat: 48.1351, lon: 11.5820},
+    {name: 'Hamburg', lat: 53.5511, lon: 9.9937},
+  ],
+  'Italy': [
+    {name: 'Rome', lat: 41.9028, lon: 12.4964},
+    {name: 'Milan', lat: 45.4642, lon: 9.1900},
+  ],
+  'Spain': [
+    {name: 'Madrid', lat: 40.4168, lon: -3.7038},
+    {name: 'Barcelona', lat: 41.3851, lon: 2.1734},
+  ],
+  'Ukraine': [
+    {name: 'Kyiv', lat: 50.4501, lon: 30.5234},
+    {name: 'Kharkiv', lat: 50.0038, lon: 36.2304},
+    {name: 'Odesa', lat: 46.4856, lon: 30.7326},
+  ],
+  'Poland': [
+    {name: 'Warsaw', lat: 52.2297, lon: 21.0122},
+    {name: 'Kraków', lat: 50.0647, lon: 19.9450},
+  ],
+  'Netherlands': [
+    {name: 'Amsterdam', lat: 52.3676, lon: 4.9041},
+  ],
+  'Greece': [
+    {name: 'Athens', lat: 37.9838, lon: 23.7275},
+  ],
+
+  // MIDDLE EAST & CENTRAL ASIA
+  'Iran': [
+    {name: 'Tehran', lat: 35.6892, lon: 51.3890},
+    {name: 'Isfahan', lat: 32.6546, lon: 51.6680},
+    {name: 'Tabriz', lat: 38.0808, lon: 46.2919},
+    {name: 'Shiraz', lat: 29.6399, lon: 52.5347},
+    {name: 'Qom', lat: 34.6413, lon: 50.8759},
+    {name: 'Mashhad', lat: 36.2605, lon: 59.5007},
+    {name: 'Ahvaz', lat: 31.3183, lon: 48.6706},
+    {name: 'Rasht', lat: 37.2808, lon: 49.5832},
+    {name: 'Yazd', lat: 31.8974, lon: 54.3569},
+  ],
+  'Iraq': [
+    {name: 'Baghdad', lat: 33.3128, lon: 44.3615},
+    {name: 'Basra', lat: 30.4958, lon: 47.8079},
+  ],
+  'Israel': [
+    {name: 'Tel Aviv', lat: 32.0853, lon: 34.7818},
+    {name: 'Jerusalem', lat: 31.7683, lon: 35.2137},
+    {name: 'Haifa', lat: 32.8191, lon: 34.9937},
+    {name: 'Beer Sheva', lat: 31.2461, lon: 34.7915},
+    {name: 'Ashdod', lat: 31.8070, lon: 34.6463},
+    {name: 'Petah Tikva', lat: 32.0864, lon: 34.8864},
+  ],
+  'Saudi Arabia': [
+    {name: 'Riyadh', lat: 24.7136, lon: 46.6753},
+    {name: 'Jeddah', lat: 21.5169, lon: 39.1925},
+  ],
+  'United Arab Emirates': [
+    {name: 'Dubai', lat: 25.2048, lon: 55.2708},
+    {name: 'Abu Dhabi', lat: 24.4539, lon: 54.3773},
+  ],
+  'Turkey': [
+    {name: 'Istanbul', lat: 41.0082, lon: 28.9784},
+    {name: 'Ankara', lat: 39.9334, lon: 32.8597},
+  ],
+  'Syria': [
+    {name: 'Damascus', lat: 33.5138, lon: 36.2765},
+    {name: 'Aleppo', lat: 36.2021, lon: 37.1343},
+  ],
+  'Jordan': [
+    {name: 'Amman', lat: 31.9454, lon: 35.9284},
+  ],
+  'Lebanon': [
+    {name: 'Beirut', lat: 33.8547, lon: 35.4758},
+  ],
+  'Pakistan': [
+    {name: 'Islamabad', lat: 33.6844, lon: 73.0479},
+    {name: 'Karachi', lat: 24.8607, lon: 67.0011},
+  ],
+  'Afghanistan': [
+    {name: 'Kabul', lat: 34.5553, lon: 69.2075},
+  ],
+  'Kazakhstan': [
+    {name: 'Almaty', lat: 43.2380, lon: 76.9502},
+    {name: 'Astana', lat: 51.1694, lon: 71.4491},
+  ],
+
+  // ASIA
+  'Russia': [
+    {name: 'Moscow', lat: 55.7558, lon: 37.6173},
+    {name: 'St. Petersburg', lat: 59.9311, lon: 30.3609},
+    {name: 'Vladivostok', lat: 43.1056, lon: 131.8735},
+    {name: 'Novosibirsk', lat: 55.0415, lon: 82.9346},
+  ],
+  'China': [
+    {name: 'Beijing', lat: 39.9042, lon: 116.4074},
+    {name: 'Shanghai', lat: 31.2304, lon: 121.4737},
+    {name: 'Hong Kong', lat: 22.3193, lon: 114.1694},
+    {name: 'Shenzhen', lat: 22.5431, lon: 114.0579},
+    {name: 'Chongqing', lat: 29.4316, lon: 106.9123},
+    {name: 'Xi\'an', lat: 34.3416, lon: 109.5149},
+    {name: 'Wuhan', lat: 30.5928, lon: 114.3055},
+    {name: 'Guangzhou', lat: 23.1291, lon: 113.2644},
+    {name: 'Chengdu', lat: 30.5728, lon: 104.0668},
+    {name: 'Hangzhou', lat: 30.2875, lon: 120.1551},
+  ],
+  'India': [
+    {name: 'New Delhi', lat: 28.6139, lon: 77.2090},
+    {name: 'Mumbai', lat: 19.0760, lon: 72.8777},
+    {name: 'Bangalore', lat: 12.9716, lon: 77.5946},
+    {name: 'Kolkata', lat: 22.5726, lon: 88.3639},
+  ],
+  'Japan': [
+    {name: 'Tokyo', lat: 35.6762, lon: 139.6503},
+    {name: 'Osaka', lat: 34.6937, lon: 135.5023},
+  ],
+  'South Korea': [
+    {name: 'Seoul', lat: 37.5665, lon: 126.9780},
+  ],
+  'North Korea': [
+    {name: 'Pyongyang', lat: 39.0193, lon: 125.7581},
+  ],
+  'Vietnam': [
+    {name: 'Hanoi', lat: 21.0285, lon: 105.8542},
+    {name: 'Ho Chi Minh City', lat: 10.7769, lon: 106.6869},
+  ],
+  'Thailand': [
+    {name: 'Bangkok', lat: 13.7563, lon: 100.5018},
+  ],
+  'Philippines': [
+    {name: 'Manila', lat: 14.5995, lon: 120.9842},
+  ],
+  'Indonesia': [
+    {name: 'Jakarta', lat: -6.2088, lon: 106.8456},
+  ],
+  'Myanmar': [
+    {name: 'Yangon', lat: 16.8661, lon: 96.1951},
+    {name: 'Naypyidaw', lat: 19.7554, lon: 96.0794},
+  ],
+  'Malaysia': [
+    {name: 'Kuala Lumpur', lat: 3.1390, lon: 101.6869},
+  ],
+  'Singapore': [
+    {name: 'Singapore', lat: 1.3521, lon: 103.8198},
+  ],
+
+  // AFRICA
+  'Egypt': [
+    {name: 'Cairo', lat: 30.0444, lon: 31.2357},
+    {name: 'Alexandria', lat: 31.2001, lon: 29.9187},
+  ],
+  'Nigeria': [
+    {name: 'Lagos', lat: 6.5244, lon: 3.3792},
+    {name: 'Abuja', lat: 9.0765, lon: 7.3986},
+  ],
+  'South Africa': [
+    {name: 'Johannesburg', lat: -26.2023, lon: 28.0436},
+    {name: 'Cape Town', lat: -33.9249, lon: 18.4241},
+    {name: 'Pretoria', lat: -25.7461, lon: 28.2293},
+  ],
+  'Ethiopia': [
+    {name: 'Addis Ababa', lat: 9.0320, lon: 38.7469},
+  ],
+  'Kenya': [
+    {name: 'Nairobi', lat: -1.2864, lon: 36.8172},
+  ],
+  'Libya': [
+    {name: 'Tripoli', lat: 32.8872, lon: 13.1913},
+  ],
+  'Sudan': [
+    {name: 'Khartoum', lat: 15.5007, lon: 32.5599},
+  ],
+  'Morocco': [
+    {name: 'Casablanca', lat: 33.5731, lon: -7.5898},
+    {name: 'Rabat', lat: 34.0209, lon: -6.8416},
+  ],
+  'Tunisia': [
+    {name: 'Tunis', lat: 36.8065, lon: 10.1686},
+  ],
+  'Algeria': [
+    {name: 'Algiers', lat: 36.7538, lon: 3.0588},
+  ],
+  'Angola': [
+    {name: 'Luanda', lat: -8.8383, lon: 13.2344},
+  ],
+  'Mozambique': [
+    {name: 'Maputo', lat: -23.8637, lon: 35.3300},
+  ],
+  'Zimbabwe': [
+    {name: 'Harare', lat: -17.8252, lon: 31.0335},
+  ],
+
+  // OCEANIA
+  'Australia': [
+    {name: 'Sydney', lat: -33.8688, lon: 151.2093},
+    {name: 'Melbourne', lat: -37.8136, lon: 144.9631},
+    {name: 'Brisbane', lat: -27.4698, lon: 153.0251},
+  ],
+  'New Zealand': [
+    {name: 'Auckland', lat: -37.0882, lon: 174.8853},
+    {name: 'Wellington', lat: -41.2865, lon: 174.7762},
+  ],
+};
+
+function getRandomCityCoords(country) {
+  // Normalize country names (handle various formats)
+  const countryNormalized = {
+    'Us': 'United States',
+    'USA': 'United States',
+    'UK': 'United Kingdom',
+    'GB': 'United Kingdom',
+    'KR': 'South Korea',
+    'NK': 'North Korea',
+    'UAE': 'United Arab Emirates',
+    'SA': 'Saudi Arabia',
+    'ROK': 'South Korea',
+    'DPRK': 'North Korea',
+    'PRC': 'China',
+    'HK': 'Hong Kong',
+  }[country] || country;
+
+  let cities = CITY_COORDS[countryNormalized];
+
+  // If country not found, try to pick a reasonable regional fallback
+  if (!cities) {
+    if (countryNormalized.includes('Europe') || countryNormalized === 'European Union') {
+      cities = CITY_COORDS['Germany']; // Central Europe default
+    } else if (countryNormalized.includes('Africa')) {
+      cities = CITY_COORDS['Nigeria']; // Central Africa default
+    } else if (countryNormalized.includes('Asia')) {
+      cities = CITY_COORDS['India']; // South Asia default
+    } else {
+      cities = CITY_COORDS['United States']; // Global default
+    }
+  }
+
+  if (!cities) return null;
+  return cities[Math.floor(Math.random() * cities.length)];
+}
+
+// Alerts
+const ALERTS = [
+  { text: '🔴 CRITICAL: Iran-US Military Tensions', color: '#ff3b3b' },
+  { text: '🟡 WARNING: Taiwan Strait Activity', color: '#ffd93d' },
+  { text: '🟠 ALERT: Middle East Instability', color: '#ff8833' },
+];
+
+// Layer toggles
+let showArcs  = true;
+let showHeat  = false;
+let showCasc  = false;
+let cascadeActive = false;
+
+// Canvas setup
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+canvas.width = canvas.offsetWidth;
+canvas.height = canvas.offsetHeight;
+
+function R()  { return (Math.min(canvas.width, canvas.height) / 2 - 48) * zoom; }
+function CX() { return canvas.width  / 2; }
+function CY() { return canvas.height / 2; }
+
+function project(lat, lon) {
+  const phi  = lat * Math.PI / 180;
+  const lam  = lon * Math.PI / 180;
+  const cp   = Math.cos(phi);
+  const x    = cp  * Math.sin(lam + rotY);
+  const y    = Math.sin(phi) * Math.cos(rotX) - cp * Math.cos(lam + rotY) * Math.sin(rotX);
+  const z    = Math.sin(phi) * Math.sin(rotX) + cp * Math.cos(lam + rotY) * Math.cos(rotX);
+  const r    = R();
+  return { sx: CX() + r * x, sy: CY() - r * y, z };
+}
+
+// Draw filled/stroked geo ring
+function geoRing(ring, fill) {
+  let started = false;
+  for (let i = 0; i < ring.length; i++) {
+    const [lo, la] = ring[i];
+    const p = project(la, lo);
+    if (p.z < 0) { if (started) { fill ? ctx.fill() : ctx.stroke(); started = false; } continue; }
+    if (!started) { ctx.beginPath(); ctx.moveTo(p.sx, p.sy); started = true; }
+    else ctx.lineTo(p.sx, p.sy);
+  }
+  if (started) { fill ? ctx.fill() : ctx.stroke(); }
+}
+
+function drawGeoFeature(geom, fill) {
+  if (!geom) return;
+  if (geom.type === 'Polygon')      geom.coordinates.forEach(r => geoRing(r, fill));
+  else if (geom.type === 'MultiPolygon') geom.coordinates.forEach(p => p.forEach(r => geoRing(r, fill)));
+}
+
+function drawGeoMesh(geom) {
+  if (!geom || geom.type !== 'MultiLineString') return;
+  geom.coordinates.forEach(line => {
+    let started = false;
+    for (const [lo, la] of line) {
+      const p = project(la, lo);
+      if (p.z < 0) { if (started) { ctx.stroke(); started = false; } continue; }
+      if (!started) { ctx.beginPath(); ctx.moveTo(p.sx, p.sy); started = true; }
+      else ctx.lineTo(p.sx, p.sy);
+    }
+    if (started) ctx.stroke();
+  });
+}
+
+// Draw arc between two lat/lon points
+function drawArc(lat1, lon1, lat2, lon2, color, width = 1.2, alpha = 0.5) {
+  const steps = 40;
+  const pts = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const la = lat1 + (lat2 - lat1) * t;
+    const lo = lon1 + (lon2 - lon1) * t;
+    pts.push(project(la, lo));
+  }
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+
+  let started = false;
+  for (const p of pts) {
+    if (p.z < 0) { if (started) { ctx.stroke(); started = false; } continue; }
+    if (!started) { ctx.beginPath(); ctx.moveTo(p.sx, p.sy); started = true; }
+    else ctx.lineTo(p.sx, p.sy);
+  }
+  if (started) ctx.stroke();
+  ctx.restore();
+}
+
+// Pulse animation state
+let pulse = 0;
+
+function drawGlobe() {
+  canvas.width  = canvas.clientWidth;
+  canvas.height = canvas.clientHeight;
+  pulse = (pulse + 0.03) % (Math.PI * 2);
+
+  const r  = R(), cx = CX(), cy = CY();
+
+  // Space bg
+  ctx.fillStyle = '#07090f';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Atmosphere halo
+  const atm = ctx.createRadialGradient(cx, cy, r * 0.92, cx, cy, r * 1.18);
+  atm.addColorStop(0, 'rgba(78,158,255,0.07)');
+  atm.addColorStop(1, 'rgba(78,158,255,0)');
+  ctx.fillStyle = atm;
+  ctx.beginPath(); ctx.arc(cx, cy, r * 1.18, 0, Math.PI * 2); ctx.fill();
+
+  // Ocean
+  const oc = ctx.createRadialGradient(cx - r*.25, cy - r*.25, r*.05, cx, cy, r);
+  oc.addColorStop(0, '#0f4068');
+  oc.addColorStop(1, '#061d38');
+  ctx.fillStyle = oc;
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+
+  // Clip to globe
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip();
+
+  if (worldTopo) {
+    const features = topojson.feature(worldTopo, worldTopo.objects.countries).features;
+    const borders  = topojson.mesh(worldTopo, worldTopo.objects.countries, (a, b) => a !== b);
+
+    // Power heatmap overlay
+    if (showHeat) {
+      features.forEach(f => {
+        ctx.fillStyle = '#1a4a2e';
+        drawGeoFeature(f.geometry, true);
+      });
+      ACTORS.forEach(actor => {
+        const p = project(actor.lat, actor.lon);
+        if (p.z > 0) {
+          const grd = ctx.createRadialGradient(p.sx, p.sy, 0, p.sx, p.sy, r * 0.35);
+          grd.addColorStop(0, actor.color + '44');
+          grd.addColorStop(1, 'transparent');
+          ctx.fillStyle = grd;
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+      });
+    } else {
+      // Normal land
+      ctx.fillStyle = 'rgba(26,60,40,0.85)';
+      features.forEach(f => drawGeoFeature(f.geometry, true));
+    }
+
+    // Borders
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.lineWidth = 0.5;
+    drawGeoMesh(borders);
+  }
+
+  ctx.restore();
+
+  // Relationship arcs
+  if (showArcs) {
+    const arcColors = { conflict:'#ff3b3b', alliance:'#3dffaa', tension:'#ffd93d', economic:'#4e9eff', proxy:'#b94eff' };
+    const actorMap = {};
+    ACTORS.forEach(a => { actorMap[a.id] = a; });
+    RELATIONSHIPS.forEach(rel => {
+      const a = actorMap[rel.a], b = actorMap[rel.b];
+      if (!a || !b) return;
+      const col = arcColors[rel.type] || '#888';
+      const pa = project(a.lat, a.lon), pb = project(b.lat, b.lon);
+      if (pa.z > 0 || pb.z > 0)
+        drawArc(a.lat, a.lon, b.lat, b.lon, col, 1, 0.35);
+    });
+  }
+
+  // Cascade rings
+  if (showCasc && selected) {
+    const pSel = project(selected.lat, selected.lon);
+    if (pSel.z > 0) {
+      for (let ring = 1; ring <= 3; ring++) {
+        const phasedPulse = (pulse + ring * 0.8) % (Math.PI * 2);
+        const rScale = (ring / 3) * 0.45 + Math.sin(phasedPulse) * 0.05;
+        ctx.strokeStyle = `rgba(255,80,80,${0.3 - ring * 0.07})`;
+        ctx.lineWidth = 1.5 - ring * 0.3;
+        ctx.beginPath();
+        ctx.arc(pSel.sx, pSel.sy, r * rScale, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Globe rim
+  ctx.strokeStyle = 'rgba(78,158,255,0.25)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+
+  // Crisis pins
+  drawPins();
+}
+
+function drawPins() {
+  // Adjust pin limit based on zoom level (fewer pins when zoomed out for performance)
+  // zoom ranges from ~0.5 (zoomed out) to ~3.5 (zoomed in)
+  const zoomFactor = Math.max(0.3, Math.min(1.5, zoom / 2));  // Scale zoom to 0.3-1.5
+  const zoomAdjustedLimit = Math.max(5, Math.floor(crisisDisplayLimit * zoomFactor));
+
+  // Log zoom-based limiting for debugging
+  if (Math.abs(zoom - lastLoggedZoom) > 0.05 || lastLoggedLimit !== zoomAdjustedLimit) {
+    console.log(`📍 Pin limits: ${crisisDisplayLimit} crises × zoom(${zoom.toFixed(2)}) = ${zoomAdjustedLimit} visible pins`);
+    lastLoggedZoom = zoom;
+    lastLoggedLimit = zoomAdjustedLimit;
+  }
+
+  let visible = CRISES
+    .filter(c => activeTypes.has(c.type) && activeDomains.size > 0)
+    .slice(0, crisisDisplayLimit)  // Apply infinite scroll limit first
+    .map((c, arrayIndex) => {
+      // Backend returns events with confirmed city locations
+      const lat = c.lat || 0;
+      const lon = c.lon || 0;
+
+      return {
+        c,
+        lat, lon,
+        p: project(lat, lon),
+        city: c.country
+      };
+    })
+    .filter(({p}) => p.z > 0.04)
+    .sort((a,b) => a.p.z - b.p.z)
+    .slice(0, zoomAdjustedLimit);  // Apply zoom-based limit
+
+  // Group events by exact screen location to spread overlapping ones
+  const eventsByScreenLoc = {};
+  visible.forEach(({c, p}) => {
+    const locKey = `${Math.round(p.sx)},${Math.round(p.sy)}`;
+    if (!eventsByScreenLoc[locKey]) {
+      eventsByScreenLoc[locKey] = [];
+    }
+    eventsByScreenLoc[locKey].push({c, p});
+  });
+
+  // Apply screen-space offsets to spread events at same location (no re-projection needed)
+  visible = visible.map(({c, p, city}) => {
+    const locKey = `${Math.round(p.sx)},${Math.round(p.sy)}`;
+    const eventsAtLoc = eventsByScreenLoc[locKey];
+    const eventIndex = eventsAtLoc.findIndex(e => e.c.id === c.id);
+    const eventCount = eventsAtLoc.length;
+
+    let sx = p.sx;
+    let sy = p.sy;
+
+    // If multiple events at same screen location, spread them in a small circle
+    if (eventCount > 1) {
+      const angle = (eventIndex / eventCount) * Math.PI * 2;
+      const radius = 20;  // 20 pixels from center
+      sx = p.sx + Math.cos(angle) * radius;
+      sy = p.sy + Math.sin(angle) * radius;
+    }
+
+    return {
+      c,
+      p: {...p, sx, sy},
+      city
+    };
+  });
+
+  // Draw pins with simple screen positioning
+  visible.forEach(({c, p}, index) => {
+    const sx = p.sx;
+    const sy = p.sy;
+
+    // Store the actual screen position for click detection
+    c._screenX = sx;
+    c._screenY = sy;
+
+    const hover    = Math.hypot(mx - sx, my - sy) < 14;
+    const isActive = c.id === selected?.id;
+    const col      = TYPE_META[c.type]?.color || '#fff';
+    const r2       = hover || isActive ? 10 : 7;
+
+    ctx.shadowColor = col;
+    ctx.shadowBlur  = isActive ? 22 : hover ? 14 : 8;
+
+    ctx.fillStyle = col;
+    ctx.beginPath(); ctx.arc(sx, sy, r2, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Severity pulse ring
+    const pr = r2 + 4 + Math.sin(pulse) * 3;
+    ctx.strokeStyle = col + '66';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.arc(sx, sy, pr, 0, Math.PI * 2); ctx.stroke();
+
+    if (hover || isActive) {
+      ctx.fillStyle = 'rgba(7,9,15,0.95)';
+      const tw  = ctx.measureText(c.title).width + 14;
+      const tx  = Math.max(4, Math.min(sx - tw/2, canvas.width - tw - 4));
+      const ty  = sy - r2 - 18;
+      ctx.fillRect(tx - 1, ty - 13, tw + 2, 17);
+      ctx.strokeStyle = col + '88';
+      ctx.lineWidth = 0.8;
+      ctx.strokeRect(tx - 1, ty - 13, tw + 2, 17);
+      ctx.fillStyle = col;
+      ctx.font = 'bold 10px Segoe UI';
+      ctx.textAlign = 'center';
+      ctx.fillText(c.title, tx + tw/2, ty - 1);
+      ctx.textAlign = 'left';
+    }
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+// NETWORK GRAPH
+// ════════════════════════════════════════════════════════════
+
+function drawNetwork() {
+  const nc = document.getElementById('netCanvas');
+  const nw = nc.clientWidth; nc.width = nw;
+  const nh = parseInt(nc.getAttribute('height')) || 180; nc.height = nh;
+  const nx2 = nc.getContext('2d');
+
+  nx2.fillStyle = '#0a0d1a';
+  nx2.fillRect(0, 0, nw, nh);
+
+  const actorPos = {};
+  const count = ACTORS.length;
+  const cx = nw / 2, cy = nh / 2;
+  const rx = nw * 0.4, ry = nh * 0.4;
+
+  ACTORS.forEach((a, i) => {
+    const angle = (i / count) * Math.PI * 2 - Math.PI / 2;
+    actorPos[a.id] = {
+      x: cx + rx * Math.cos(angle),
+      y: cy + ry * Math.sin(angle),
+    };
+  });
+
+  const relColors = { conflict:'#ff3b3b', alliance:'#3dffaa', tension:'#ffd93d', economic:'#4e9eff', proxy:'#b94eff' };
+
+  // Edges
+  RELATIONSHIPS.forEach(rel => {
+    const pa = actorPos[rel.a], pb = actorPos[rel.b];
+    if (!pa || !pb) return;
+    nx2.strokeStyle = (relColors[rel.type] || '#888') + '88';
+    nx2.lineWidth = 1;
+    nx2.beginPath();
+    nx2.moveTo(pa.x, pa.y);
+    // Bezier through center
+    nx2.quadraticCurveTo(cx, cy, pb.x, pb.y);
+    nx2.stroke();
+  });
+
+  // Nodes
+  ACTORS.forEach(a => {
+    const pos = actorPos[a.id];
+    const isSelected = selected?.stakeholders?.includes(a.id);
+
+    nx2.fillStyle = a.color + (isSelected ? 'ff' : '99');
+    nx2.shadowColor = a.color;
+    nx2.shadowBlur = isSelected ? 10 : 4;
+    nx2.beginPath();
+    nx2.arc(pos.x, pos.y, isSelected ? 7 : 5, 0, Math.PI * 2);
+    nx2.fill();
+    nx2.shadowBlur = 0;
+
+    nx2.fillStyle = isSelected ? '#fff' : '#8899bb';
+    nx2.font = `bold ${isSelected ? 9 : 8}px Segoe UI`;
+    nx2.textAlign = 'center';
+    nx2.fillText(a.name, pos.x, pos.y - 10);
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+// UI: SELECTION & PANELS
+// ════════════════════════════════════════════════════════════
+
+function selectCrisis(crisis) {
+  selected = crisis;
+  document.getElementById('colRight').classList.add('open');
+  updateAllPanels();
+  updateEventsList();
+  drawNetwork();
+}
+
+function updateAllPanels() {
+  if (!selected) return;
+  const c = selected;
+  const tm = TYPE_META[c.type] || { color:'#888', name:'Unknown' };
+
+  // ── Overview ──
+  document.getElementById('emptyState').style.display = 'none';
+  const ov = document.getElementById('overviewContent');
+  ov.style.display = 'flex';
+
+  const badge = document.getElementById('ov-type-badge');
+  badge.textContent = tm.name;
+  badge.style.background = tm.color + '33';
+  badge.style.color = tm.color;
+  badge.style.border = `1px solid ${tm.color}55`;
+
+  const confEl = document.getElementById('ov-conf');
+  const confColor = c.confidence > 80 ? '#3dffaa' : c.confidence > 60 ? '#ffd93d' : '#ff8833';
+  confEl.textContent = `${c.confidence}% confidence`;
+  confEl.style.background = confColor + '18';
+  confEl.style.borderColor = confColor + '44';
+  confEl.style.color = confColor;
+
+  document.getElementById('ov-title').textContent = c.title;
+  document.getElementById('ov-date').textContent  = c.date;
+
+  const sevColor = c.severity > 80 ? '#ff3b3b' : c.severity > 60 ? '#ff8833' : '#ffd93d';
+  document.getElementById('ov-sev-bar').style.width = c.severity + '%';
+  document.getElementById('ov-sev-bar').style.background = sevColor;
+  document.getElementById('ov-sev-num').textContent = c.severity;
+  document.getElementById('ov-sev-num').style.color = sevColor;
+
+  const stEl = document.getElementById('ov-stakeholders');
+  const ACTOR_CLASS = { US:'us', CN:'cn', RU:'ru', EU:'eu' };
+  stEl.innerHTML = c.stakeholders.map(s => {
+    const cls = ACTOR_CLASS[s] || 'x';
+    const actorName = ACTORS.find(a => a.id === s)?.name || s;
+    return `<span class="tag ${cls}">${actorName}</span>`;
+  }).join('');
+
+  document.getElementById('ov-analysis').textContent = c.analysis;
+  document.getElementById('ov-impact').textContent   = c.impact;
+
+  if (c.analogy) {
+    const aEl = document.getElementById('ov-analogy');
+    aEl.innerHTML = `<div class="analogy-match">${c.analogy.match} <span class="analogy-pct">${c.analogy.pct}% match</span></div><div class="analogy-desc">${c.analogy.desc}</div>`;
+  }
+
+  // ── Forecast ──
+  document.getElementById('forecastEmpty').style.display = 'none';
+  const fc = document.getElementById('forecastContent');
+  fc.style.display = 'flex';
+  fc.innerHTML = c.forecasts.map(f => `
+    <div class="forecast-item">
+      <div class="forecast-q">${f.q}</div>
+      <div class="prob-bars">
+        <div class="prob-row">
+          <span class="prob-lbl">Unlikely</span>
+          <div class="prob-track"><div class="prob-fill" style="width:${f.low}%;background:#3dffaa"></div></div>
+          <span class="prob-pct" style="color:#3dffaa">${f.low}%</span>
+        </div>
+        <div class="prob-row">
+          <span class="prob-lbl">Possible</span>
+          <div class="prob-track"><div class="prob-fill" style="width:${f.mid}%;background:#ffd93d"></div></div>
+          <span class="prob-pct" style="color:#ffd93d">${f.mid}%</span>
+        </div>
+        <div class="prob-row">
+          <span class="prob-lbl">Likely</span>
+          <div class="prob-track"><div class="prob-fill" style="width:${f.high}%;background:#ff3b3b"></div></div>
+          <span class="prob-pct" style="color:#ff3b3b">${f.high}%</span>
+        </div>
+      </div>
+    </div>
+  `).join('');
+
+  // ── Domains ──
+  document.getElementById('domainsEmpty').style.display = 'none';
+  const dc = document.getElementById('domainsContent');
+  dc.style.display = 'flex';
+  dc.innerHTML = Object.entries(c.domains).map(([key, val]) => {
+    const d = DOMAINS[key];
+    const domColor = val > 75 ? '#ff3b3b' : val > 50 ? '#ff8833' : '#ffd93d';
+    return `
+      <div class="domain-row">
+        <span class="domain-icon">${d.icon}</span>
+        <span class="domain-name">${d.name}</span>
+        <div class="domain-bar-track"><div class="domain-bar-fill" style="width:${val}%;background:${domColor}"></div></div>
+        <span class="domain-score" style="color:${domColor}">${val}</span>
+      </div>
+    `;
+  }).join('');
+
+  // ── Cascade ──
+  const cc = document.getElementById('causalChain');
+  cc.innerHTML = (c.causal || []).map((step, i) => `
+    <div class="causal-step">
+      <span class="causal-num">${i + 1}</span>
+      <span class="causal-txt">${step}</span>
+    </div>
+  `).join('');
+}
+
+// ════════════════════════════════════════════════════════════
+// UI: FILTERS
+// ════════════════════════════════════════════════════════════
+
+let activeDomains = new Set(Object.keys(DOMAINS));
+let activeTypes   = new Set(Object.keys(TYPE_META));
+
+function buildChips() {
+  const dc = document.getElementById('domainChips');
+  Object.entries(DOMAINS).forEach(([key, d]) => {
+    const chip = document.createElement('div');
+    chip.className = 'chip on';
+    chip.style.color = d.color;
+    chip.style.borderColor = d.color + '66';
+    chip.style.background  = d.color + '18';
+    chip.innerHTML = `${d.icon} ${d.name}`;
+    chip.addEventListener('click', () => {
+      activeDomains.has(key) ? activeDomains.delete(key) : activeDomains.add(key);
+      chip.classList.toggle('on');
+      updateEventsList();
+    });
+    dc.appendChild(chip);
+  });
+
+  const tc = document.getElementById('typeChips');
+  Object.entries(TYPE_META).forEach(([key, t]) => {
+    const chip = document.createElement('div');
+    chip.className = 'chip on';
+    chip.style.color = t.color;
+    chip.style.borderColor = t.color + '66';
+    chip.style.background  = t.color + '18';
+    chip.textContent = t.name;
+    chip.addEventListener('click', () => {
+      activeTypes.has(key) ? activeTypes.delete(key) : activeTypes.add(key);
+      chip.classList.toggle('on');
+      updateEventsList();
+    });
+    tc.appendChild(chip);
+  });
+}
+
+function updateEventsList() {
+  const q    = document.getElementById('searchInput').value.toLowerCase();
+  const list = document.getElementById('eventsList');
+  list.innerHTML = '';
+  const filtered = CRISES
+    .filter(c => activeTypes.has(c.type))
+    .filter(c => c.title.toLowerCase().includes(q) || c.country.toLowerCase().includes(q));
+
+  document.getElementById('crisisCount').textContent = `${filtered.length} active`;
+
+  filtered.forEach(crisis => {
+    const el  = document.createElement('div');
+    el.className = 'evt-item' + (crisis.id === selected?.id ? ' sel' : '');
+    el.dataset.id = crisis.id;
+    const tm = TYPE_META[crisis.type] || {};
+    const sevCol = crisis.severity > 80 ? '#ff3b3b' : crisis.severity > 60 ? '#ff8833' : '#ffd93d';
+    el.innerHTML = `
+      <div class="evt-name">${crisis.title}</div>
+      <div class="evt-sub">
+        <span class="sev-badge" style="background:${sevCol}22;color:${sevCol};border:1px solid ${sevCol}55">${crisis.severity}</span>
+        <span style="color:${tm.color || '#888'}">${tm.name || ''}</span>
+        · ${crisis.country}
+      </div>
+    `;
+    el.addEventListener('click', () => selectCrisis(crisis));
+    list.appendChild(el);
+  });
+}
+
+function buildAlerts() {
+  const al = document.getElementById('alertsList');
+  ALERTS.forEach(a => {
+    const el = document.createElement('div');
+    el.className = 'alert-strip';
+    el.style.borderColor = a.color + '44';
+    el.style.background  = a.color + '11';
+    el.style.color       = a.color;
+    el.textContent       = a.text;
+    al.appendChild(el);
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+// TABS
+// ════════════════════════════════════════════════════════════
+
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    const id = tab.dataset.tab;
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('tab-' + id).classList.add('active');
+
+    // Update panels when switching tabs
+    if (id === 'network') drawNetwork();
+    if (id === 'reliability' && selected) updateReliabilityPanel(selected.reliability);
+    if (id === 'escalation' && selected) updateEscalationPanel(selected.escalation);
+    if (id === 'economic' && selected) updateEconomicPanel(selected.economic);
+    if (id === 'briefing' && selected) updateBriefingPanel(selected.briefing);
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// GLOBE CONTROLS
+// ════════════════════════════════════════════════════════════
+
+canvas.addEventListener('mousedown', e => { drag = true; lastMX = e.clientX; lastMY = e.clientY; });
+document.addEventListener('mouseup',  () => drag = false);
+document.addEventListener('mousemove', e => {
+  const rect = canvas.getBoundingClientRect();
+  mx = e.clientX - rect.left;
+  my = e.clientY - rect.top;
+  if (drag) {
+    rotY += (e.clientX - lastMX) * 0.007;
+    rotX += (e.clientY - lastMY) * 0.004;
+    rotX  = Math.max(-Math.PI/2, Math.min(Math.PI/2, rotX));
+    lastMX = e.clientX; lastMY = e.clientY;
+  }
+});
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const oldZoom = zoom;
+  zoom = Math.max(0.5, Math.min(3.5, zoom - e.deltaY * 0.001));
+  if (Math.abs(zoom - oldZoom) > 0.01) {  // Only log if zoom actually changed
+    console.log(`🔍 Zoom: ${oldZoom.toFixed(2)} → ${zoom.toFixed(2)}`);
+  }
+}, { passive: false });
+canvas.addEventListener('click', e => {
+  const rect = canvas.getBoundingClientRect();
+  const emx = e.clientX - rect.left, emy = e.clientY - rect.top;
+
+  // Use the stored screen positions from the last frame's drawPins()
+  for (const crisis of CRISES) {
+    if (!activeTypes.has(crisis.type)) continue;
+    const p = project(crisis.lat, crisis.lon);
+    if (p.z > 0.04) {
+      // Check distance to the stored screen position (which includes offset)
+      const sx = crisis._screenX !== undefined ? crisis._screenX : p.sx;
+      const sy = crisis._screenY !== undefined ? crisis._screenY : p.sy;
+      if (Math.hypot(emx - sx, emy - sy) < 14) {
+        selectCrisis(crisis);
+        return;
+      }
+    }
+  }
+});
+
+document.getElementById('resetBtn').addEventListener('click', () => { rotX = 0.25; rotY = 0; zoom = 1; });
+document.getElementById('arcBtn').addEventListener('click', function() {
+  showArcs = !showArcs;
+  this.classList.toggle('active', !showArcs);
+});
+document.getElementById('heatBtn').addEventListener('click', function() {
+  showHeat = !showHeat;
+  this.classList.toggle('active', showHeat);
+});
+document.getElementById('cascBtn').addEventListener('click', function() {
+  showCasc = !showCasc;
+  this.classList.toggle('active', showCasc);
+});
+
+document.getElementById('simBtn').addEventListener('click', function() {
+  if (!selected) { this.textContent = '⚠️ Select a crisis first'; return; }
+  cascadeActive = !cascadeActive;
+  showCasc = cascadeActive;
+  document.getElementById('cascBtn').classList.toggle('active', cascadeActive);
+  this.classList.toggle('active', cascadeActive);
+  this.textContent = cascadeActive ? '⏹ Stop Simulation' : '⚡ Simulate Escalation';
+
+  const res = document.getElementById('cascadeResults');
+  if (cascadeActive && selected.cascade) {
+    res.style.display = 'flex';
+    res.innerHTML = selected.cascade.map((item, i) => `
+      <div class="causal-step" style="border-left:2px solid #ff555544;animation:fadein .3s ${i*0.1}s both">
+        <span class="causal-num" style="color:#ff8888">→</span>
+        <span class="causal-txt">${item}</span>
+      </div>
+    `).join('');
+  } else {
+    res.style.display = 'none';
+  }
+});
+
+// Timeline
+const timeSlider = document.getElementById('timeSlider');
+const yearLabel  = document.getElementById('yearLabel');
+timeSlider.addEventListener('input', () => {
+  currentYear = 2020 + Math.round(parseInt(timeSlider.value) / 100 * 6);
+  yearLabel.textContent = currentYear;
+});
+
+document.getElementById('playBtn').addEventListener('click', function() {
+  playing = !playing;
+  this.textContent = playing ? '⏸' : '▶';
+  if (playing) animateTimeline();
+});
+
+function animateTimeline() {
+  if (!playing) return;
+  let v = parseInt(timeSlider.value) + playDir;
+  if (v >= 100 || v <= 0) playDir *= -1;
+  timeSlider.value = v;
+  currentYear = 2020 + Math.round(v / 100 * 6);
+  yearLabel.textContent = currentYear;
+  setTimeout(animateTimeline, 80);
+}
+
+// Search
+document.getElementById('searchInput').addEventListener('input', updateEventsList);
+
+// Infinite scroll - load more crises when scrolling down
+setTimeout(() => {
+  const eventsList = document.getElementById('eventsList');
+  if (eventsList) {
+    eventsList.addEventListener('scroll', (e) => {
+      // Check if user scrolled near bottom
+      const scrollPos = eventsList.scrollTop + eventsList.clientHeight;
+      const scrollHeight = eventsList.scrollHeight;
+      const threshold = 50; // pixels from bottom
+
+      if (scrollHeight - scrollPos < threshold && scrollHeight > 0) {
+        // User scrolled near bottom - load more crises
+        const oldLimit = crisisDisplayLimit;
+        crisisDisplayLimit = Math.min(crisisDisplayLimit + 25, CRISES.length);
+        console.log(`📜 Infinite scroll: ${oldLimit} → ${crisisDisplayLimit} crises`);
+        updateEventsList();
+        drawGlobe();
+      }
+    });
+  }
+}, 100);
+
+// Sidebar toggle
+const colLeft = document.getElementById('colLeft');
+const sidebarToggle = document.getElementById('sidebarToggle');
+sidebarToggle.addEventListener('click', () => {
+  colLeft.classList.toggle('collapsed');
+  sidebarToggle.textContent = colLeft.classList.contains('collapsed') ? '▶' : '◀';
+});
+
+// Right panel open/close
+const colRight = document.getElementById('colRight');
+document.getElementById('panelClose').addEventListener('click', () => {
+  colRight.classList.remove('open');
+});
+
+// ════════════════════════════════════════════════════════════
+// ANIMATION LOOP
+// ════════════════════════════════════════════════════════════
+
+function loop() {
+  drawGlobe();
+  requestAnimationFrame(loop);
+}
+
+// ════════════════════════════════════════════════════════════
+// DATA FILTERING
+// ════════════════════════════════════════════════════════════
+
+function filterRecentEvents(crises, hoursOld = 72) {
+  const cutoffTime = new Date(Date.now() - hoursOld * 60 * 60 * 1000);
+  return crises.filter(c => {
+    try {
+      const crisisDate = new Date(c.date || c.date_start);
+      return crisisDate > cutoffTime;
+    } catch (e) {
+      // If date parsing fails, include the event (assume it's recent)
+      return true;
+    }
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+// DATA LOADING FROM BACKEND
+// ════════════════════════════════════════════════════════════
+
+async function loadRealData() {
+  try {
+    console.log('Attempting to connect to backend API...');
+
+    // Check if backend is available
+    const healthCheck = await GeoIntelAPI.healthCheck();
+    if (!healthCheck.status || healthCheck.status !== 'ok') {
+      throw new Error('Backend health check failed');
+    }
+
+    console.log('Backend connected successfully');
+
+    // Load crises data
+    const crisisResult = await GeoIntelAPI.getCrises({ days: 365, min_severity: 0 });
+    if (crisisResult.error) {
+      throw new Error(`Failed to load crises: ${crisisResult.error}`);
+    }
+    if (crisisResult.crises && Array.isArray(crisisResult.crises)) {
+      // Transform API response to match frontend format
+      let transformedCrises = crisisResult.crises.map(c => ({
+        id: c.id,
+        type: c.type,
+        title: c.title,
+        country: c.country,
+        lat: c.lat,
+        lon: c.lon,
+        severity: c.severity,
+        confidence: c.confidence,
+        date: c.date || 'Recent',
+        date_start: c.date, // Keep for filtering
+        analysis: c.analysis || '',
+        impact: c.impact || '',
+        stakeholders: Array.isArray(c.stakeholders) ? c.stakeholders : [],
+        domains: c.domains || { military: 50, economic: 50, political: 50, environment: 50, technology: 50, information: 50 },
+        forecasts: [], // Will be loaded when selected
+        cascade: [],
+        causal: [],
+        analogy: null,
+      }));
+
+      // Filter to only show events from last 7 days (for global coverage)
+      const recentCrises = filterRecentEvents(transformedCrises, 168);
+      const removedCount = transformedCrises.length - recentCrises.length;
+      if (removedCount > 0) {
+        console.log(`Filtered out ${removedCount} events older than 72 hours`);
+      }
+
+      CRISES = recentCrises;
+      console.log(`✅ Loaded ${CRISES.length} crises from backend (last 7 days - global coverage)`);
+    }
+
+    // Load actors data
+    const actorResult = await GeoIntelAPI.getActors();
+    if (!actorResult.error && actorResult.actors) {
+      ACTORS = actorResult.actors.map(a => ({
+        id: a.id,
+        name: a.name,
+        color: a.color,
+        lat: a.lat,
+        lon: a.lon,
+      }));
+      console.log(`Loaded ${ACTORS.length} actors from backend`);
+    }
+
+    // Load relationships data
+    const relResult = await GeoIntelAPI.getRelationships();
+    if (!relResult.error && relResult.relationships) {
+      RELATIONSHIPS = relResult.relationships.map(r => ({
+        a: r.a,
+        b: r.b,
+        type: r.type,
+        label: r.label || '',
+      }));
+      console.log(`Loaded ${RELATIONSHIPS.length} relationships from backend`);
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Backend connection failed:', error.message);
+    // Show user-facing alert
+    const alertEl = document.createElement('div');
+    alertEl.style.cssText = 'position:fixed;top:10px;right:10px;background:#ff3b3b33;border:1px solid #ff3b3b66;color:#ff8888;padding:10px 15px;border-radius:6px;z-index:1000;font-size:12px;max-width:300px;';
+    alertEl.innerHTML = `<strong>⚠️ Backend Unavailable</strong><br>Run <code style="background:#000;padding:2px 5px;border-radius:3px;">python app.py</code> from the backend/ directory to enable real data.`;
+    document.body.appendChild(alertEl);
+    console.warn('Proceeding with fallback data (not implemented - will use placeholder)');
+    return false;
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+// WEBSOCKET REAL-TIME EVENTS
+// ════════════════════════════════════════════════════════════
+
+let socket = null;
+
+function connectToEventStream() {
+  try {
+    // Connect to WebSocket event stream
+    socket = io('http://localhost:5000', {
+      transports: ['websocket'],
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      reconnectionAttempts: 5
+    });
+
+    socket.on('connect', () => {
+      console.log('✅ Connected to real-time event stream');
+      socket.emit('subscribe', { watch_list: 'all' });
+    });
+
+    socket.on('new_crisis', (data) => {
+      const crisis = data.crisis;
+      console.log('🔴 BREAKING:', crisis.title);
+      showBreakingAlert(crisis);
+      const idx = CRISES.findIndex(c => c.id === crisis.id);
+      if (idx >= 0) CRISES[idx] = crisis;
+      else CRISES.unshift(crisis);
+      updateEventsList();
+      drawGlobe();
+    });
+
+    socket.on('error', (err) => console.warn('Socket error:', err));
+  } catch (e) {
+    console.warn('WebSocket unavailable:', e);
+  }
+}
+
+function showBreakingAlert(crisis) {
+  const alert = document.getElementById('breakingAlert');
+  document.getElementById('alertTitle').textContent = crisis.title;
+  document.getElementById('alertLoc').textContent = crisis.country;
+  alert.style.display = 'block';
+  alert.classList.remove('dismissing');
+  setTimeout(() => { alert.classList.add('dismissing'); setTimeout(() => { alert.style.display = 'none'; }, 300); }, 8000);
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator(), gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = 800;
+    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.5);
+  } catch (e) {}
+}
+
+async function loadReliabilityData(id) { try { const r = await fetch(`http://localhost:5000/api/crises/${id}/reliability`); return r.ok ? await r.json() : null; } catch (e) { return null; } }
+async function loadEscalationData(id) { try { const r = await fetch(`http://localhost:5000/api/crises/${id}/escalation`); return r.ok ? await r.json() : null; } catch (e) { return null; } }
+async function loadEconomicData(id) { try { const r = await fetch(`http://localhost:5000/api/crises/${id}/economic`); return r.ok ? await r.json() : null; } catch (e) { return null; } }
+async function loadBriefing(id) { try { const r = await fetch(`http://localhost:5000/api/crises/${id}/briefing`); return r.ok ? await r.json() : null; } catch (e) { return null; } }
+
+function updateReliabilityPanel(rel) {
+  const content = document.getElementById('reliabilityContent');
+  const empty = document.getElementById('reliabilityEmpty');
+
+  if (!rel) {
+    if (content) content.style.display = 'none';
+    if (empty) empty.style.display = 'flex';
+    return;
+  }
+
+  if (empty) empty.style.display = 'none';
+  if (content) content.style.display = 'flex';
+
+  const statusMap = {
+    'verified': '🟢 Verified by 3+ sources',
+    'corroborated': '🟡 Corroborated by 2+ sources',
+    'reported': '🟠 Reported by 1 source',
+    'unverified': '🔴 Unverified',
+    'unknown': '❓ No source data yet'
+  };
+
+  const statusEl = document.getElementById('rel-status');
+  if (statusEl) {
+    statusEl.textContent = statusMap[rel.reliability] || rel.reliability;
+    statusEl.className = `source-badge ${rel.reliability}`;
+  }
+
+  const scoreBar = document.getElementById('rel-score-bar');
+  if (scoreBar) {
+    scoreBar.style.width = (rel.score || 0) + '%';
+    scoreBar.style.background = rel.score >= 80 ? '#3dffaa' : rel.score >= 60 ? '#ffd93d' : rel.score > 0 ? '#ff8833' : '#666';
+  }
+
+  const scoreNum = document.getElementById('rel-score-num');
+  if (scoreNum) scoreNum.textContent = (rel.score || 0) + '/100';
+
+  const sourcesEl = document.getElementById('rel-sources');
+  if (sourcesEl) {
+    if (rel.sources && rel.sources.length > 0) {
+      sourcesEl.innerHTML = rel.sources.map(s => `<span class="source-badge ${rel.reliability}">${s}</span>`).join('');
+    } else {
+      sourcesEl.innerHTML = '<span style="color:#888;font-size:10px;font-style:italic;">Sources will appear as news articles are aggregated</span>';
+    }
+  }
+}
+
+function updateEscalationPanel(esc) {
+  const content = document.getElementById('escalationContent');
+  const empty = document.getElementById('escalationEmpty');
+
+  if (!esc || !esc.trend) {
+    if (content) content.style.display = 'none';
+    if (empty) empty.style.display = 'flex';
+    return;
+  }
+
+  if (empty) empty.style.display = 'none';
+  if (content) content.style.display = 'flex';
+
+  const trendMap = {
+    'escalating': '📈 ESCALATING',
+    'de-escalating': '📉 DE-ESCALATING',
+    'stable': '➡️ STABLE',
+    'new': '✨ NEW'
+  };
+
+  const trendEl = document.getElementById('esc-trend');
+  if (trendEl) {
+    trendEl.textContent = trendMap[esc.trend] || esc.trend;
+    trendEl.className = 'trend-' + esc.trend.replace(' ', '-');
+  }
+
+  const warningEl = document.getElementById('esc-warning');
+  if (warningEl) {
+    if (esc.warning) {
+      warningEl.style.display = 'block';
+      warningEl.textContent = esc.warning;
+    } else {
+      warningEl.style.display = 'none';
+    }
+  }
+
+  const changeColor = esc.severity_change > 0 ? '#ff3b3b' : esc.severity_change < 0 ? '#3dffaa' : '#ffd93d';
+  const changeEl = document.getElementById('esc-change');
+  if (changeEl) {
+    changeEl.textContent = (esc.severity_change > 0 ? '+' : '') + (esc.severity_change || 0) + ' pts';
+    changeEl.style.color = changeColor;
+  }
+
+  const velocityEl = document.getElementById('esc-velocity');
+  if (velocityEl) {
+    velocityEl.textContent = (esc.velocity > 0 ? '+' : '') + (esc.velocity || 0) + ' pts/day';
+    velocityEl.style.color = esc.velocity > 0 ? '#ff3b3b' : esc.velocity < 0 ? '#3dffaa' : '#ffd93d';
+  }
+
+  if (esc.history && esc.history.length > 0) {
+    const chartCanvas = document.getElementById('escalationChart');
+    if (chartCanvas) drawEscalationChart(chartCanvas, esc.history);
+  }
+}
+
+function drawEscalationChart(canvas, history) {
+  if (!canvas || !history || history.length === 0) return;
+
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+
+  // Clear
+  ctx.fillStyle = '#0a0d1a';
+  ctx.fillRect(0, 0, w, h);
+
+  // Draw background grid
+  ctx.strokeStyle = 'rgba(78,158,255,0.1)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = (h / 4) * i;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+    ctx.stroke();
+  }
+
+  // Draw line chart
+  const severities = history.map(h => h.severity);
+  const maxSev = Math.max(...severities, 100);
+  const minSev = Math.min(...severities, 0);
+  const range = maxSev - minSev || 1;
+
+  ctx.strokeStyle = '#4e9eff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+
+  history.forEach((point, i) => {
+    const x = (i / (history.length - 1 || 1)) * (w - 10) + 5;
+    const y = h - 10 - ((point.severity - minSev) / range) * (h - 20);
+
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  // Draw points
+  ctx.fillStyle = '#4e9eff';
+  history.forEach((point, i) => {
+    const x = (i / (history.length - 1 || 1)) * (w - 10) + 5;
+    const y = h - 10 - ((point.severity - minSev) / range) * (h - 20);
+    ctx.beginPath();
+    ctx.arc(x, y, 3, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // Draw border
+  ctx.strokeStyle = 'rgba(78,158,255,0.3)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0, 0, w, h);
+}
+
+function updateEconomicPanel(eco) {
+  const c = document.getElementById('economicContent'), e = document.getElementById('economicEmpty');
+  if (!eco) { c.style.display='none'; e.style.display='flex'; return; }
+  e.style.display='none'; c.style.display='flex';
+  const col = eco.impact_severity==='severe'?'#ff3b3b':eco.impact_severity==='significant'?'#ff8833':eco.impact_severity==='moderate'?'#ffd93d':'#3dffaa';
+  const se = document.getElementById('econ-severity');
+  se.textContent = eco.impact_severity.toUpperCase();
+  se.style.color = col;
+  document.getElementById('econ-sectors').innerHTML = eco.estimated_impact.industry_sectors_affected.map(s=>`<span class="sector-tag">${s}</span>`).join('');
+  const est = eco.estimated_impact;
+  document.getElementById('econ-estimates').innerHTML = `<div>Trade: ~${est.trade_disruption_percent}%</div><div>Volatility: ~${est.market_volatility_percent}%</div>`;
+}
+
+function updateBriefingPanel(br) {
+  const c = document.getElementById('briefingContent'), e = document.getElementById('briefingEmpty');
+  if (!br) { c.style.display='flex'; e.style.display='none'; document.getElementById('briefing-loading').style.display='none'; document.getElementById('briefing-text').style.display='none'; return; }
+  e.style.display='none'; c.style.display='flex'; document.getElementById('briefing-loading').style.display='none';
+  document.getElementById('briefing-text').style.display='block';
+  document.getElementById('briefing-text').textContent = br.briefing;
+}
+
+// Enhanced selectCrisis with all new data
+const originalSelectCrisis = selectCrisis;
+selectCrisis = async function(crisis) {
+  selected = crisis;
+  document.getElementById('colRight').classList.add('open');
+
+  if (!crisis.forecasts || crisis.forecasts.length === 0) {
+    try {
+      const fr = await GeoIntelAPI.getForecasts(crisis.id);
+      if (!fr.error && fr.forecasts) {
+        crisis.forecasts = fr.forecasts.map(f => ({ q:f.q, low:f.low, mid:f.mid, high:f.high }));
+      }
+    } catch (e) {}
+  }
+
+  if (!crisis.news) {
+    try {
+      const nr = await GeoIntelAPI.getNews({ crisis_id: crisis.id, days: 30, limit: 5 });
+      if (!nr.error && nr.articles) { crisis.news = nr.articles; }
+    } catch (e) {}
+  }
+
+  if (!crisis.reliability) { crisis.reliability = await loadReliabilityData(crisis.id); }
+  if (!crisis.escalation) { crisis.escalation = await loadEscalationData(crisis.id); }
+  if (!crisis.economic) { crisis.economic = await loadEconomicData(crisis.id); }
+  if (!crisis.briefing) {
+    document.getElementById('briefing-loading').style.display = 'block';
+    crisis.briefing = await loadBriefing(crisis.id);
+  }
+
+  updateAllPanels();
+  updateReliabilityPanel(crisis.reliability);
+  updateEscalationPanel(crisis.escalation);
+  updateEconomicPanel(crisis.economic);
+  updateBriefingPanel(crisis.briefing);
+  updateEventsList();
+  drawNetwork();
+};
+
+// ════════════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════════════
+
+async function initApp() {
+  buildChips();
+  buildAlerts();
+
+  // Connect to real-time event stream
+  console.log('Connecting to real-time event stream...');
+  connectToEventStream();
+
+  // Load data from backend, with graceful fallback
+  const backendAvailable = await loadRealData();
+
+  // If no backend data loaded, ensure we have data to work with
+  if (!CRISES || CRISES.length === 0) {
+    console.log('Using minimal fallback data');
+    CRISES = [];
+    ACTORS = [];
+    RELATIONSHIPS = [];
+  }
+
+  updateEventsList();
+  drawNetwork();
+
+  fetch('countries-110m.json')
+    .then(r => r.json())
+    .then(data => { worldTopo = data; })
+    .catch(err => console.error('Map data error:', err));
+}
+
+// Auto-refresh data every hour
+setInterval(async () => {
+  console.log('Auto-refreshing data from backend...');
+  await loadRealData();
+  updateEventsList();
+  drawNetwork();
+}, 3600000); // 1 hour in milliseconds
+
+// Start the app
+initApp().then(() => {
+  loop();
+}).catch(err => {
+  console.error('App initialization error:', err);
+  loop(); // Still start the loop even if init fails
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Three.js Test</title>
+</head>
+<body>
+    <h1>Three.js Loading Test</h1>
+    <div id="status"></div>
+
+    <script src="https://unpkg.com/three@r128/build/three.min.js"></script>
+    <script>
+        const status = document.getElementById('status');
+
+        if (typeof THREE !== 'undefined') {
+            status.innerHTML = '<p style="color: green;">✓ Three.js loaded successfully!</p>';
+            status.innerHTML += '<p>THREE version detected: ' + THREE.REVISION + '</p>';
+        } else {
+            status.innerHTML = '<p style="color: red;">✗ Three.js failed to load</p>';
+        }
+    </script>
+</body>
+</html>

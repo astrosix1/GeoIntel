@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Test API Connection</title>
+<style>
+body { font-family: monospace; background: #222; color: #0f0; padding: 20px; }
+.good { color: #0f0; }
+.bad { color: #f00; }
+</style>
+</head>
+<body>
+
+<h2>Testing GeoIntel API Connection</h2>
+<div id="output"></div>
+
+<script src="frontend-api.js"></script>
+<script>
+async function test() {
+  const out = document.getElementById('output');
+
+  out.innerHTML += '<p>1. Testing health check...</p>';
+  try {
+    const health = await GeoIntelAPI.healthCheck();
+    if (health.status === 'ok') {
+      out.innerHTML += '<p class="good">[OK] Backend is running</p>';
+    } else {
+      out.innerHTML += '<p class="bad">[FAIL] Health check failed</p>';
+      return;
+    }
+  } catch (e) {
+    out.innerHTML += `<p class="bad">[ERROR] ${e.message}</p>`;
+    return;
+  }
+
+  out.innerHTML += '<p>2. Fetching crises...</p>';
+  try {
+    const result = await GeoIntelAPI.getCrises({ days: 365 });
+    if (result.error) {
+      out.innerHTML += `<p class="bad">[ERROR] ${result.error}</p>`;
+    } else {
+      out.innerHTML += `<p class="good">[OK] Got ${result.crises.length} crises</p>`;
+      result.crises.slice(0, 3).forEach(c => {
+        out.innerHTML += `<p>&nbsp;&nbsp;- ${c.title} (${c.country}, severity: ${c.severity})</p>`;
+      });
+    }
+  } catch (e) {
+    out.innerHTML += `<p class="bad">[ERROR] ${e.message}</p>`;
+  }
+}
+
+test();
+</script>
+
+</body>
+</html>

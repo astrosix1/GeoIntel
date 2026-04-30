@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Event Globe</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .container {
+            display: flex;
+            height: 100vh;
+            gap: 12px;
+            padding: 12px;
+        }
+
+        /* ── Sidebar ── */
+        .sidebar {
+            width: 300px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .sidebar-header {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 18px 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(102,126,234,0.4);
+        }
+
+        .sidebar-header h1 { font-size: 22px; font-weight: 700; }
+        .sidebar-header p  { font-size: 12px; opacity: 0.8; margin-top: 2px; }
+
+        .sidebar-box {
+            background: rgba(255,255,255,0.95);
+            border-radius: 12px;
+            padding: 16px;
+            flex: 1;
+            overflow-y: auto;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        }
+
+        .sidebar-box h3 {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #888;
+            margin-bottom: 12px;
+        }
+
+        .search input {
+            width: 100%;
+            padding: 9px 12px;
+            border: 1.5px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 13px;
+            outline: none;
+            transition: border-color .2s;
+        }
+
+        .search input:focus { border-color: #667eea; }
+
+        .filters label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 0;
+            font-size: 13px;
+            cursor: pointer;
+            color: #444;
+        }
+
+        .dot {
+            width: 10px; height: 10px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .event-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-bottom: 6px;
+            transition: background .15s;
+            border-left: 3px solid transparent;
+        }
+
+        .event-item:hover { background: #f5f5f5; }
+        .event-item.active { background: #eef2ff; border-left-color: #667eea; }
+
+        .event-item .dot { width: 8px; height: 8px; flex-shrink: 0; }
+        .event-name { font-size: 13px; font-weight: 600; color: #222; }
+        .event-country { font-size: 11px; color: #888; }
+
+        /* ── Globe ── */
+        .globe-wrap {
+            flex: 1;
+            background: rgba(255,255,255,0.06);
+            border-radius: 16px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        }
+
+        canvas { display: block; width: 100%; height: 100%; }
+
+        .hint {
+            position: absolute;
+            bottom: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.5);
+            color: rgba(255,255,255,0.7);
+            font-size: 11px;
+            padding: 5px 12px;
+            border-radius: 20px;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+
+        /* ── Info Panel ── */
+        .info-panel {
+            width: 280px;
+            background: rgba(255,255,255,0.95);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .info-empty {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            color: #bbb;
+            gap: 8px;
+        }
+
+        .info-empty svg { opacity: .35; }
+        .info-empty p { font-size: 13px; line-height: 1.5; }
+
+        .info-card { display: none; }
+        .info-card.active { display: block; }
+
+        .info-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .5px;
+            color: white;
+            margin-bottom: 10px;
+        }
+
+        .info-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1a1a2e;
+            margin-bottom: 6px;
+        }
+
+        .info-meta {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 12px;
+        }
+
+        .info-desc {
+            font-size: 13px;
+            color: #444;
+            line-height: 1.6;
+            padding: 12px;
+            background: #f8f8f8;
+            border-radius: 8px;
+        }
+
+        .legend {
+            border-top: 1px solid #eee;
+            padding-top: 12px;
+        }
+
+        .legend h4 { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #888; margin-bottom: 8px; }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: #555;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <h1>🌍 Event Globe</h1>
+            <p>Global Events Dashboard</p>
+        </div>
+
+        <div class="sidebar-box search">
+            <h3>Search</h3>
+            <input type="text" id="searchInput" placeholder="Search events or countries…">
+        </div>
+
+        <div class="sidebar-box filters" id="filterBox">
+            <h3>Categories</h3>
+        </div>
+
+        <div class="sidebar-box" style="flex:2">
+            <h3>Active Events</h3>
+            <div id="eventsList"></div>
+        </div>
+    </aside>
+
+    <!-- Globe -->
+    <div class="globe-wrap">
+        <canvas id="canvas"></canvas>
+        <div class="hint">Drag to rotate • Scroll to zoom</div>
+    </div>
+
+    <!-- Info Panel -->
+    <div class="info-panel">
+        <div class="info-empty" id="infoEmpty">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#667eea" stroke-width="1.5">
+                <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/>
+                <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            <p>Click on a <strong>coloured pin</strong> or an event in the list to see details</p>
+        </div>
+        <div class="info-card" id="infoCard">
+            <div id="infoBadge" class="info-badge"></div>
+            <div id="infoTitle" class="info-title"></div>
+            <div id="infoMeta" class="info-meta"></div>
+            <div id="infoDesc" class="info-desc"></div>
+        </div>
+        <div class="legend">
+            <h4>Legend</h4>
+            <div class="legend-item"><span class="dot" style="background:#ff4444"></span> Natural Disaster</div>
+            <div class="legend-item"><span class="dot" style="background:#4488ff"></span> Conference</div>
+            <div class="legend-item"><span class="dot" style="background:#ffcc00"></span> Protest</div>
+            <div class="legend-item"><span class="dot" style="background:#44dd77"></span> Festival</div>
+        </div>
+    </div>
+</div>
+
+<script src="topojson.min.js"></script>
+<script>
+// ─────────────────────────────────────────────
+// DATA
+// ─────────────────────────────────────────────
+const EVENTS = [
+    { id:1,  title:'Tech Conference 2026',     category:'conference', lat: 37.77, lon:-122.42, country:'United States',    date:'Apr 20 2026', desc:'Annual technology summit bringing together innovators to discuss the future of AI.' },
+    { id:2,  title:'Mt Fuji Earthquake',        category:'disaster',   lat: 35.36, lon: 138.73, country:'Japan',            date:'Apr 15 2026', desc:'Moderate earthquake detected near Mount Fuji. Authorities monitoring volcanic activity.' },
+    { id:3,  title:'London Music Festival',     category:'festival',   lat: 51.51, lon:  -0.13, country:'United Kingdom',   date:'May 1 2026',  desc:'International music festival featuring artists from around the world.' },
+    { id:4,  title:'Climate Action Rally',      category:'protest',    lat: 52.52, lon:  13.41, country:'Germany',          date:'Apr 22 2026', desc:'Large-scale protest demanding stronger climate policies.' },
+    { id:5,  title:'Sydney Food Expo',          category:'festival',   lat:-33.87, lon: 151.21, country:'Australia',        date:'Apr 25 2026', desc:'Culinary showcase featuring chefs from across the Asia-Pacific region.' },
+    { id:6,  title:'Amazon Flooding Crisis',    category:'disaster',   lat: -3.47, lon: -62.22, country:'Brazil',           date:'Apr 10 2026', desc:'Severe flooding affecting communities in the Amazon region.' },
+    { id:7,  title:'Dubai Innovation Summit',   category:'conference', lat: 25.20, lon:  55.27, country:'United Arab Emirates', date:'May 5 2026', desc:'International conference on renewable energy and smart city technologies.' },
+    { id:8,  title:'Singapore Marathon',        category:'festival',   lat:  1.35, lon: 103.82, country:'Singapore',        date:'Apr 28 2026', desc:'Annual marathon with over 50,000 participants worldwide.' },
+    { id:9,  title:'Mt Merapi Eruption Alert',  category:'disaster',   lat: -7.54, lon: 110.44, country:'Indonesia',        date:'Apr 14 2026', desc:'Volcano shows increased activity. Evacuation plans being prepared.' },
+    { id:10, title:'Paris Fashion Week',        category:'festival',   lat: 48.86, lon:   2.35, country:'France',           date:'May 10 2026', desc:'Premier fashion showcase from top houses and emerging designers.' }
+];
+
+const CAT_COLORS = {
+    disaster:'#ff4444', conference:'#4488ff', protest:'#ffcc00', festival:'#44dd77'
+};
+
+// ─────────────────────────────────────────────
+// GLOBE STATE
+// ─────────────────────────────────────────────
+const canvas = document.getElementById('canvas');
+const ctx    = canvas.getContext('2d');
+
+let rotX = 0.3, rotY = 0;        // tilt & spin
+let zoom = 1;
+let drag = false, lastMX = 0, lastMY = 0;
+let mouseCanvasX = -999, mouseCanvasY = -999;
+let worldTopo = null;
+let activeId  = null;
+
+function getR() { return (Math.min(canvas.width, canvas.height) / 2 - 50) * zoom; }
+function getCX(){ return canvas.width  / 2; }
+function getCY(){ return canvas.height / 2; }
+
+// ─────────────────────────────────────────────
+// PROJECTION  (orthographic)
+// ─────────────────────────────────────────────
+function project(lat, lon) {
+    const phi   = lat * Math.PI / 180;
+    const lam   = lon * Math.PI / 180;
+    const cosP  = Math.cos(phi);
+
+    // Rotate around Y axis (lon) then X axis (tilt)
+    let x = cosP * Math.sin(lam + rotY);
+    let y = Math.sin(phi) * Math.cos(rotX) - cosP * Math.cos(lam + rotY) * Math.sin(rotX);
+    let z = Math.sin(phi) * Math.sin(rotX) + cosP * Math.cos(lam + rotY) * Math.cos(rotX);
+
+    const R = getR();
+    return { sx: getCX() + R * x, sy: getCY() - R * y, z };
+}
+
+// ─────────────────────────────────────────────
+// DRAW
+// ─────────────────────────────────────────────
+function drawGlobe() {
+    canvas.width  = canvas.clientWidth;
+    canvas.height = canvas.clientHeight;
+
+    const R  = getR();
+    const cx = getCX(), cy = getCY();
+
+    // Dark space background
+    ctx.fillStyle = '#0d1b2a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Atmosphere glow
+    const atm = ctx.createRadialGradient(cx, cy, R * 0.95, cx, cy, R * 1.15);
+    atm.addColorStop(0, 'rgba(100,160,255,0.15)');
+    atm.addColorStop(1, 'rgba(100,160,255,0)');
+    ctx.fillStyle = atm;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R * 1.15, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Ocean
+    const oceanGrad = ctx.createRadialGradient(cx - R*0.3, cy - R*0.3, R*0.1, cx, cy, R);
+    oceanGrad.addColorStop(0, '#1a6fa8');
+    oceanGrad.addColorStop(1, '#0d3d6b');
+    ctx.fillStyle = oceanGrad;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Clip to globe
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.clip();
+
+    // Country fills + borders
+    if (worldTopo) {
+        const countries = topojson.feature(worldTopo, worldTopo.objects.countries).features;
+        const borders   = topojson.mesh(worldTopo, worldTopo.objects.countries, (a, b) => a !== b);
+
+        // Fill land
+        ctx.fillStyle = '#2d6a3f';
+        countries.forEach(f => drawGeoFeature(f.geometry, true));
+
+        // Country borders
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+        ctx.lineWidth = 0.6;
+        drawGeoMesh(borders);
+    }
+
+    ctx.restore();
+
+    // Globe rim
+    ctx.strokeStyle = 'rgba(100,180,255,0.4)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Event pins
+    drawPins();
+}
+
+function drawGeoFeature(geometry, fill) {
+    if (!geometry) return;
+    const draw = (ring) => {
+        let started = false;
+        for (let i = 0; i < ring.length; i++) {
+            const [lon, lat] = ring[i];
+            const p = project(lat, lon);
+            if (p.z < 0) { if (started) { fill ? ctx.fill() : ctx.stroke(); started = false; } continue; }
+            if (!started) { ctx.beginPath(); ctx.moveTo(p.sx, p.sy); started = true; }
+            else ctx.lineTo(p.sx, p.sy);
+        }
+        if (started) { fill ? ctx.fill() : ctx.stroke(); }
+    };
+
+    if (geometry.type === 'Polygon') {
+        geometry.coordinates.forEach(draw);
+    } else if (geometry.type === 'MultiPolygon') {
+        geometry.coordinates.forEach(poly => poly.forEach(draw));
+    }
+}
+
+function drawGeoMesh(geometry) {
+    if (!geometry || geometry.type !== 'MultiLineString') return;
+    geometry.coordinates.forEach(line => {
+        let started = false;
+        for (const [lon, lat] of line) {
+            const p = project(lat, lon);
+            if (p.z < 0) { if (started) { ctx.stroke(); started = false; } continue; }
+            if (!started) { ctx.beginPath(); ctx.moveTo(p.sx, p.sy); started = true; }
+            else ctx.lineTo(p.sx, p.sy);
+        }
+        if (started) ctx.stroke();
+    });
+}
+
+function drawPins() {
+    // Collect visible pins and sort by depth
+    const visible = EVENTS
+        .map(ev => ({ ev, p: project(ev.lat, ev.lon) }))
+        .filter(({ p }) => p.z > 0.05)
+        .sort((a, b) => a.p.z - b.p.z);
+
+    visible.forEach(({ ev, p }) => {
+        const isHovered = Math.hypot(mouseCanvasX - p.sx, mouseCanvasY - p.sy) < 14;
+        const isActive  = ev.id === activeId;
+        const col = CAT_COLORS[ev.category];
+        const r = isHovered || isActive ? 9 : 6;
+
+        // Shadow / glow
+        ctx.shadowColor = col;
+        ctx.shadowBlur  = isActive ? 18 : isHovered ? 12 : 6;
+
+        // Pin circle
+        ctx.fillStyle = col;
+        ctx.beginPath();
+        ctx.arc(p.sx, p.sy, r, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.shadowBlur = 0;
+
+        // White ring
+        ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // Label on hover / active
+        if (isHovered || isActive) {
+            ctx.fillStyle = 'rgba(0,0,0,0.75)';
+            const tw = ctx.measureText(ev.title).width + 16;
+            const tx = Math.min(p.sx - tw/2, canvas.width - tw - 4);
+            const ty = p.sy - 28;
+            ctx.beginPath();
+            ctx.roundRect(tx, ty - 14, tw, 20, 4);
+            ctx.fill();
+
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 11px Segoe UI, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(ev.title, tx + tw/2, ty - 1);
+            ctx.textAlign = 'left';
+        }
+    });
+}
+
+// ─────────────────────────────────────────────
+// ANIMATION LOOP
+// ─────────────────────────────────────────────
+function loop() {
+    drawGlobe();
+    requestAnimationFrame(loop);
+}
+
+// ─────────────────────────────────────────────
+// INTERACTION
+// ─────────────────────────────────────────────
+canvas.addEventListener('mousedown', e => {
+    drag = true; lastMX = e.clientX; lastMY = e.clientY;
+});
+document.addEventListener('mouseup', () => drag = false);
+document.addEventListener('mousemove', e => {
+    const rect = canvas.getBoundingClientRect();
+    mouseCanvasX = e.clientX - rect.left;
+    mouseCanvasY = e.clientY - rect.top;
+    if (drag) {
+        rotY += (e.clientX - lastMX) * 0.008;
+        rotX += (e.clientY - lastMY) * 0.005;
+        rotX  = Math.max(-Math.PI/2, Math.min(Math.PI/2, rotX));
+        lastMX = e.clientX; lastMY = e.clientY;
+    }
+});
+canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    zoom = Math.max(0.5, Math.min(3, zoom - e.deltaY * 0.001));
+}, { passive: false });
+canvas.addEventListener('click', e => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    for (const ev of EVENTS) {
+        const p = project(ev.lat, ev.lon);
+        if (p.z > 0.05 && Math.hypot(mx - p.sx, my - p.sy) < 14) {
+            selectEvent(ev);
+            return;
+        }
+    }
+});
+
+// ─────────────────────────────────────────────
+// EVENT SELECTION
+// ─────────────────────────────────────────────
+function selectEvent(ev) {
+    activeId = ev.id;
+
+    document.getElementById('infoEmpty').style.display = 'none';
+    const card = document.getElementById('infoCard');
+    card.classList.add('active');
+
+    const badge = document.getElementById('infoBadge');
+    badge.textContent = ev.category;
+    badge.style.background = CAT_COLORS[ev.category];
+
+    document.getElementById('infoTitle').textContent = ev.title;
+    document.getElementById('infoMeta').textContent  = `📍 ${ev.country}  ·  📅 ${ev.date}`;
+    document.getElementById('infoDesc').textContent  = ev.desc;
+
+    // Highlight sidebar
+    document.querySelectorAll('.event-item').forEach(el => {
+        el.classList.toggle('active', parseInt(el.dataset.id) === ev.id);
+    });
+}
+
+// ─────────────────────────────────────────────
+// SIDEBAR
+// ─────────────────────────────────────────────
+const categories = [...new Set(EVENTS.map(e => e.category))];
+const filterBox = document.getElementById('filterBox');
+const activeFilters = new Set(categories);
+
+categories.forEach(cat => {
+    const label = document.createElement('label');
+    label.innerHTML = `
+        <input type="checkbox" checked value="${cat}">
+        <span class="dot" style="background:${CAT_COLORS[cat]}"></span>
+        ${cat.charAt(0).toUpperCase() + cat.slice(1)}
+    `;
+    label.querySelector('input').addEventListener('change', e => {
+        e.target.checked ? activeFilters.add(cat) : activeFilters.delete(cat);
+        renderList();
+    });
+    filterBox.appendChild(label);
+});
+
+document.getElementById('searchInput').addEventListener('input', renderList);
+
+function renderList() {
+    const q = document.getElementById('searchInput').value.toLowerCase();
+    const list = document.getElementById('eventsList');
+    list.innerHTML = '';
+    EVENTS
+        .filter(ev => activeFilters.has(ev.category))
+        .filter(ev => ev.title.toLowerCase().includes(q) || ev.country.toLowerCase().includes(q))
+        .forEach(ev => {
+            const el = document.createElement('div');
+            el.className = 'event-item' + (ev.id === activeId ? ' active' : '');
+            el.dataset.id = ev.id;
+            el.innerHTML = `
+                <span class="dot" style="background:${CAT_COLORS[ev.category]}"></span>
+                <div><div class="event-name">${ev.title}</div><div class="event-country">${ev.country}</div></div>
+            `;
+            el.addEventListener('click', () => selectEvent(ev));
+            list.appendChild(el);
+        });
+}
+renderList();
+
+// ─────────────────────────────────────────────
+// LOAD WORLD DATA
+// ─────────────────────────────────────────────
+fetch('countries-110m.json')
+    .then(r => r.json())
+    .then(data => { worldTopo = data; })
+    .catch(err => console.error('Failed to load map data:', err));
+
+loop();
+</script>
+</body>
+</html>
