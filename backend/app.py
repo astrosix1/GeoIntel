@@ -883,20 +883,21 @@ if __name__ == '__main__':
         logger.info("⚠️  WebSocket disabled - using REST API only")
     logger.info("Health check: http://localhost:5000/api/health")
 
+    port = int(os.getenv('PORT', 5000))
     try:
         if socketio:
             socketio.run(
                 app,
                 host='0.0.0.0',
-                port=5000,
+                port=port,
                 debug=False,
                 use_reloader=False
             )
         else:
             app.run(
                 host='0.0.0.0',
-                port=5000,
-                debug=os.getenv('DEBUG', 'True') == 'True'
+                port=port,
+                debug=os.getenv('DEBUG', 'False') == 'True'
             )
     except Exception as e:
         logger.error(f"Startup error: {e}")
