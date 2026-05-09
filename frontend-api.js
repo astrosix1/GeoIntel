@@ -3,7 +3,8 @@
  * Handles all communication with backend REST API
  */
 
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE = window.GEOINTEL_API_BASE
+  || (window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : 'https://geointel-production-9001.up.railway.app/api');
 
 class GeoIntelAPI {
   /**

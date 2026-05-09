@@ -1,0 +1,6 @@
+backend/
+*.py
+*.db
+__pycache__/
+.env
+verify_setup.py

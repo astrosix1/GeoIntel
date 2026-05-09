@@ -1919,7 +1919,8 @@ let socket = null;
 function connectToEventStream() {
   try {
     // Connect to WebSocket event stream
-    socket = io('http://localhost:5000', {
+    const WS_BASE = window.location.hostname === 'localhost' ? 'http://localhost:5000' : 'https://geointel-production-9001.up.railway.app';
+    socket = io(WS_BASE, {
       transports: ['websocket'],
       reconnection: true,
       reconnectionDelay: 1000,
