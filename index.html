@@ -355,6 +355,7 @@ input[type=range]::-moz-range-thumb { width:10px; height:10px; border-radius:50%
 </style>
 </head>
 <body>
+<div id="auth-gate" style="position:fixed;inset:0;background:#07090f;z-index:9999;display:flex;align-items:center;justify-content:center;color:#4e9eff;font-family:monospace;font-size:1rem;letter-spacing:.05em;">Verifying access…</div>
 <div class="root">
 
 <!-- ══════════════════════════════════
@@ -675,6 +676,7 @@ input[type=range]::-moz-range-thumb { width:10px; height:10px; border-radius:50%
 </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="topojson.min.js"></script>
 <script src="frontend-api.js"></script>
 <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
@@ -2232,12 +2234,76 @@ setInterval(async () => {
   drawNetwork();
 }, 3600000); // 1 hour in milliseconds
 
-// Start the app
-initApp().then(() => {
+// Admin users who bypass subscription check
+const ADMIN_EMAILS = ['collins.nick999@gmail.com'];
+
+// Auth gate: check Supabase session + subscription (unless admin), then launch app
+async function authThenInit() {
+  const SUPABASE_URL = 'https://kmjpucafsjxottrparyg.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_GImhVRL2C1xn3EQqejFyBA_K1TOkBTx';
+  const REDIRECT_URL = 'https://asix.live/projects/geointel';
+  const PROJECT_SLUG = 'geointel';
+
+  const cookieStorage = {
+    getItem(key) {
+      const name = key + '=';
+      for (let c of document.cookie.split(';')) {
+        c = c.trim();
+        if (c.startsWith(name)) return decodeURIComponent(c.slice(name.length));
+      }
+      return null;
+    },
+    setItem(key, value) {
+      const maxAge = 60 * 60 * 24 * 365;
+      const domain = window.location.hostname.includes('localhost') ? '' : '; domain=.asix.live';
+      document.cookie = `${key}=${encodeURIComponent(value)}; max-age=${maxAge}; path=/${domain}; samesite=Lax`;
+    },
+    removeItem(key) {
+      document.cookie = `${key}=; max-age=0; path=/`;
+    }
+  };
+
+  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storage: cookieStorage }
+  });
+
+  // Read hash tokens
+  const hash = window.location.hash;
+  if (hash) {
+    const params = new URLSearchParams(hash.slice(1));
+    const access_token = params.get('access_token');
+    const refresh_token = params.get('refresh_token');
+    if (access_token && refresh_token) {
+      await sb.auth.setSession({ access_token, refresh_token });
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  }
+
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { window.location.href = REDIRECT_URL; return; }
+
+  // Admin bypass: skip subscription check for admins
+  if (!ADMIN_EMAILS.includes(session.user.email)) {
+    const { data: sub } = await sb
+      .from('subscriptions')
+      .select('status, projects!inner(slug)')
+      .eq('user_id', session.user.id)
+      .eq('projects.slug', PROJECT_SLUG)
+      .eq('status', 'active')
+      .maybeSingle();
+
+    if (!sub) { window.location.href = REDIRECT_URL; return; }
+  }
+
+  document.getElementById('auth-gate').style.display = 'none';
+  await initApp();
   loop();
-}).catch(err => {
-  console.error('App initialization error:', err);
-  loop(); // Still start the loop even if init fails
+}
+
+authThenInit().catch(err => {
+  console.error('Auth error:', err);
+  document.getElementById('auth-gate').style.display = 'none';
+  initApp().then(loop).catch(() => loop());
 });
 </script>
 </body>
