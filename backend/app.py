@@ -904,7 +904,7 @@ if __name__ == '__main__':
         logger.error("Falling back to Flask without SocketIO...")
         app.run(
             host='0.0.0.0',
-            port=5000,
+            port=port,
             debug=False,
             threaded=True
         )
