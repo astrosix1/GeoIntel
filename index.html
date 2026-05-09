@@ -1861,8 +1861,8 @@ async function loadRealData() {
         analogy: null,
       }));
 
-      // Filter to only show events from last 7 days (for global coverage)
-      const recentCrises = filterRecentEvents(transformedCrises, 168);
+      // Filter to only show events from last 30 days (for global coverage)
+      const recentCrises = filterRecentEvents(transformedCrises, 720);
       const removedCount = transformedCrises.length - recentCrises.length;
       if (removedCount > 0) {
         console.log(`Filtered out ${removedCount} events older than 72 hours`);
