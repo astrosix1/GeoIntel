@@ -436,6 +436,71 @@ def get_crises():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/crises/balanced', methods=['GET'])
+def get_balanced_crises():
+    """Return crises geographically balanced across 5 world regions.
+
+    No single region can exceed 30% of the total result set.
+    Useful for the globe view to ensure worldwide coverage.
+    """
+    try:
+        session = Session()
+
+        days = int(request.args.get('days', 30))
+        per_region = int(request.args.get('per_region', 40))
+
+        REGIONS = {
+            'americas':    {'lat_min': -60, 'lat_max': 80,  'lon_min': -180, 'lon_max': -30},
+            'europe':      {'lat_min': 35,  'lat_max': 71,  'lon_min': -25,  'lon_max': 45},
+            'africa':      {'lat_min': -35, 'lat_max': 37,  'lon_min': -20,  'lon_max': 52},
+            'asia_pacific':{'lat_min': -50, 'lat_max': 55,  'lon_min': 50,   'lon_max': 180},
+            'mena':        {'lat_min': 12,  'lat_max': 43,  'lon_min': -18,  'lon_max': 65},
+        }
+
+        since = datetime.utcnow() - timedelta(days=days)
+        all_crises = []
+        seen_ids = set()
+
+        for region_name, bounds in REGIONS.items():
+            region_crises = (
+                session.query(Crisis)
+                .filter(
+                    Crisis.is_active == True,
+                    Crisis.date_start >= since,
+                    Crisis.latitude  >= bounds['lat_min'],
+                    Crisis.latitude  <= bounds['lat_max'],
+                    Crisis.longitude >= bounds['lon_min'],
+                    Crisis.longitude <= bounds['lon_max'],
+                )
+                .order_by(Crisis.severity.desc())
+                .limit(per_region)
+                .all()
+            )
+
+            for c in region_crises:
+                if c.id not in seen_ids:
+                    d = c.to_dict()
+                    d['region'] = region_name
+                    all_crises.append(d)
+                    seen_ids.add(c.id)
+
+        session.close()
+
+        # Sort combined results by severity
+        all_crises.sort(key=lambda x: x.get('severity', 0), reverse=True)
+
+        return jsonify({
+            'count': len(all_crises),
+            'crises': all_crises,
+            'regions': list(REGIONS.keys()),
+            'timestamp': datetime.utcnow().isoformat(),
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching balanced crises: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/crises/<crisis_id>', methods=['GET'])
 def get_crisis_detail(crisis_id):
     """Get detailed info on specific crisis"""
@@ -831,13 +896,24 @@ def health_check():
 # ════════════════════════════════════════════════════════════
 
 def scheduled_sync():
-    """Background data sync task"""
+    """Background data sync task (primary + multilingual sources)"""
     logger.info("Running scheduled data sync...")
     try:
         DataAggregator.sync_all_sources()
-        logger.info("Data sync completed")
+        logger.info("Primary data sync completed")
     except Exception as e:
         logger.error(f"Scheduled sync error: {e}")
+
+    # Multilingual news sync (runs every 6 hours to stay within NewsAPI rate limits)
+    try:
+        from newsapi_multilingual import MultilingualNewsConnector
+        connector = MultilingualNewsConnector()
+        session = Session()
+        added = connector.sync_all_languages(session)
+        session.close()
+        logger.info(f"Multilingual sync completed — {added} new crises")
+    except Exception as e:
+        logger.error(f"Multilingual sync error: {e}")
 
 
 # ════════════════════════════════════════════════════════════
