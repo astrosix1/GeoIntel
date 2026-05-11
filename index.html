@@ -1121,7 +1121,8 @@ function geoRing(ring, fill) {
   for (let i = 0; i < ring.length; i++) {
     const [lo, la] = ring[i];
     const p = project(la, lo);
-    if (p.z < 0) { if (started) { fill ? ctx.fill() : ctx.stroke(); started = false; } continue; }
+    // Frustum culling: skip back-facing coordinates (z < -0.1)
+    if (p.z < -0.1) { if (started) { fill ? ctx.fill() : ctx.stroke(); started = false; } continue; }
     if (!started) { ctx.beginPath(); ctx.moveTo(p.sx, p.sy); started = true; }
     else ctx.lineTo(p.sx, p.sy);
   }
@@ -1177,9 +1178,24 @@ function drawArc(lat1, lon1, lat2, lon2, color, width = 1.2, alpha = 0.5) {
 // Pulse animation state
 let pulse = 0;
 
+// Canvas size optimization - track previous dimensions to avoid redundant resizing
+let lastCanvasWidth = 0, lastCanvasHeight = 0;
+
+// TopoJSON caching - cache features/mesh at different rotation states
+let topoFeatures = null, topoMesh = null;
+let lastProjectionRotX = Infinity, lastProjectionRotY = Infinity;
+
 function drawGlobe() {
-  canvas.width  = canvas.clientWidth;
-  canvas.height = canvas.clientHeight;
+  // Only resize canvas if dimensions actually changed (avoid expensive layout recalc on every frame)
+  const newWidth = canvas.clientWidth;
+  const newHeight = canvas.clientHeight;
+  if (newWidth !== lastCanvasWidth || newHeight !== lastCanvasHeight) {
+    canvas.width = newWidth;
+    canvas.height = newHeight;
+    lastCanvasWidth = newWidth;
+    lastCanvasHeight = newHeight;
+  }
+
   pulse = (pulse + 0.03) % (Math.PI * 2);
 
   const r  = R(), cx = CX(), cy = CY();
@@ -1207,8 +1223,14 @@ function drawGlobe() {
   ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip();
 
   if (worldTopo) {
-    const features = topojson.feature(worldTopo, worldTopo.objects.countries).features;
-    const borders  = topojson.mesh(worldTopo, worldTopo.objects.countries, (a, b) => a !== b);
+    // Cache feature/mesh extraction to avoid re-parsing TopoJSON every frame
+    if (!topoFeatures) {
+      topoFeatures = topojson.feature(worldTopo, worldTopo.objects.countries).features;
+      topoMesh = topojson.mesh(worldTopo, worldTopo.objects.countries, (a, b) => a !== b);
+    }
+
+    const features = topoFeatures;
+    const borders = topoMesh;
 
     // Power heatmap overlay
     if (showHeat) {
