@@ -705,6 +705,32 @@ const TYPE_META = {
   technology: { name:'Tech War',    color:'#3dffaa' },
 };
 
+// Map crisis types to domains for filtering
+function getDomainForType(type) {
+  const typeToDomainsMap = {
+    conflict:    'military',
+    military:    'military',
+    proxy:       'military',
+    diplomatic:  'political',
+    alliance:    'political',
+    economic:    'economic',
+    resource:    'environment',
+    technology:  'technology',
+  };
+  return typeToDomainsMap[type] || 'information';
+}
+
+// Filter crises by year (2020-2026)
+function filterByDateRange(crises, year) {
+  const startDate = new Date(year, 0, 1);
+  const endDate = new Date(year, 11, 31, 23, 59, 59);
+
+  return crises.filter(c => {
+    const crisisDate = new Date(c.date || c.date_start || c.date_updated);
+    return !isNaN(crisisDate.getTime()) && crisisDate >= startDate && crisisDate <= endDate;
+  });
+}
+
 let ACTORS = [
   { id:'US',  name:'USA',     color:'#4488ff', lat:38,   lon:-97  },
   { id:'CN',  name:'China',   color:'#ff4444', lat:35,   lon:105  },
@@ -740,7 +766,7 @@ let zoom = 1, rotX = 0.25, rotY = 0;
 let selected = null;
 let drag = false, lastMX = 0, lastMY = 0;
 let mx = 0, my = 0;
-let currentYear = 2026, playDir = 1;
+let currentYear = 2026, playDir = 1, playing = false;
 let worldTopo = null;
 
 // Infinite scroll state
@@ -1267,8 +1293,15 @@ function drawPins() {
     lastLoggedLimit = zoomAdjustedLimit;
   }
 
-  let visible = CRISES
-    .filter(c => activeTypes.has(c.type) && activeDomains.size > 0)
+  // Get crises for the current year
+  const crisisesInYear = filterByDateRange(CRISES, currentYear);
+
+  let visible = crisisesInYear
+    .filter(c => {
+      const typeMatch = activeTypes.has(c.type);
+      const domainMatch = activeDomains.size === 0 || activeDomains.has(getDomainForType(c.type));
+      return typeMatch && domainMatch;
+    })
     .slice(0, crisisDisplayLimit)  // Apply infinite scroll limit first
     .map((c, arrayIndex) => {
       // Backend returns events with confirmed city locations
@@ -1590,8 +1623,16 @@ function updateEventsList() {
   const q    = document.getElementById('searchInput').value.toLowerCase();
   const list = document.getElementById('eventsList');
   list.innerHTML = '';
-  const filtered = CRISES
-    .filter(c => activeTypes.has(c.type))
+
+  // Get crises for the current year
+  const crisisesInYear = filterByDateRange(CRISES, currentYear);
+
+  const filtered = crisisesInYear
+    .filter(c => {
+      const typeMatch = activeTypes.has(c.type);
+      const domainMatch = activeDomains.size === 0 || activeDomains.has(getDomainForType(c.type));
+      return typeMatch && domainMatch;
+    })
     .filter(c => c.title.toLowerCase().includes(q) || c.country.toLowerCase().includes(q));
 
   document.getElementById('crisisCount').textContent = `${filtered.length} active`;
@@ -1736,6 +1777,17 @@ const yearLabel  = document.getElementById('yearLabel');
 timeSlider.addEventListener('input', () => {
   currentYear = 2020 + Math.round(parseInt(timeSlider.value) / 100 * 6);
   yearLabel.textContent = currentYear;
+
+  // Count and show events in this year
+  const eventsInYear = filterByDateRange(CRISES, currentYear);
+  const timeCount = document.querySelector('.timeline-count');
+  if (timeCount) {
+    timeCount.textContent = `${eventsInYear.length} events`;
+  }
+
+  // Redraw sidebar and globe with new year filter
+  updateEventsList();
+  drawGlobe();
 });
 
 document.getElementById('playBtn').addEventListener('click', function() {
@@ -1751,6 +1803,18 @@ function animateTimeline() {
   timeSlider.value = v;
   currentYear = 2020 + Math.round(v / 100 * 6);
   yearLabel.textContent = currentYear;
+
+  // Update event count for current year
+  const eventsInYear = filterByDateRange(CRISES, currentYear);
+  const timeCount = document.querySelector('.timeline-count');
+  if (timeCount) {
+    timeCount.textContent = `${eventsInYear.length} events`;
+  }
+
+  // Redraw to show events for current year
+  updateEventsList();
+  drawGlobe();
+
   setTimeout(animateTimeline, 80);
 }
 
