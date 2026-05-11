@@ -23,22 +23,31 @@ ACLED_TYPE_MAP = {
     'Violence against civilians': 'conflict',
     'Battle': 'conflict',
     'Explosions/Remote violence': 'conflict',
-    'Protests': 'protest',
+    'Protests': 'migration',
     'Riots': 'conflict',
     'Strategic developments': 'military',
     'Armed clash': 'conflict',
+    'Cyber attack': 'cyber',
+    'Infrastructure attack': 'infrastructure',
+    'Displacement': 'migration',
 }
 
 # Crisis type classifications
 CRISIS_TYPES = {
-    'conflict': 'Active Conflict',
-    'military': 'Military Buildup',
-    'diplomatic': 'Diplomatic Crisis',
-    'economic': 'Economic Shock',
-    'resource': 'Resource Conflict',
-    'alliance': 'Alliance Shift',
-    'proxy': 'Proxy Conflict',
-    'technology': 'Tech War',
+    'conflict':       'Active Conflict',
+    'military':       'Military Buildup',
+    'diplomatic':     'Diplomatic Crisis',
+    'economic':       'Economic Shock',
+    'resource':       'Resource Conflict',
+    'alliance':       'Alliance Shift',
+    'proxy':          'Proxy Conflict',
+    'technology':     'Tech War',
+    'cyber':          'Cyber Attack',
+    'infrastructure': 'Infrastructure Attack',
+    'migration':      'Migration Crisis',
+    'trade_war':      'Trade War',
+    'bioweapon':      'Bioweapon Alert',
+    'orbital':        'Orbital Conflict',
 }
 
 

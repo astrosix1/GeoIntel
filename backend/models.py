@@ -40,7 +40,7 @@ class Crisis(Base):
     __tablename__ = 'crises'
 
     id = Column(String(50), primary_key=True)
-    type = Column(String(50), nullable=False)  # conflict, military, diplomatic, economic, resource, alliance, proxy, technology
+    type = Column(String(50), nullable=False)  # conflict, military, diplomatic, economic, resource, alliance, proxy, technology, cyber, infrastructure, migration, trade_war, bioweapon, orbital
     title = Column(String(200), nullable=False)
     country = Column(String(100), nullable=False)
     latitude = Column(Float, nullable=False)

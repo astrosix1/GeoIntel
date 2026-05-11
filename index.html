@@ -406,10 +406,11 @@ input[type=range]::-moz-range-thumb { width:10px; height:10px; border-radius:50%
   <div class="globe-bottom">
     <div class="timeline-header">
       <span class="timeline-year" id="yearLabel">2026</span>
+      <span class="timeline-count" style="font-size:9px;color:var(--dim);margin:0 auto;"></span>
       <button class="timeline-play" id="playBtn">▶</button>
     </div>
     <input type="range" id="timeSlider" min="0" max="100" value="100">
-    <div class="timeline-hint">Drag to rotate • Scroll to zoom • Click pins for analysis</div>
+    <div class="timeline-hint">Filter by year (2020–2026) • Drag globe • Scroll to zoom</div>
   </div>
 </div>
 
@@ -686,36 +687,53 @@ input[type=range]::-moz-range-thumb { width:10px; height:10px; border-radius:50%
 // ════════════════════════════════════════════════════════════
 
 const DOMAINS = {
-  military:   { icon:'⚔️', color:'#ff3b3b', name:'Military'  },
-  economic:   { icon:'💹', color:'#ffd93d', name:'Economic'  },
-  political:  { icon:'🏛️', color:'#4e9eff', name:'Political'  },
-  environment:{ icon:'🌿', color:'#3dffaa', name:'Environment'},
-  technology: { icon:'💻', color:'#b94eff', name:'Technology' },
-  information:{ icon:'📡', color:'#ff8833', name:'Info Ops'  },
+  military:     { icon:'⚔️',  color:'#ff3b3b', name:'Military'      },
+  economic:     { icon:'💹',  color:'#ffd93d', name:'Economic'      },
+  political:    { icon:'🏛️',  color:'#4e9eff', name:'Political'     },
+  environment:  { icon:'🌿',  color:'#3dffaa', name:'Environment'   },
+  technology:   { icon:'💻',  color:'#b94eff', name:'Technology'    },
+  information:  { icon:'📡',  color:'#ff8833', name:'Info Ops'      },
+  cyber:        { icon:'🛡️',  color:'#00e5ff', name:'Cyber'         },
+  supply_chain: { icon:'🔗',  color:'#ff6f00', name:'Supply Chain'  },
+  climate:      { icon:'🌡️',  color:'#69f0ae', name:'Climate'       },
+  health:       { icon:'⚕️',  color:'#f48fb1', name:'Health'        },
+  space:        { icon:'🛰️',  color:'#ce93d8', name:'Space'         },
 };
 
 const TYPE_META = {
-  conflict:   { name:'Conflict',    color:'#ff3b3b' },
-  military:   { name:'Military',    color:'#ff4ea0' },
-  diplomatic: { name:'Diplomatic',  color:'#ff8833' },
-  economic:   { name:'Economic',    color:'#ffd93d' },
-  resource:   { name:'Resource',    color:'#ff6b35' },
-  alliance:   { name:'Alliance',    color:'#4e9eff' },
-  proxy:      { name:'Proxy',       color:'#b94eff' },
-  technology: { name:'Tech War',    color:'#3dffaa' },
+  conflict:      { name:'Conflict',      color:'#ff3b3b' },
+  military:      { name:'Military',      color:'#ff4ea0' },
+  diplomatic:    { name:'Diplomatic',    color:'#ff8833' },
+  economic:      { name:'Economic',      color:'#ffd93d' },
+  resource:      { name:'Resource',      color:'#ff6b35' },
+  alliance:      { name:'Alliance',      color:'#4e9eff' },
+  proxy:         { name:'Proxy',         color:'#b94eff' },
+  technology:    { name:'Tech War',      color:'#3dffaa' },
+  cyber:         { name:'Cyber Attack',  color:'#00e5ff' },
+  infrastructure:{ name:'Infra Attack',  color:'#ff6f00' },
+  migration:     { name:'Migration',     color:'#69f0ae' },
+  trade_war:     { name:'Trade War',     color:'#ffe082' },
+  bioweapon:     { name:'Bioweapon',     color:'#f48fb1' },
+  orbital:       { name:'Orbital',       color:'#ce93d8' },
 };
 
 // Map crisis types to domains for filtering
 function getDomainForType(type) {
   const typeToDomainsMap = {
-    conflict:    'military',
-    military:    'military',
-    proxy:       'military',
-    diplomatic:  'political',
-    alliance:    'political',
-    economic:    'economic',
-    resource:    'environment',
-    technology:  'technology',
+    conflict:       'military',
+    military:       'military',
+    proxy:          'military',
+    diplomatic:     'political',
+    alliance:       'political',
+    economic:       'economic',
+    trade_war:      'economic',
+    resource:       'environment',
+    migration:      'climate',
+    technology:     'technology',
+    cyber:          'cyber',
+    infrastructure: 'cyber',
+    bioweapon:      'health',
+    orbital:        'space',
   };
   return typeToDomainsMap[type] || 'information';
 }
@@ -1341,19 +1359,18 @@ function drawPins() {
     .sort((a,b) => a.p.z - b.p.z)
     .slice(0, zoomAdjustedLimit);  // Apply zoom-based limit
 
-  // Group events by exact screen location to spread overlapping ones
+  // Group events by approximate screen location (within 8px grid) to spread overlapping ones
   const eventsByScreenLoc = {};
   visible.forEach(({c, p}) => {
-    const locKey = `${Math.round(p.sx)},${Math.round(p.sy)}`;
-    if (!eventsByScreenLoc[locKey]) {
-      eventsByScreenLoc[locKey] = [];
-    }
+    const locKey = `${Math.round(p.sx / 8)},${Math.round(p.sy / 8)}`;
+    if (!eventsByScreenLoc[locKey]) eventsByScreenLoc[locKey] = [];
     eventsByScreenLoc[locKey].push({c, p});
   });
 
-  // Apply screen-space offsets to spread events at same location (no re-projection needed)
+  // Radial fan spread: pins fan outward from globe center in an arc
+  const connectorLines = [];  // Store connector lines to draw before pins
   visible = visible.map(({c, p, city}) => {
-    const locKey = `${Math.round(p.sx)},${Math.round(p.sy)}`;
+    const locKey = `${Math.round(p.sx / 8)},${Math.round(p.sy / 8)}`;
     const eventsAtLoc = eventsByScreenLoc[locKey];
     const eventIndex = eventsAtLoc.findIndex(e => e.c.id === c.id);
     const eventCount = eventsAtLoc.length;
@@ -1361,19 +1378,41 @@ function drawPins() {
     let sx = p.sx;
     let sy = p.sy;
 
-    // If multiple events at same screen location, spread them in a small circle
     if (eventCount > 1) {
-      const angle = (eventIndex / eventCount) * Math.PI * 2;
-      const radius = 20;  // 20 pixels from center
-      sx = p.sx + Math.cos(angle) * radius;
-      sy = p.sy + Math.sin(angle) * radius;
+      // Compute outward direction from globe center
+      const cx2 = CX(), cy2 = CY();
+      const dx = p.sx - cx2 || 1, dy = p.sy - cy2 || 0;
+      const len = Math.hypot(dx, dy) || 1;
+      const outX = dx / len, outY = dy / len;
+      // Perpendicular to radial direction for fanning
+      const perpX = -outY, perpY = outX;
+
+      // Severity-based spread radius: high severity pins spread farther
+      const baseRadius = 12 + (c.severity || 50) / 100 * 14;  // 12-26px
+      // Fan pins across -spread to +spread arc
+      const spread = (eventCount - 1) * 0.5;
+      const offset = (eventIndex - (eventCount - 1) / 2) * (baseRadius / Math.max(eventCount - 1, 1));
+      sx = p.sx + outX * baseRadius + perpX * offset;
+      sy = p.sy + outY * baseRadius + perpY * offset;
+
+      // Store connector line from actual lat/lon to spread position
+      connectorLines.push({ x1: p.sx, y1: p.sy, x2: sx, y2: sy, confidence: c.confidence || 70 });
     }
 
-    return {
-      c,
-      p: {...p, sx, sy},
-      city
-    };
+    return { c, p: {...p, sx, sy}, city };
+  });
+
+  // Draw connector lines first (behind pins)
+  connectorLines.forEach(({x1, y1, x2, y2, confidence}) => {
+    const alpha = 0.15 + (confidence / 100) * 0.3;  // Brighter = more confidence
+    ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
+    ctx.lineWidth = 0.8;
+    ctx.setLineDash([2, 3]);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.setLineDash([]);
   });
 
   // Draw pins with simple screen positioning
