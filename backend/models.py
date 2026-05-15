@@ -8,7 +8,8 @@ from sqlalchemy.pool import StaticPool
 from datetime import datetime
 import os
 
-DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///geointel.db')
+_DEFAULT_DB = 'sqlite:///' + os.path.join(os.path.dirname(os.path.abspath(__file__)), 'geointel.db')
+DATABASE_URL = os.getenv('DATABASE_URL', _DEFAULT_DB)
 
 # Configure engine with connection pooling
 if DATABASE_URL.startswith('sqlite'):
@@ -47,7 +48,8 @@ class Crisis(Base):
     longitude = Column(Float, nullable=False)
 
     severity = Column(Integer, default=50)  # 0-100
-    confidence = Column(Integer, default=70)  # 0-100
+    confidence = Column(Integer, default=70)  # 0-100 (source reliability)
+    location_confidence = Column(Integer, default=70)  # 0-100 (how certain is the location?)
 
     date_start = Column(DateTime, default=datetime.utcnow)
     date_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -82,6 +84,7 @@ class Crisis(Base):
             'lon': self.longitude,
             'severity': self.severity,
             'confidence': self.confidence,
+            'location_confidence': self.location_confidence,
             'date': self.date_start.isoformat() if self.date_start else None,
             'analysis': self.analysis,
             'impact': self.impact,
