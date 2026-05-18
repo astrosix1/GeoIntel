@@ -693,7 +693,7 @@ def get_crises():
         # Filters
         crisis_type = request.args.get('type')
         min_severity = int(request.args.get('min_severity', 0))
-        days = int(request.args.get('days', 30))
+        days = request.args.get('days')          # optional — omit to return all crises
         include_analysis = request.args.get('include_analysis', 'false').lower() == 'true'
 
         query = session.query(Crisis).filter(Crisis.is_active == True)
@@ -703,9 +703,10 @@ def get_crises():
 
         query = query.filter(Crisis.severity >= min_severity)
 
-        # Recent crises
-        since = datetime.utcnow() - timedelta(days=days)
-        query = query.filter(Crisis.date_start >= since)
+        # Only apply date window if caller explicitly requests it
+        if days:
+            since = datetime.utcnow() - timedelta(days=int(days))
+            query = query.filter(Crisis.date_start >= since)
 
         crises = query.order_by(Crisis.severity.desc()).all()
 
