@@ -766,6 +766,87 @@ input[type=range]::-moz-range-thumb:hover { width:14px; height:14px; box-shadow:
   border-color:rgba(255,45,94,.5);
 }
 
+/* ── Alert badge ── */
+.alert-badge {
+  display:inline-flex; align-items:center; justify-content:center;
+  min-width:18px; height:18px; padding:0 5px;
+  background:#ff3b3b; color:#fff; font-size:9px; font-weight:800;
+  border-radius:9px; letter-spacing:.2px; cursor:pointer;
+  box-shadow:0 0 8px rgba(255,59,59,.6);
+  transition:all .2s; flex-shrink:0;
+  animation:glowPulse 2s ease-in-out infinite;
+}
+.alert-badge:hover { background:#ff1a1a; transform:scale(1.1); }
+.alert-badge.hidden { display:none; }
+
+/* ── Bookmark button ── */
+.bookmark-btn {
+  background:none; border:none; cursor:pointer;
+  color:var(--dim); font-size:13px; padding:0 2px;
+  transition:color .15s, transform .15s; line-height:1;
+  flex-shrink:0;
+}
+.bookmark-btn:hover { color:#ffd93d; transform:scale(1.2); }
+.bookmark-btn.on { color:#ffd93d; }
+
+/* ── Cluster bubble ── */
+.cluster-tooltip {
+  position:absolute; pointer-events:none;
+  background:rgba(10,14,26,0.93); border:1px solid rgba(0,212,255,.25);
+  border-radius:8px; padding:5px 10px; font-size:10px; color:var(--text);
+  white-space:nowrap; z-index:30;
+}
+
+/* ── Flat-map overlay ── */
+#flatMapCanvas {
+  position:absolute; inset:0; width:100%; height:100%;
+  display:none;
+}
+#flatMapCanvas.visible { display:block; }
+
+/* ── Mobile responsive ── */
+@media (max-width: 768px) {
+  body { overflow:auto; }
+  .root {
+    flex-direction:column; height:auto; min-height:100vh;
+    padding:4px; gap:4px;
+  }
+  .col-left {
+    width:100% !important; max-height:200px;
+    flex-direction:row; flex-wrap:nowrap; overflow-x:auto;
+  }
+  .col-left .pane { min-width:260px; }
+  .col-left.collapsed { max-height:40px; }
+  .globe-col { height:55vw; min-height:260px; max-height:420px; }
+  .col-right {
+    position:static; width:100%; transform:none !important;
+    opacity:1 !important; pointer-events:all !important;
+    max-height:none;
+  }
+  .col-right.open { animation:none; }
+  .panel-close { display:none; }
+  .globe-bottom { width:90%; max-width:none; }
+  .globe-controls { bottom:auto; top:8px; right:8px; flex-direction:row; }
+  .gc-btn { width:28px; height:28px; font-size:12px; }
+  .tab { padding:5px 8px; font-size:8px; }
+  .pane-hdr h2 { font-size:10px; }
+}
+
+/* ── Keyboard shortcut hint ── */
+.kbd {
+  display:inline-block; padding:1px 5px;
+  background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.15);
+  border-radius:4px; font-size:9px; font-family:monospace; color:var(--dim);
+}
+
+/* ── Watchlist tab content ── */
+.watchlist-empty {
+  display:flex; flex-direction:column; align-items:center;
+  justify-content:center; gap:8px; padding:30px 16px;
+  color:var(--dim); font-size:11px; text-align:center;
+}
+.watchlist-empty .wi { font-size:28px; }
+
 /* ── Relationship type ── */
 .rel-line-legend {
   display:flex;
@@ -825,12 +906,14 @@ input[type=range]::-moz-range-thumb:hover { width:14px; height:14px; box-shadow:
       <div class="tab" data-left-tab="domains" style="padding:6px 11px;">Domains</div>
       <div class="tab" data-left-tab="types" style="padding:6px 11px;">Types</div>
       <div class="tab" data-left-tab="lookup" style="padding:6px 11px;">🔍 Lookup</div>
+      <div class="tab" data-left-tab="watchlist" style="padding:6px 11px;">★ Watch</div>
     </div>
 
     <!-- Tab content for crises -->
     <div class="left-tab-content active" data-left-tab="crises" style="display:flex;flex-direction:column;flex:1;min-height:0;">
       <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,rgba(0,212,255,.02) 0%,transparent 100%);">
         <span id="crisisCount" style="font-size:9px;color:var(--dim);font-weight:600;"></span>
+      <span id="alertBadge" class="alert-badge hidden" title="Critical crises (severity ≥ 80) — click to filter"></span>
       </div>
       <div class="pane-body" id="eventsList" style="min-height:0;"></div>
     </div>
@@ -849,6 +932,15 @@ input[type=range]::-moz-range-thumb:hover { width:14px; height:14px; box-shadow:
         <div class="section-lbl" style="margin-bottom:6px;">Crisis Types</div>
         <div class="domain-chips" id="typeChips"></div>
       </div>
+    </div>
+
+    <!-- Tab content for watchlist -->
+    <div class="left-tab-content" data-left-tab="watchlist" style="display:none;flex-direction:column;flex:1;min-height:0;">
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);">
+        <span id="watchlistCount" style="font-size:9px;color:var(--dim);font-weight:600;"></span>
+        <button id="clearWatchlist" style="margin-left:auto;font-size:9px;color:var(--dim);background:none;border:none;cursor:pointer;padding:2px 6px;border-radius:4px;transition:color .15s;" onmouseover="this.style.color='#ff6080'" onmouseout="this.style.color='var(--dim)'">Clear all</button>
+      </div>
+      <div class="pane-body" id="watchlistItems" style="min-height:0;"></div>
     </div>
 
     <!-- Tab content for relationship lookup -->
@@ -895,12 +987,15 @@ input[type=range]::-moz-range-thumb:hover { width:14px; height:14px; box-shadow:
 ══════════════════════════════════ -->
 <div class="globe-col">
   <canvas id="canvas"></canvas>
+  <canvas id="flatMapCanvas"></canvas>
   <div class="globe-controls">
-    <button class="gc-btn" id="resetBtn"  title="Reset">↺</button>
-    <button class="gc-btn" id="arcBtn"    title="Relationships">⟳</button>
-    <button class="gc-btn" id="heatBtn"   title="Power Heatmap">◉</button>
+    <button class="gc-btn" id="resetBtn"  title="Reset view [↺]">↺</button>
+    <button class="gc-btn" id="arcBtn"    title="Relationships [R]">⟳</button>
+    <button class="gc-btn" id="heatBtn"   title="Power Heatmap [H]">◉</button>
     <button class="gc-btn" id="cascBtn"   title="Cascade Sim">⚡</button>
     <button class="gc-btn" id="tradeBtn"  title="Trade Routes">🚢</button>
+    <button class="gc-btn" id="flatBtn"   title="Flat Map [M]">🗺</button>
+    <button class="gc-btn" id="fullBtn"   title="Fullscreen [F]">⛶</button>
   </div>
   <div class="country-tooltip" id="countryTooltip"></div>
   <div class="trade-tooltip"   id="tradeTooltip"></div>
@@ -956,6 +1051,7 @@ input[type=range]::-moz-range-thumb:hover { width:14px; height:14px; box-shadow:
 ══════════════════════════════════ -->
 <div class="col-right" id="colRight">
   <button class="panel-close" id="panelClose" title="Close">✕</button>
+  <button id="shareBtn" title="Copy share link" style="position:absolute;top:8px;left:-54px;width:24px;height:24px;background:var(--panel);border:1px solid var(--border);border-radius:6px 0 0 6px;color:var(--accent);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:11px;z-index:16;transition:all .2s;backdrop-filter:blur(10px);" onmouseover="this.style.background='rgba(0,212,255,.15)'" onmouseout="this.style.background='var(--panel)'">🔗</button>
 
   <!-- Analysis pane (tabbed) -->
   <div class="pane" style="flex:1">
@@ -987,6 +1083,7 @@ input[type=range]::-moz-range-thumb:hover { width:14px; height:14px; box-shadow:
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 0;margin-bottom:4px;">
           <span id="ov-type-badge" class="sev-badge"></span>
           <span id="ov-conf" class="conf-badge">⬛ — confidence</span>
+          <button id="ov-bookmark-btn" class="bookmark-btn" title="Bookmark this crisis" style="margin-left:auto;font-size:16px;">★</button>
         </div>
         <div id="ov-title" style="font-size:15px;font-weight:700;color:#e8f4ff;line-height:1.4;margin-bottom:2px"></div>
         <div id="ov-date" style="font-size:10px;color:var(--dim);letter-spacing:0.3px"></div>
@@ -1759,7 +1856,14 @@ const ALERTS = [
 let showArcs  = false;
 let showHeat  = false;
 let showCasc  = false;
+let flatMap   = false;
 let cascadeActive = false;
+
+// Severity filter (0 = all, 80 = critical only)
+let minSeverityFilter = 0;
+
+// Bookmarks persisted in localStorage
+const bookmarks = new Set(JSON.parse(localStorage.getItem('geointel_bookmarks') || '[]'));
 
 // Canvas setup
 const canvas = document.getElementById('canvas');
@@ -1955,7 +2059,107 @@ let lastCanvasWidth = 0, lastCanvasHeight = 0;
 let topoFeatures = null, topoMesh = null;
 let lastProjectionRotX = Infinity, lastProjectionRotY = Infinity;
 
+// ════════════════════════════════════════════════════════════
+// FLAT MAP (equirectangular 2D projection)
+// ════════════════════════════════════════════════════════════
+const flatCanvas = document.getElementById('flatMapCanvas');
+const fctx = flatCanvas.getContext('2d');
+
+function drawFlatMap() {
+  const W = flatCanvas.clientWidth, H = flatCanvas.clientHeight;
+  flatCanvas.width = W; flatCanvas.height = H;
+  fctx.clearRect(0, 0, W, H);
+
+  // Background
+  fctx.fillStyle = '#07090f';
+  fctx.fillRect(0, 0, W, H);
+
+  // Ocean gradient
+  const ocean = fctx.createLinearGradient(0, 0, 0, H);
+  ocean.addColorStop(0, '#071420');
+  ocean.addColorStop(1, '#050d18');
+  fctx.fillStyle = ocean;
+  fctx.fillRect(0, 0, W, H);
+
+  // Grid lines
+  fctx.strokeStyle = 'rgba(0,212,255,0.04)';
+  fctx.lineWidth = 0.5;
+  for (let lat = -90; lat <= 90; lat += 30) {
+    const y = (90 - lat) / 180 * H;
+    fctx.beginPath(); fctx.moveTo(0, y); fctx.lineTo(W, y); fctx.stroke();
+  }
+  for (let lon = -180; lon <= 180; lon += 30) {
+    const x = (lon + 180) / 360 * W;
+    fctx.beginPath(); fctx.moveTo(x, 0); fctx.lineTo(x, H); fctx.stroke();
+  }
+
+  function flatProject(lat, lon) {
+    return { x: (lon + 180) / 360 * W, y: (90 - lat) / 180 * H };
+  }
+
+  // Draw countries from TopoJSON
+  if (worldTopo) {
+    const features = topojson.feature(worldTopo, worldTopo.objects.countries).features;
+    features.forEach(f => {
+      const isHighlighted = highlightedCountry && highlightedCountry.feature === f;
+      fctx.fillStyle = isHighlighted ? 'rgba(0,212,255,0.25)' : 'rgba(26,60,40,0.85)';
+      fctx.strokeStyle = isHighlighted ? 'rgba(0,212,255,0.8)' : 'rgba(255,255,255,0.15)';
+      fctx.lineWidth = isHighlighted ? 1.5 : 0.4;
+      const geom = f.geometry;
+      if (!geom) return;
+      const polys = geom.type === 'Polygon' ? [geom.coordinates] : geom.coordinates;
+      polys.forEach(poly => {
+        poly.forEach(ring => {
+          fctx.beginPath();
+          ring.forEach(([lo, la], i) => {
+            const {x, y} = flatProject(la, lo);
+            i === 0 ? fctx.moveTo(x, y) : fctx.lineTo(x, y);
+          });
+          fctx.closePath();
+          fctx.fill();
+          fctx.stroke();
+        });
+      });
+    });
+  }
+
+  // Draw crisis pins
+  const pool = CRISES.filter(c => {
+    if (minSeverityFilter > 0 && (c.severity || 0) < minSeverityFilter) return false;
+    if (countryFilter && c.country !== countryFilter) return false;
+    const d = new Date(c.date_start || c.date);
+    return !isNaN(d) && d.getFullYear() <= currentYear;
+  });
+
+  pool.forEach(c => {
+    if (!c.lat || !c.lon) return;
+    const {x, y} = flatProject(c.lat, c.lon);
+    const col = TYPE_META[c.type]?.color || '#fff';
+    const isSelected = c.id === selected?.id;
+    const r2 = isSelected ? 8 : 5;
+    fctx.save();
+    fctx.shadowColor = col; fctx.shadowBlur = isSelected ? 14 : 6;
+    fctx.fillStyle = col;
+    fctx.beginPath(); fctx.arc(x, y, r2, 0, Math.PI*2); fctx.fill();
+    fctx.strokeStyle = 'rgba(255,255,255,0.7)'; fctx.lineWidth = 1;
+    fctx.stroke();
+    fctx.restore();
+    c._screenX = x; c._screenY = y; // store for click detection
+  });
+
+  // Equator / prime meridian labels
+  fctx.fillStyle = 'rgba(0,212,255,0.2)';
+  fctx.font = '8px Segoe UI';
+  fctx.textAlign = 'left';
+  ['90°N','60°N','30°N','EQ','30°S','60°S','90°S'].forEach((lbl, i) => {
+    fctx.fillText(lbl, 4, i * H/6 + 10);
+  });
+}
+
 function drawGlobe() {
+  // Flat map mode — skip 3D globe entirely
+  if (flatMap) { drawFlatMap(); return; }
+
   // Only resize canvas if dimensions actually changed (avoid expensive layout recalc on every frame)
   const newWidth = canvas.clientWidth;
   const newHeight = canvas.clientHeight;
@@ -2164,12 +2368,13 @@ function drawPins() {
   });
   if (pool.length === 0) pool = pool_all.length > 0 ? pool_all : [];
 
-  // ── Type / domain / location-confidence filter ───────────────────────────────
+  // ── Type / domain / location-confidence / severity filter ────────────────────
   pool = pool.filter(c =>
     activeTypes.has(c.type) &&
     (activeDomains.size === 0 || activeDomains.has(getDomainForType(c.type))) &&
     (c.location_confidence ?? 60) >= 60 &&
-    (!countryFilter || c.country === countryFilter)
+    (!countryFilter || c.country === countryFilter) &&
+    (minSeverityFilter === 0 || (c.severity || 0) >= minSeverityFilter)
   );
 
   // ── Project every candidate, then keep only the front-facing hemisphere ───────
@@ -2240,6 +2445,58 @@ function drawPins() {
     ctx.stroke();
     ctx.setLineDash([]);
   });
+
+  // ── CLUSTERING — merge nearby pins when zoomed out ───────────────────────────
+  const CLUSTER_DIST = 38; // px — merge pins closer than this
+  if (zoom < 1.4) {
+    const assigned = new Set();
+    const clusters = [];
+    visible.forEach((item, i) => {
+      if (assigned.has(i)) return;
+      const group = [item];
+      assigned.add(i);
+      visible.forEach((other, j) => {
+        if (assigned.has(j)) return;
+        const d = Math.hypot(item.p.sx - other.p.sx, item.p.sy - other.p.sy);
+        if (d < CLUSTER_DIST) { group.push(other); assigned.add(j); }
+      });
+      clusters.push(group);
+    });
+
+    clusters.forEach(group => {
+      if (group.length === 1) return; // singles drawn normally below
+      // Centroid
+      const cx2 = group.reduce((s, g) => s + g.p.sx, 0) / group.length;
+      const cy2 = group.reduce((s, g) => s + g.p.sy, 0) / group.length;
+      const maxSev = Math.max(...group.map(g => g.c.severity || 0));
+      const col = maxSev > 80 ? '#ff3b3b' : maxSev > 60 ? '#ff8833' : '#ffd93d';
+      const cr = 14 + Math.min(group.length, 20) * 0.6;
+
+      ctx.save();
+      // Outer glow
+      ctx.shadowColor = col; ctx.shadowBlur = 14;
+      ctx.fillStyle = col + '33';
+      ctx.beginPath(); ctx.arc(cx2, cy2, cr + 5, 0, Math.PI*2); ctx.fill();
+      // Solid circle
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = col + 'cc';
+      ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(cx2, cy2, cr, 0, Math.PI*2);
+      ctx.fill(); ctx.stroke();
+      // Count label
+      ctx.fillStyle = '#fff';
+      ctx.font = `bold ${cr > 18 ? 12 : 10}px "Segoe UI", sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(group.length, cx2, cy2);
+      ctx.restore();
+
+      // Store centroid for click detection — clicking expands (zooms in)
+      group.forEach(g => { g._cluster = { cx: cx2, cy: cy2, count: group.length }; });
+    });
+
+    // Remove clustered items from visible so we don't double-draw them
+    visible = visible.filter(item => !item._cluster);
+  }
 
   // Find the single closest pin to the cursor (only that one gets a tooltip)
   let closestDist = Infinity, closestPin = null;
@@ -2466,6 +2723,9 @@ function updateAllPanels() {
   confEl.style.color = confColor;
 
   document.getElementById('ov-title').textContent = c.title;
+  // Sync bookmark star
+  const bBtn = document.getElementById('ov-bookmark-btn');
+  if (bBtn) bBtn.classList.toggle('on', bookmarks.has(c.id));
   document.getElementById('ov-date').textContent  = c.date;
 
   const sevColor = c.severity > 80 ? '#ff3b3b' : c.severity > 60 ? '#ff8833' : '#ffd93d';
@@ -2634,6 +2894,7 @@ function updateEventsList() {
     .filter(c => c.title.toLowerCase().includes(q) || c.country.toLowerCase().includes(q));
 
   document.getElementById('crisisCount').textContent = `${filtered.length} active`;
+  updateAlertBadge();
 
   filtered.forEach(crisis => {
     const el  = document.createElement('div');
@@ -2641,14 +2902,23 @@ function updateEventsList() {
     el.dataset.id = crisis.id;
     const tm = TYPE_META[crisis.type] || {};
     const sevCol = crisis.severity > 80 ? '#ff3b3b' : crisis.severity > 60 ? '#ff8833' : '#ffd93d';
+    el.style.display = 'flex'; el.style.alignItems = 'flex-start'; el.style.gap = '6px';
     el.innerHTML = `
+      <div style="flex:1;min-width:0;">
       <div class="evt-name">${crisis.title}</div>
       <div class="evt-sub">
         <span class="sev-badge" style="background:${sevCol}22;color:${sevCol};border:1px solid ${sevCol}55">${crisis.severity}</span>
         <span style="color:${tm.color || '#888'}">${tm.name || ''}</span>
         · ${crisis.country}
       </div>
+      </div>
+      <button class="bookmark-btn ${bookmarks.has(crisis.id) ? 'on' : ''}" data-bid="${crisis.id}" title="Bookmark">★</button>
     `;
+    el.querySelector('.bookmark-btn').addEventListener('click', e => {
+      e.stopPropagation();
+      toggleBookmark(crisis);
+      e.currentTarget.classList.toggle('on', bookmarks.has(crisis.id));
+    });
     el.addEventListener('click', () => selectCrisis(crisis));
     list.appendChild(el);
   });
@@ -2753,6 +3023,7 @@ document.querySelectorAll('.tab[data-left-tab]').forEach(tab => {
       content.style.display = 'flex';
       content.classList.add('active');
     }
+    if (id === 'watchlist') updateWatchlist();
   });
 });
 
@@ -2828,6 +3099,19 @@ canvas.addEventListener('wheel', e => {
     console.log(`🔍 Zoom: ${oldZoom.toFixed(2)} → ${zoom.toFixed(2)}`);
   }
 }, { passive: false });
+// Flat map click handler
+flatCanvas.addEventListener('click', e => {
+  if (!flatMap) return;
+  const rect = flatCanvas.getBoundingClientRect();
+  const ex = e.clientX - rect.left, ey = e.clientY - rect.top;
+  for (const crisis of CRISES) {
+    if (!crisis._screenX) continue;
+    if (Math.hypot(ex - crisis._screenX, ey - crisis._screenY) < 10) {
+      selectCrisis(crisis); return;
+    }
+  }
+});
+
 canvas.addEventListener('click', e => {
   const rect = canvas.getBoundingClientRect();
   const emx = e.clientX - rect.left, emy = e.clientY - rect.top;
@@ -2908,6 +3192,158 @@ document.getElementById('cascBtn').addEventListener('click', function() {
 document.getElementById('tradeBtn').addEventListener('click', function() {
   showTrade = !showTrade;
   this.classList.toggle('active', showTrade);
+});
+
+// Flat map toggle
+document.getElementById('flatBtn').addEventListener('click', function() {
+  flatMap = !flatMap;
+  this.classList.toggle('active', flatMap);
+  canvas.style.display      = flatMap ? 'none' : 'block';
+  flatCanvas.classList.toggle('visible', flatMap);
+  if (flatMap) drawFlatMap();
+});
+
+// Fullscreen toggle
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(() => {});
+  } else {
+    document.exitFullscreen();
+  }
+}
+document.getElementById('fullBtn').addEventListener('click', toggleFullscreen);
+document.addEventListener('fullscreenchange', () => {
+  const btn = document.getElementById('fullBtn');
+  if (btn) btn.classList.toggle('active', !!document.fullscreenElement);
+  btn.title = document.fullscreenElement ? 'Exit Fullscreen [F]' : 'Fullscreen [F]';
+});
+
+// Alert badge — count critical crises and wire up click-to-filter
+function updateAlertBadge() {
+  const critical = CRISES.filter(c => (c.severity || 0) >= 80);
+  const badge = document.getElementById('alertBadge');
+  if (!badge) return;
+  if (critical.length > 0) {
+    badge.textContent = critical.length;
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
+}
+document.getElementById('alertBadge').addEventListener('click', () => {
+  minSeverityFilter = minSeverityFilter === 80 ? 0 : 80;
+  const badge = document.getElementById('alertBadge');
+  badge.style.background = minSeverityFilter === 80 ? '#fff' : '#ff3b3b';
+  badge.style.color      = minSeverityFilter === 80 ? '#ff3b3b' : '#fff';
+  badge.title = minSeverityFilter === 80 ? 'Showing critical only — click to clear' : 'Critical crises — click to filter';
+  updateEventsList(); drawGlobe();
+});
+
+// Share — deep link
+document.getElementById('shareBtn').addEventListener('click', () => {
+  if (!selected) return;
+  const url = new URL(window.location.href);
+  url.searchParams.set('crisis', selected.id);
+  navigator.clipboard.writeText(url.toString()).then(() => {
+    const btn = document.getElementById('shareBtn');
+    btn.textContent = '✓';
+    btn.style.color = '#3dffaa';
+    setTimeout(() => { btn.textContent = '🔗'; btn.style.color = 'var(--accent)'; }, 1800);
+  });
+});
+
+// Deep link — auto-select crisis from URL on load
+function applyDeepLink() {
+  const id = parseInt(new URLSearchParams(window.location.search).get('crisis'));
+  if (!id) return;
+  const crisis = CRISES.find(c => c.id === id);
+  if (crisis) {
+    selectCrisis(crisis);
+    if (crisis.lat != null && crisis.lon != null) flyToLatLon(crisis.lat, crisis.lon);
+  }
+}
+
+// Bookmarks
+function toggleBookmark(crisis) {
+  if (bookmarks.has(crisis.id)) {
+    bookmarks.delete(crisis.id);
+  } else {
+    bookmarks.add(crisis.id);
+  }
+  localStorage.setItem('geointel_bookmarks', JSON.stringify([...bookmarks]));
+  updateWatchlist();
+  // Sync star in overview panel if this is the selected crisis
+  if (selected?.id === crisis.id) {
+    const btn = document.getElementById('ov-bookmark-btn');
+    if (btn) btn.classList.toggle('on', bookmarks.has(crisis.id));
+  }
+}
+
+function updateWatchlist() {
+  const list = document.getElementById('watchlistItems');
+  const countEl = document.getElementById('watchlistCount');
+  if (!list) return;
+  list.innerHTML = '';
+  const saved = CRISES.filter(c => bookmarks.has(c.id));
+  if (countEl) countEl.textContent = `${saved.length} saved`;
+  if (saved.length === 0) {
+    list.innerHTML = '<div class="watchlist-empty"><div class="wi">★</div><div>Star crises to add them<br>to your watchlist</div></div>';
+    return;
+  }
+  saved.forEach(crisis => {
+    const tm = TYPE_META[crisis.type] || {};
+    const sevCol = crisis.severity > 80 ? '#ff3b3b' : crisis.severity > 60 ? '#ff8833' : '#ffd93d';
+    const el = document.createElement('div');
+    el.className = 'evt-item' + (crisis.id === selected?.id ? ' sel' : '');
+    el.style.cssText = 'display:flex;align-items:flex-start;gap:6px;';
+    el.innerHTML = `
+      <div style="flex:1;min-width:0;">
+        <div class="evt-name">${crisis.title}</div>
+        <div class="evt-sub">
+          <span class="sev-badge" style="background:${sevCol}22;color:${sevCol};border:1px solid ${sevCol}55">${crisis.severity}</span>
+          <span style="color:${tm.color||'#888'}">${tm.name||''}</span>
+          · ${crisis.country}
+        </div>
+      </div>
+      <button class="bookmark-btn on" data-bid="${crisis.id}" title="Remove">★</button>
+    `;
+    el.querySelector('.bookmark-btn').addEventListener('click', e => {
+      e.stopPropagation(); toggleBookmark(crisis);
+    });
+    el.addEventListener('click', () => selectCrisis(crisis));
+    list.appendChild(el);
+  });
+}
+
+document.getElementById('clearWatchlist').addEventListener('click', () => {
+  bookmarks.clear();
+  localStorage.setItem('geointel_bookmarks', JSON.stringify([]));
+  updateWatchlist();
+  updateEventsList();
+});
+
+document.getElementById('ov-bookmark-btn').addEventListener('click', () => {
+  if (selected) toggleBookmark(selected);
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown', e => {
+  // Don't fire when typing in an input
+  if (['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return;
+  switch (e.key.toLowerCase()) {
+    case 'f': toggleFullscreen(); break;
+    case 'h': document.getElementById('heatBtn').click(); break;
+    case 'r': document.getElementById('arcBtn').click(); break;
+    case 'm': document.getElementById('flatBtn').click(); break;
+    case '/':
+      e.preventDefault();
+      document.getElementById('searchInput').focus();
+      break;
+    case 'escape':
+      document.getElementById('panelClose').click();
+      document.getElementById('searchInput').blur();
+      break;
+  }
 });
 
 document.getElementById('simBtn').addEventListener('click', async function() {
@@ -3746,6 +4182,9 @@ async function initApp() {
   buildNewsFeed();
   drawNetwork();
   updateTimelineActivity();
+  updateAlertBadge();
+  updateWatchlist();
+  setTimeout(applyDeepLink, 200); // slight delay so CRISES is fully set
 
   fetch('countries-110m.json')
     .then(r => r.json())
