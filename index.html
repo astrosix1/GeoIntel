@@ -782,12 +782,12 @@ input[type=range]::-moz-range-thumb:hover { width:14px; height:14px; box-shadow:
 /* ── Bookmark button ── */
 .bookmark-btn {
   background:none; border:none; cursor:pointer;
-  color:var(--dim); font-size:13px; padding:0 2px;
+  color:rgba(255,255,255,0.25); font-size:14px; padding:0 3px;
   transition:color .15s, transform .15s; line-height:1;
   flex-shrink:0;
 }
-.bookmark-btn:hover { color:#ffd93d; transform:scale(1.2); }
-.bookmark-btn.on { color:#ffd93d; }
+.bookmark-btn:hover { color:#ffd93d; transform:scale(1.15); }
+.bookmark-btn.on { color:#ffd93d; text-shadow:0 0 6px rgba(255,217,61,0.5); }
 
 /* ── Cluster bubble ── */
 .cluster-tooltip {
@@ -809,27 +809,37 @@ input[type=range]::-moz-range-thumb:hover { width:14px; height:14px; box-shadow:
   body { overflow:auto; }
   .root {
     flex-direction:column; height:auto; min-height:100vh;
-    padding:4px; gap:4px;
+    padding:4px; gap:4px; overflow:visible;
   }
   .col-left {
-    width:100% !important; max-height:200px;
-    flex-direction:row; flex-wrap:nowrap; overflow-x:auto;
+    width:100% !important; max-height:none;
+    overflow:visible;
   }
-  .col-left .pane { min-width:260px; }
-  .col-left.collapsed { max-height:40px; }
-  .globe-col { height:55vw; min-height:260px; max-height:420px; }
+  .col-left .pane { width:100%; }
+  .col-left.collapsed { max-height:44px; overflow:hidden; }
+  .globe-col {
+    height:60vw; min-height:280px; max-height:440px;
+    flex-shrink:0;
+  }
+  #canvas, #flatMapCanvas { touch-action:none; }
   .col-right {
-    position:static; width:100%; transform:none !important;
-    opacity:1 !important; pointer-events:all !important;
-    max-height:none;
+    position:static; width:100% !important;
+    transform:none !important; opacity:1 !important;
+    pointer-events:all !important; max-height:none;
+    display:none;
   }
-  .col-right.open { animation:none; }
-  .panel-close { display:none; }
-  .globe-bottom { width:90%; max-width:none; }
-  .globe-controls { bottom:auto; top:8px; right:8px; flex-direction:row; }
-  .gc-btn { width:28px; height:28px; font-size:12px; }
+  .col-right.open { display:flex; animation:none; }
+  .panel-close {
+    position:fixed; top:8px; right:8px;
+    left:auto; z-index:100;
+  }
+  #shareBtn { display:none; }
+  .globe-bottom { width:92%; max-width:none; bottom:6px; }
+  .globe-controls { bottom:auto; top:8px; right:8px; flex-direction:row; flex-wrap:wrap; max-width:160px; }
+  .gc-btn { width:30px; height:30px; font-size:13px; }
   .tab { padding:5px 8px; font-size:8px; }
   .pane-hdr h2 { font-size:10px; }
+  .search-dropdown { position:fixed; top:auto; bottom:0; left:0; right:0; border-radius:14px 14px 0 0; max-height:60vh; }
 }
 
 /* ── Keyboard shortcut hint ── */
@@ -1862,8 +1872,10 @@ let cascadeActive = false;
 // Severity filter (0 = all, 80 = critical only)
 let minSeverityFilter = 0;
 
-// Bookmarks persisted in localStorage
-const bookmarks = new Set(JSON.parse(localStorage.getItem('geointel_bookmarks') || '[]'));
+// Bookmarks persisted in localStorage — always coerce IDs to numbers
+const bookmarks = new Set(
+  (JSON.parse(localStorage.getItem('geointel_bookmarks') || '[]')).map(Number)
+);
 
 // Canvas setup
 const canvas = document.getElementById('canvas');
@@ -2060,30 +2072,55 @@ let topoFeatures = null, topoMesh = null;
 let lastProjectionRotX = Infinity, lastProjectionRotY = Infinity;
 
 // ════════════════════════════════════════════════════════════
-// FLAT MAP (equirectangular 2D projection)
+// FLAT MAP (equirectangular 2D projection with pan + zoom)
 // ════════════════════════════════════════════════════════════
 const flatCanvas = document.getElementById('flatMapCanvas');
 const fctx = flatCanvas.getContext('2d');
 
+// Pan/zoom state for flat map
+let fZoom = 1, fPanX = 0, fPanY = 0;
+let fDrag = false, fLastX = 0, fLastY = 0;
+
+function flatProject(lat, lon) {
+  const W = flatCanvas.width || flatCanvas.clientWidth;
+  const H = flatCanvas.height || flatCanvas.clientHeight;
+  const baseX = (lon + 180) / 360 * W;
+  const baseY = (90 - lat) / 180 * H;
+  return {
+    x: (baseX - W / 2) * fZoom + W / 2 + fPanX,
+    y: (baseY - H / 2) * fZoom + H / 2 + fPanY,
+  };
+}
+
+function flatUnprojectClick(screenX, screenY) {
+  const W = flatCanvas.width, H = flatCanvas.height;
+  const baseX = (screenX - W / 2 - fPanX) / fZoom + W / 2;
+  const baseY = (screenY - H / 2 - fPanY) / fZoom + H / 2;
+  return { lat: 90 - baseY / H * 180, lon: baseX / W * 360 - 180 };
+}
+
 function drawFlatMap() {
   const W = flatCanvas.clientWidth, H = flatCanvas.clientHeight;
+  if (!W || !H) return;
   flatCanvas.width = W; flatCanvas.height = H;
   fctx.clearRect(0, 0, W, H);
 
   // Background
   fctx.fillStyle = '#07090f';
   fctx.fillRect(0, 0, W, H);
-
-  // Ocean gradient
   const ocean = fctx.createLinearGradient(0, 0, 0, H);
-  ocean.addColorStop(0, '#071420');
-  ocean.addColorStop(1, '#050d18');
-  fctx.fillStyle = ocean;
-  fctx.fillRect(0, 0, W, H);
+  ocean.addColorStop(0, '#071420'); ocean.addColorStop(1, '#050d18');
+  fctx.fillStyle = ocean; fctx.fillRect(0, 0, W, H);
+
+  fctx.save();
+  // Apply pan/zoom transform around center
+  fctx.translate(W / 2 + fPanX, H / 2 + fPanY);
+  fctx.scale(fZoom, fZoom);
+  fctx.translate(-W / 2, -H / 2);
 
   // Grid lines
-  fctx.strokeStyle = 'rgba(0,212,255,0.04)';
-  fctx.lineWidth = 0.5;
+  fctx.strokeStyle = 'rgba(0,212,255,0.05)';
+  fctx.lineWidth = 0.5 / fZoom;
   for (let lat = -90; lat <= 90; lat += 30) {
     const y = (90 - lat) / 180 * H;
     fctx.beginPath(); fctx.moveTo(0, y); fctx.lineTo(W, y); fctx.stroke();
@@ -2093,68 +2130,108 @@ function drawFlatMap() {
     fctx.beginPath(); fctx.moveTo(x, 0); fctx.lineTo(x, H); fctx.stroke();
   }
 
-  function flatProject(lat, lon) {
-    return { x: (lon + 180) / 360 * W, y: (90 - lat) / 180 * H };
-  }
-
-  // Draw countries from TopoJSON
+  // Countries
   if (worldTopo) {
     const features = topojson.feature(worldTopo, worldTopo.objects.countries).features;
     features.forEach(f => {
-      const isHighlighted = highlightedCountry && highlightedCountry.feature === f;
-      fctx.fillStyle = isHighlighted ? 'rgba(0,212,255,0.25)' : 'rgba(26,60,40,0.85)';
-      fctx.strokeStyle = isHighlighted ? 'rgba(0,212,255,0.8)' : 'rgba(255,255,255,0.15)';
-      fctx.lineWidth = isHighlighted ? 1.5 : 0.4;
-      const geom = f.geometry;
-      if (!geom) return;
+      const isHl = highlightedCountry && highlightedCountry.feature === f;
+      fctx.fillStyle   = isHl ? 'rgba(0,212,255,0.25)' : 'rgba(26,60,40,0.85)';
+      fctx.strokeStyle = isHl ? 'rgba(0,212,255,0.8)'  : 'rgba(255,255,255,0.15)';
+      fctx.lineWidth   = (isHl ? 1.5 : 0.4) / fZoom;
+      const geom = f.geometry; if (!geom) return;
       const polys = geom.type === 'Polygon' ? [geom.coordinates] : geom.coordinates;
-      polys.forEach(poly => {
-        poly.forEach(ring => {
-          fctx.beginPath();
-          ring.forEach(([lo, la], i) => {
-            const {x, y} = flatProject(la, lo);
-            i === 0 ? fctx.moveTo(x, y) : fctx.lineTo(x, y);
-          });
-          fctx.closePath();
-          fctx.fill();
-          fctx.stroke();
+      polys.forEach(poly => poly.forEach(ring => {
+        fctx.beginPath();
+        ring.forEach(([lo, la], i) => {
+          const px = (lo + 180) / 360 * W;
+          const py = (90 - la) / 180 * H;
+          i === 0 ? fctx.moveTo(px, py) : fctx.lineTo(px, py);
         });
-      });
+        fctx.closePath(); fctx.fill(); fctx.stroke();
+      }));
     });
   }
 
-  // Draw crisis pins
+  // Crisis pins
   const pool = CRISES.filter(c => {
     if (minSeverityFilter > 0 && (c.severity || 0) < minSeverityFilter) return false;
     if (countryFilter && c.country !== countryFilter) return false;
     const d = new Date(c.date_start || c.date);
     return !isNaN(d) && d.getFullYear() <= currentYear;
   });
-
   pool.forEach(c => {
     if (!c.lat || !c.lon) return;
-    const {x, y} = flatProject(c.lat, c.lon);
+    const px = (c.lon + 180) / 360 * W;
+    const py = (90 - c.lat) / 180 * H;
     const col = TYPE_META[c.type]?.color || '#fff';
-    const isSelected = c.id === selected?.id;
-    const r2 = isSelected ? 8 : 5;
+    const isSel = c.id === selected?.id;
+    const r2 = (isSel ? 7 : 4.5) / fZoom;
     fctx.save();
-    fctx.shadowColor = col; fctx.shadowBlur = isSelected ? 14 : 6;
+    fctx.shadowColor = col; fctx.shadowBlur = isSel ? 12 : 5;
     fctx.fillStyle = col;
-    fctx.beginPath(); fctx.arc(x, y, r2, 0, Math.PI*2); fctx.fill();
-    fctx.strokeStyle = 'rgba(255,255,255,0.7)'; fctx.lineWidth = 1;
-    fctx.stroke();
+    fctx.beginPath(); fctx.arc(px, py, r2, 0, Math.PI * 2); fctx.fill();
+    fctx.strokeStyle = 'rgba(255,255,255,0.7)';
+    fctx.lineWidth = 1 / fZoom; fctx.stroke();
     fctx.restore();
-    c._screenX = x; c._screenY = y; // store for click detection
+    // Store screen coords (accounting for transform) for click detection
+    c._screenX = (px - W / 2) * fZoom + W / 2 + fPanX;
+    c._screenY = (py - H / 2) * fZoom + H / 2 + fPanY;
   });
 
-  // Equator / prime meridian labels
-  fctx.fillStyle = 'rgba(0,212,255,0.2)';
-  fctx.font = '8px Segoe UI';
-  fctx.textAlign = 'left';
-  ['90°N','60°N','30°N','EQ','30°S','60°S','90°S'].forEach((lbl, i) => {
-    fctx.fillText(lbl, 4, i * H/6 + 10);
-  });
+  fctx.restore(); // end transform
+
+  // Lat/lon labels (screen space — not affected by transform)
+  fctx.fillStyle = 'rgba(0,212,255,0.25)';
+  fctx.font = '9px Segoe UI'; fctx.textAlign = 'left';
+  fctx.fillText(`Zoom: ${fZoom.toFixed(1)}×  Drag to pan  Scroll to zoom`, 8, H - 8);
 }
+
+// Flat map mouse events
+flatCanvas.addEventListener('wheel', e => {
+  if (!flatMap) return;
+  e.preventDefault();
+  const rect = flatCanvas.getBoundingClientRect();
+  const mx2 = e.clientX - rect.left, my2 = e.clientY - rect.top;
+  const scaleFactor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+  // Zoom toward cursor
+  fPanX = mx2 + (fPanX - mx2) * scaleFactor;
+  fPanY = my2 + (fPanY - my2) * scaleFactor;
+  fZoom = Math.max(1, Math.min(12, fZoom * scaleFactor));
+  if (fZoom === 1) { fPanX = 0; fPanY = 0; } // reset pan at min zoom
+  drawFlatMap();
+}, { passive: false });
+
+flatCanvas.addEventListener('mousedown', e => {
+  if (!flatMap) return;
+  fDrag = true; fLastX = e.clientX; fLastY = e.clientY;
+  flatCanvas.style.cursor = 'grabbing';
+});
+document.addEventListener('mouseup', () => {
+  fDrag = false;
+  if (flatMap) flatCanvas.style.cursor = 'grab';
+});
+flatCanvas.addEventListener('mousemove', e => {
+  if (!flatMap || !fDrag) return;
+  fPanX += e.clientX - fLastX;
+  fPanY += e.clientY - fLastY;
+  fLastX = e.clientX; fLastY = e.clientY;
+  drawFlatMap();
+});
+
+// Touch support for flat map
+flatCanvas.addEventListener('touchstart', e => {
+  if (!flatMap || e.touches.length !== 1) return;
+  fDrag = true; fLastX = e.touches[0].clientX; fLastY = e.touches[0].clientY;
+}, { passive: true });
+flatCanvas.addEventListener('touchend', () => { fDrag = false; });
+flatCanvas.addEventListener('touchmove', e => {
+  if (!flatMap || !fDrag || e.touches.length !== 1) return;
+  e.preventDefault();
+  fPanX += e.touches[0].clientX - fLastX;
+  fPanY += e.touches[0].clientY - fLastY;
+  fLastX = e.touches[0].clientX; fLastY = e.touches[0].clientY;
+  drawFlatMap();
+}, { passive: false });
 
 function drawGlobe() {
   // Flat map mode — skip 3D globe entirely
@@ -2912,7 +2989,7 @@ function updateEventsList() {
         · ${crisis.country}
       </div>
       </div>
-      <button class="bookmark-btn ${bookmarks.has(crisis.id) ? 'on' : ''}" data-bid="${crisis.id}" title="Bookmark">★</button>
+      <button class="bookmark-btn ${bookmarks.has(Number(crisis.id)) ? 'on' : ''}" data-bid="${crisis.id}" title="Bookmark">★</button>
     `;
     el.querySelector('.bookmark-btn').addEventListener('click', e => {
       e.stopPropagation();
@@ -3033,6 +3110,25 @@ document.querySelectorAll('.tab[data-left-tab]').forEach(tab => {
 
 canvas.addEventListener('mousedown', e => { drag = true; lastMX = e.clientX; lastMY = e.clientY; });
 document.addEventListener('mouseup',  () => drag = false);
+
+// Touch events for globe rotation on mobile
+canvas.addEventListener('touchstart', e => {
+  if (e.touches.length === 1) {
+    drag = true;
+    lastMX = e.touches[0].clientX;
+    lastMY = e.touches[0].clientY;
+  }
+}, { passive: true });
+canvas.addEventListener('touchend', () => { drag = false; }, { passive: true });
+canvas.addEventListener('touchmove', e => {
+  if (!drag || e.touches.length !== 1) return;
+  e.preventDefault();
+  rotY += (e.touches[0].clientX - lastMX) * 0.007;
+  rotX += (e.touches[0].clientY - lastMY) * 0.004;
+  rotX = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, rotX));
+  lastMX = e.touches[0].clientX;
+  lastMY = e.touches[0].clientY;
+}, { passive: false });
 document.addEventListener('mousemove', e => {
   const rect = canvas.getBoundingClientRect();
   mx = e.clientX - rect.left;
@@ -3198,9 +3294,15 @@ document.getElementById('tradeBtn').addEventListener('click', function() {
 document.getElementById('flatBtn').addEventListener('click', function() {
   flatMap = !flatMap;
   this.classList.toggle('active', flatMap);
-  canvas.style.display      = flatMap ? 'none' : 'block';
+  canvas.style.display = flatMap ? 'none' : 'block';
   flatCanvas.classList.toggle('visible', flatMap);
-  if (flatMap) drawFlatMap();
+  if (flatMap) {
+    fZoom = 1; fPanX = 0; fPanY = 0; // reset view
+    flatCanvas.style.cursor = 'grab';
+    drawFlatMap();
+  } else {
+    flatCanvas.style.cursor = '';
+  }
 });
 
 // Fullscreen toggle
@@ -3265,15 +3367,17 @@ function applyDeepLink() {
 
 // Bookmarks
 function toggleBookmark(crisis) {
-  if (bookmarks.has(crisis.id)) {
-    bookmarks.delete(crisis.id);
+  const id = Number(crisis.id);
+  if (bookmarks.has(id)) {
+    bookmarks.delete(id);
   } else {
-    bookmarks.add(crisis.id);
+    bookmarks.add(id);
   }
   localStorage.setItem('geointel_bookmarks', JSON.stringify([...bookmarks]));
   updateWatchlist();
+  updateEventsList(); // refresh stars in crisis list
   // Sync star in overview panel if this is the selected crisis
-  if (selected?.id === crisis.id) {
+  if (selected && Number(selected.id) === Number(crisis.id)) {
     const btn = document.getElementById('ov-bookmark-btn');
     if (btn) btn.classList.toggle('on', bookmarks.has(crisis.id));
   }
@@ -3284,7 +3388,7 @@ function updateWatchlist() {
   const countEl = document.getElementById('watchlistCount');
   if (!list) return;
   list.innerHTML = '';
-  const saved = CRISES.filter(c => bookmarks.has(c.id));
+  const saved = CRISES.filter(c => bookmarks.has(Number(c.id)));
   if (countEl) countEl.textContent = `${saved.length} saved`;
   if (saved.length === 0) {
     list.innerHTML = '<div class="watchlist-empty"><div class="wi">★</div><div>Star crises to add them<br>to your watchlist</div></div>';
@@ -3703,6 +3807,8 @@ async function loadRealData() {
       // Only show events from the last 30 days — keeps the globe feeling current
       CRISES = filterRecentEvents(transformedCrises, 720);
       console.log(`✅ Loaded ${CRISES.length} current crises from backend (last 30 days)`);
+      // Apply deep link now that CRISES is populated
+      setTimeout(applyDeepLink, 50);
     }
 
     // Load actors data
@@ -4184,7 +4290,6 @@ async function initApp() {
   updateTimelineActivity();
   updateAlertBadge();
   updateWatchlist();
-  setTimeout(applyDeepLink, 200); // slight delay so CRISES is fully set
 
   fetch('countries-110m.json')
     .then(r => r.json())
