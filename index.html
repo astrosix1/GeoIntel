@@ -382,6 +382,26 @@ body { font-family:'Segoe UI','Helvetica Neue',-apple-system,system-ui,sans-seri
   color:#111; background:#fff; line-height:1.6;
 }
 
+/* ── Toast notification ── */
+#toast {
+  position:fixed; top:18px; left:50%; transform:translateX(-50%) translateY(-70px);
+  background:rgba(8,16,34,0.96); border:1px solid rgba(0,212,255,0.45);
+  border-radius:9px; padding:10px 18px; color:#e8f4ff; font-size:13px;
+  z-index:9999; transition:transform .32s cubic-bezier(.2,.8,.3,1), opacity .32s ease;
+  opacity:0; pointer-events:none; max-width:460px; white-space:nowrap;
+  backdrop-filter:blur(14px); box-shadow:0 6px 28px rgba(0,0,0,.6), 0 0 0 1px rgba(0,212,255,0.1);
+}
+#toast.visible {
+  transform:translateX(-50%) translateY(0);
+  opacity:1; pointer-events:auto;
+}
+#toast-dismiss {
+  margin-left:12px; background:none; border:none; color:rgba(255,255,255,.4);
+  cursor:pointer; font-size:13px; padding:0; vertical-align:middle;
+  transition:color .15s;
+}
+#toast-dismiss:hover { color:#fff; }
+
 /* ── Domain chips ── */
 .domain-chips { display:flex; flex-wrap:wrap; gap:8px; }
 .chip {
@@ -2152,15 +2172,17 @@ function drawFlatMap() {
     });
   }
 
-  // Crisis pins
+  // Crisis pins — same filters as drawPins() so pin counts match
   const pool = CRISES.filter(c => {
     if (minSeverityFilter > 0 && (c.severity || 0) < minSeverityFilter) return false;
     if (countryFilter && c.country !== countryFilter) return false;
+    if (!activeTypes.has(c.type)) return false;
+    if (activeDomains.size > 0 && !activeDomains.has(getDomainForType(c.type))) return false;
     const d = new Date(c.date_start || c.date);
     return !isNaN(d) && d.getFullYear() <= currentYear;
   });
   pool.forEach(c => {
-    if (!c.lat || !c.lon) return;
+    if (c.lat == null || c.lon == null) return;
     const px = (c.lon + 180) / 360 * W;
     const py = (90 - c.lat) / 180 * H;
     const col = TYPE_META[c.type]?.color || '#fff';
@@ -3189,10 +3211,32 @@ document.addEventListener('mousemove', e => {
 });
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const cmx  = e.clientX - rect.left;
+  const cmy  = e.clientY - rect.top;
+
   const oldZoom = zoom;
-  zoom = Math.max(0.5, Math.min(10, zoom - e.deltaY * 0.001));
-  if (Math.abs(zoom - oldZoom) > 0.01) {  // Only log if zoom actually changed
-    console.log(`🔍 Zoom: ${oldZoom.toFixed(2)} → ${zoom.toFixed(2)}`);
+  const factor  = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+  zoom = Math.max(0.5, Math.min(10, zoom * factor));
+  if (zoom === oldZoom) return;
+
+  // Zoom toward cursor: work out the globe-space normalised coords of the
+  // cursor under the OLD zoom, then nudge rotation so that same point stays
+  // under the cursor after the zoom change.
+  const cx = CX(), cy = CY();
+  const oldR = (Math.min(canvas.width, canvas.height) / 2 - 48) * oldZoom;
+  const nx = (cmx - cx) / oldR;   // globe-space x  (-1 … 1)
+  const ny = -(cmy - cy) / oldR;  // globe-space y  (-1 … 1)
+
+  // Only adjust rotation when cursor is inside the globe disc
+  if (nx * nx + ny * ny < 0.92) {
+    // The point was at screen offset (nx*oldR, -ny*oldR) and will now be at
+    // (nx*newR, -ny*newR).  Compensate with a rotation so it stays at cursor.
+    const zf   = zoom / oldZoom;
+    const dRotY = nx * (1 - 1 / zf) * 0.85;
+    const dRotX = ny * (1 - 1 / zf) * 0.55;
+    rotY -= dRotY;
+    rotX  = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, rotX + dRotX));
   }
 }, { passive: false });
 // Flat map click handler
@@ -3354,15 +3398,70 @@ document.getElementById('shareBtn').addEventListener('click', () => {
   });
 });
 
+// Toast notification
+function showToast(html, duration = 4500) {
+  const t = document.getElementById('toast');
+  t.innerHTML = html + ' <button id="toast-dismiss" title="Dismiss">✕</button>';
+  t.classList.add('visible');
+  clearTimeout(t._tid);
+  t._tid = setTimeout(() => t.classList.remove('visible'), duration);
+  document.getElementById('toast-dismiss').addEventListener('click', () => {
+    t.classList.remove('visible');
+    clearTimeout(t._tid);
+  });
+}
+
 // Deep link — auto-select crisis from URL on load
-function applyDeepLink() {
+// If the crisis is in the current 30-day window, select it directly.
+// If it's historical (outside window), fetch it from the backend and open as a
+// "Shared Briefing" — so every share link works regardless of when the event occurred.
+async function applyDeepLink() {
   const id = parseInt(new URLSearchParams(window.location.search).get('crisis'));
   if (!id) return;
-  const crisis = CRISES.find(c => c.id === id);
+
+  // Fast path: crisis is already in the current window
+  let crisis = CRISES.find(c => c.id === id);
   if (crisis) {
     selectCrisis(crisis);
     if (crisis.lat != null && crisis.lon != null) flyToLatLon(crisis.lat, crisis.lon);
+    showToast(`🔗 <strong>Shared Briefing</strong>&ensp;·&ensp;${crisis.title}`, 4500);
+    return;
   }
+
+  // Historical crisis — fetch it from the backend
+  const raw = await GeoIntelAPI.getCrisisDetail(id);
+  if (!raw) {
+    showToast(`⚠️ Shared crisis not found`, 3500);
+    return;
+  }
+
+  // Transform to frontend format (same mapping as loadRealData)
+  crisis = {
+    id: raw.id,
+    type: raw.type,
+    title: raw.title,
+    country: raw.country,
+    lat: raw.lat,
+    lon: raw.lon,
+    severity: raw.severity,
+    confidence: raw.confidence,
+    location_confidence: raw.location_confidence,
+    date: raw.date || 'Historical',
+    date_start: raw.date,
+    analysis: raw.analysis || '',
+    impact: raw.impact || '',
+    stakeholders: Array.isArray(raw.stakeholders) ? raw.stakeholders : [],
+    domains: raw.domains || { military:50, economic:50, political:50, environment:50, technology:50, information:50 },
+    forecasts: [], cascade: [], causal: [], analogy: null,
+    _shared: true,
+  };
+
+  selectCrisis(crisis);
+  if (crisis.lat != null && crisis.lon != null) flyToLatLon(crisis.lat, crisis.lon);
+
+  const yr = raw.date ? new Date(raw.date).getFullYear() : null;
+  const yearLabel = yr && !isNaN(yr) ? `<span style="opacity:.55;font-size:11px">&ensp;${yr}</span>` : '';
+  showToast(`🔗 <strong>Shared Briefing</strong>&ensp;·&ensp;${crisis.title}${yearLabel}`, 6000);
 }
 
 // Bookmarks
@@ -4725,6 +4824,9 @@ function exportBriefing() {
   window.print();
 }
 </script>
+
+<!-- ══ Toast notification ══ -->
+<div id="toast"></div>
 
 <!-- ══ Printable Intelligence Briefing (hidden until Export) ══ -->
 <div id="printBriefing">
