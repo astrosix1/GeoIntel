@@ -4,28 +4,93 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GeoIntel — Geopolitical Intelligence Platform</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 
 :root {
-  --bg:     #0a0e1a;
-  --panel:  rgba(10,14,26,0.85);
-  --border: rgba(0,212,255,0.15);
-  --accent: #00d4ff;
-  --dim:    #5a6b8a;
-  --text:   #e8f4ff;
-  --text2:  #8fa3c0;
+  /* ── Typography ─────────────────────────────── */
+  --font-sans: 'Inter', 'Segoe UI', -apple-system, system-ui, sans-serif;
+  --font-mono: 'SF Mono', 'Consolas', 'Monaco', monospace;
+
+  /* ── Background surfaces ─────────────────────── */
+  --bg:    #090c18;
+  --bg2:   #0c1020;
+  --bg3:   #10162a;
+
+  /* ── Panel surfaces ──────────────────────────── */
+  --panel:  rgba(9,12,24,0.92);
+  --panel2: rgba(12,16,32,0.96);
+
+  /* ── Borders ─────────────────────────────────── */
+  --border:  rgba(0,212,255,0.13);
+  --border2: rgba(0,212,255,0.07);
+
+  /* ── Text scale ──────────────────────────────── */
+  --text:  #e8f4ff;
+  --text2: #8fa3c0;
+  --text3: #4e6380;
+  --dim:   #5a6b8a;
+
+  /* ── Brand accent ────────────────────────────── */
+  --accent:  #00d4ff;
+  --accent2: #4e9eff;
+  --accent3: rgba(0,212,255,0.12);
+
+  /* ── Status colors ───────────────────────────── */
   --red:    #ff2d5e;
   --orange: #ff7a3d;
   --yellow: #ffd01a;
   --green:  #1dd9c1;
   --purple: #c24eff;
   --pink:   #ff4ea0;
-  --left-w: 280px;
+
+  /* ── Semantic states ─────────────────────────── */
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --error:   #ef4444;
+  --info:    #3b82f6;
+
+  /* ── Neutral scale ───────────────────────────── */
+  --n-900: #090c18;
+  --n-800: #0d1225;
+  --n-700: #111830;
+  --n-600: #1a2440;
+  --n-500: #253050;
+  --n-400: #334060;
+  --n-300: #4a5c78;
+  --n-200: #6a7e98;
+  --n-100: #8fa3c0;
+  --n-50:  #b8cce0;
+
+  /* ── Layout ──────────────────────────────────── */
+  --left-w:         280px;
   --left-collapsed: 40px;
-  --shadow-sm: 0 4px 12px rgba(0,212,255,0.08);
-  --shadow-md: 0 8px 32px rgba(0,212,255,0.15);
-  --shadow-lg: 0 12px 48px rgba(0,212,255,0.25);
+  --right-w:        340px;
+
+  /* ── Elevation / shadows ─────────────────────── */
+  --shadow-xs: 0 2px 8px rgba(0,0,0,0.45);
+  --shadow-sm: 0 4px 16px rgba(0,0,0,0.55), 0 0 0 1px rgba(0,212,255,0.05);
+  --shadow-md: 0 8px 32px rgba(0,0,0,0.65), 0 0 0 1px rgba(0,212,255,0.09);
+  --shadow-lg: 0 16px 56px rgba(0,0,0,0.75), 0 0 0 1px rgba(0,212,255,0.13);
+  --glow-sm:   0 0 12px rgba(0,212,255,0.25);
+  --glow-md:   0 0 24px rgba(0,212,255,0.35);
+
+  /* ── Easing presets ──────────────────────────── */
+  --ease-fast:   0.12s ease;
+  --ease-base:   0.2s ease;
+  --ease-slow:   0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ── Radius ──────────────────────────────────── */
+  --r-xs:   4px;
+  --r-sm:   6px;
+  --r-md:   10px;
+  --r-lg:   14px;
+  --r-xl:   20px;
+  --r-pill: 999px;
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -101,7 +166,18 @@
   }
 }
 
-body { font-family:'Segoe UI','Helvetica Neue',-apple-system,system-ui,sans-serif; background:var(--bg); height:100vh; overflow:hidden; color:var(--text); font-size:13px; }
+body {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  height: 100vh;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'cv02','cv03','cv04','cv11';
+}
 
 /* ── Animation utility classes ── */
 .animate-in { animation: fadeInScale 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
@@ -124,52 +200,55 @@ body { font-family:'Segoe UI','Helvetica Neue',-apple-system,system-ui,sans-seri
 .pane {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius:12px;
-  overflow:hidden;
-  display:flex;
-  flex-direction:column;
-  backdrop-filter: blur(10px);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  backdrop-filter: blur(12px) saturate(180%);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
   box-shadow: var(--shadow-sm);
-  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: box-shadow var(--ease-slow), border-color var(--ease-base), transform var(--ease-spring);
 }
 .pane:hover {
   box-shadow: var(--shadow-md);
-  border-color: rgba(0,212,255,0.25);
-  transform: translateY(-1px);
+  border-color: rgba(0,212,255,0.22);
 }
 
 .pane-hdr {
-  padding:10px 12px;
-  border-bottom:1.5px solid var(--border);
-  display:flex;
-  align-items:center;
-  gap:8px;
-  flex-shrink:0;
-  background: linear-gradient(180deg, rgba(0,212,255,.03) 0%, transparent 100%);
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  background: linear-gradient(180deg, rgba(0,212,255,.04) 0%, transparent 100%);
 }
-
-.pane-hdr h2 { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:1.2px; color:var(--accent); background: linear-gradient(90deg, var(--accent) 0%, rgba(0,212,255,0.6) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.pane-hdr h2 {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.4px;
+  background: linear-gradient(90deg, var(--accent) 0%, rgba(78,158,255,0.9) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
 
 .pane-body {
-  flex:1;
-  overflow-y:auto;
-  padding:10px;
-  display:flex;
-  flex-direction:column;
-  gap:8px;
-  background: linear-gradient(180deg, rgba(0,212,255,.01) 0%, transparent 100%);
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
-.pane-body::-webkit-scrollbar { width:6px; }
+.pane-body::-webkit-scrollbar { width: 4px; }
 .pane-body::-webkit-scrollbar-track { background: transparent; }
 .pane-body::-webkit-scrollbar-thumb {
-  background:var(--border);
-  border-radius:3px;
-  transition: background 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  background: rgba(0,212,255,0.2);
+  border-radius: var(--r-pill);
 }
-.pane-body::-webkit-scrollbar-thumb:hover {
-  background:var(--accent);
-  border-radius:3px;
-}
+.pane-body::-webkit-scrollbar-thumb:hover { background: rgba(0,212,255,0.45); }
 
 /* ── Left column (collapsible) ── */
 .col-left {
@@ -232,21 +311,20 @@ body { font-family:'Segoe UI','Helvetica Neue',-apple-system,system-ui,sans-seri
 .col-right {
   position: absolute;
   top: 6px; right: 6px; bottom: 6px;
-  width: 280px;
+  width: var(--right-w);
   display: flex;
   flex-direction: column;
   gap: 6px;
   z-index: 15;
-  transform: translateX(calc(100% + 12px));
+  transform: translateX(calc(100% + 14px));
   opacity: 0;
-  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform var(--ease-spring), opacity var(--ease-slow);
   pointer-events: none;
 }
 .col-right.open {
   transform: translateX(0);
   opacity: 1;
   pointer-events: all;
-  animation: slideInRight 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 /* Close button for right panel */
@@ -270,11 +348,11 @@ body { font-family:'Segoe UI','Helvetica Neue',-apple-system,system-ui,sans-seri
 
 /* ── Tab bar ── */
 .tab-bar {
-  display:flex;
-  gap:2px;
-  padding:6px 6px 0;
-  flex-shrink:0;
-  background:transparent;
+  display: flex;
+  gap: 2px;
+  padding: 5px 8px 0;
+  flex-shrink: 0;
+  background: transparent;
   border-bottom: 1px solid var(--border);
   overflow-x: auto;
   overflow-y: hidden;
@@ -283,39 +361,37 @@ body { font-family:'Segoe UI','Helvetica Neue',-apple-system,system-ui,sans-seri
 }
 .tab-bar::-webkit-scrollbar { display: none; }
 .tab {
-  padding:6px 11px;
-  font-size:9px;
-  font-weight:700;
-  letter-spacing:.4px;
-  text-transform:uppercase;
-  color:var(--dim);
-  cursor:pointer;
-  border:none;
-  border-radius:8px 8px 0 0;
-  background:transparent;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  padding: 6px 10px;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+  color: var(--text3);
+  cursor: pointer;
+  border: none;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+  background: transparent;
+  transition: color var(--ease-base), background var(--ease-base);
   position: relative;
   white-space: nowrap;
+  font-family: var(--font-sans);
 }
-.tab:hover {
-  color:var(--accent);
-  background:rgba(0,212,255,0.08);
-}
+.tab:hover { color: var(--text2); background: rgba(0,212,255,0.06); }
 .tab.active {
-  color:var(--accent);
-  background:rgba(0,212,255,0.1);
-  border-bottom: 2px solid var(--accent);
+  color: var(--accent);
+  background: rgba(0,212,255,0.09);
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 .tab-content {
-  display:none;
+  display: none;
   opacity: 0;
-  animation: fadeInScale 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .tab-content.active {
-  display:flex;
-  flex-direction:column;
-  gap:8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   opacity: 1;
+  animation: fadeInScale 0.22s ease;
 }
 
 /* ── Search ── */
@@ -433,49 +509,58 @@ body { font-family:'Segoe UI','Helvetica Neue',-apple-system,system-ui,sans-seri
 
 /* ── Event list ── */
 .evt-item {
-  padding:10px 12px;
-  background:rgba(255,255,255,.02);
-  border-left:4px solid transparent;
-  border-radius:8px;
-  cursor:pointer;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  padding: 9px 11px;
+  background: rgba(255,255,255,0.025);
+  border-left: 3px solid transparent;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background var(--ease-base), border-color var(--ease-base), transform var(--ease-fast);
   position: relative;
   min-width: 0;
-}
-.evt-item::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: linear-gradient(90deg, rgba(0,212,255,0.15) 0%, transparent 100%);
-  opacity: 0;
-  transition: opacity 0.25s;
-  pointer-events: none;
+  overflow: hidden;
 }
 .evt-item:hover {
-  background:rgba(0,212,255,.08);
-  border-left-color:var(--accent);
-  transform: translateX(2px);
+  background: rgba(0,212,255,0.07);
+  border-left-color: rgba(0,212,255,0.5);
+  transform: translateX(1px);
 }
 .evt-item.sel {
-  background:rgba(0,212,255,.12);
-  border-left-color:var(--accent);
-  box-shadow: var(--shadow-sm);
-  border-left-width: 5px;
+  background: rgba(0,212,255,0.1);
+  border-left-color: var(--accent);
+  box-shadow: var(--shadow-xs);
 }
-.evt-name { font-weight:700; color:#e8f4ff; font-size:12px; white-space: normal; overflow-wrap: break-word; word-break: break-word; line-height: 1.4; }
-.evt-sub { color:var(--dim); font-size:11px; margin-top:3px; display:flex; align-items:center; gap:5px; }
+.evt-name {
+  font-weight: 600;
+  color: var(--text);
+  font-size: 12px;
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  line-height: 1.45;
+  letter-spacing: -0.01em;
+}
+.evt-sub {
+  color: var(--text3);
+  font-size: 10.5px;
+  margin-top: 3px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 500;
+}
 .sev-badge {
-  display:inline-block;
-  padding:4px 10px;
-  border-radius:8px;
-  font-size:11px;
-  font-weight:700;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: var(--r-xs);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  transition: filter var(--ease-fast), box-shadow var(--ease-fast);
 }
 .sev-badge:hover {
-  transform: scale(1.05);
-  filter: brightness(1.2);
-  box-shadow: 0 0 12px currentColor;
+  filter: brightness(1.15);
+  box-shadow: 0 0 10px currentColor;
 }
 
 /* ── Section label ── */
@@ -491,9 +576,22 @@ body { font-family:'Segoe UI','Helvetica Neue',-apple-system,system-ui,sans-seri
 
 /* ── Bar ── */
 .bar-row { display:flex; align-items:center; gap:8px; }
-.bar-track { flex:1; height:6px; background:rgba(255,255,255,.06); border-radius:3px; overflow:hidden; }
-.bar-fill { height:100%; border-radius:3px; transition:width .4s cubic-bezier(0.4, 0, 0.2, 1); }
-.bar-label { width:32px; text-align:right; font-size:11px; font-weight:700; color:var(--text); }
+.bar-track {
+  flex: 1; height: 5px;
+  background: rgba(255,255,255,0.05);
+  border-radius: var(--r-pill);
+  overflow: hidden;
+}
+.bar-fill {
+  height: 100%;
+  border-radius: var(--r-pill);
+  transition: width .5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.bar-label {
+  width: 34px; text-align: right;
+  font-size: 11px; font-weight: 700;
+  color: var(--text); font-family: var(--font-mono);
+}
 
 /* ── Stakeholder tags ── */
 .tags { display:flex; flex-wrap:wrap; gap:6px; }
@@ -671,31 +769,37 @@ body { font-family:'Segoe UI','Helvetica Neue',-apple-system,system-ui,sans-seri
 
 /* ── Globe controls ── */
 .globe-controls {
-  position:absolute; top:10px; right:10px;
-  display:flex; flex-direction:column; gap:5px; z-index:10;
+  position: absolute; top: 10px; right: 10px;
+  display: flex; flex-direction: column; gap: 4px; z-index: 10;
 }
 .gc-btn {
-  width:36px; height:36px;
-  background:var(--panel);
-  border:1px solid var(--border);
-  border-radius:8px;
-  color:var(--accent);
-  cursor:pointer; font-size:14px;
-  display:flex; align-items:center; justify-content:center;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  backdrop-filter: blur(10px);
+  width: 36px; height: 36px;
+  background: rgba(9,12,24,0.88);
+  border: 1px solid rgba(0,212,255,0.15);
+  border-radius: var(--r-sm);
+  color: var(--text2);
+  cursor: pointer; font-size: 14px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background var(--ease-base), border-color var(--ease-base),
+              color var(--ease-base), transform var(--ease-fast), box-shadow var(--ease-base);
+  backdrop-filter: blur(14px);
   box-shadow: var(--shadow-sm);
+  font-family: var(--font-sans);
 }
 .gc-btn:hover {
-  background:rgba(0,212,255,.12);
-  border-color:var(--accent);
-  box-shadow: var(--shadow-md);
-  transform: scale(1.1);
+  background: rgba(0,212,255,0.12);
+  border-color: rgba(0,212,255,0.45);
+  color: var(--accent);
+  box-shadow: var(--shadow-md), var(--glow-sm);
+  transform: translateY(-1px);
 }
-.gc-btn:active {
-  transform: scale(0.95);
+.gc-btn:active { transform: scale(0.93); }
+.gc-btn.active {
+  background: rgba(0,212,255,0.14);
+  border-color: rgba(0,212,255,0.55);
+  color: var(--accent);
+  box-shadow: 0 0 16px rgba(0,212,255,0.2);
 }
-.gc-btn.active { background:rgba(255,45,94,.18); border-color:var(--red); color:var(--red); }
 
 /* ── Globe bottom bar ── */
 .globe-bottom {
@@ -2361,15 +2465,19 @@ function drawGlobe() {
     const actorMap = {};
     ACTORS.forEach(a => { actorMap[a.id] = a; });
 
-    // Draw arcs first (under nodes)
+    // Draw arcs first (under nodes) — thickness and opacity scale with strength
     RELATIONSHIPS.forEach(rel => {
       const a = actorMap[rel.a], b = actorMap[rel.b];
       if (!a || !b) return;
       const col = arcColors[rel.type] || '#888';
       // Only draw if at least one endpoint is on the visible hemisphere
       const pa = project(a.lat, a.lon), pb = project(b.lat, b.lon);
-      if (pa.z > 0 || pb.z > 0)
-        drawArc(a.lat, a.lon, b.lat, b.lon, col, 1.5, 0.5);
+      if (pa.z > 0 || pb.z > 0) {
+        const s = (rel.strength || 50) / 100;          // 0 → 1
+        const lineW = 0.6 + s * 2.4;                   // 0.6px (weak) → 3px (strong)
+        const alpha = 0.18 + s * 0.52;                  // 0.18 (weak) → 0.7 (strong)
+        drawArc(a.lat, a.lon, b.lat, b.lon, col, lineW, alpha);
+      }
     });
 
     // Draw actor nodes on top of arcs
@@ -2423,19 +2531,31 @@ function drawGlobe() {
     });
   }
 
-  // Cascade rings
+  // Cascade rings — pulse count driven by number of cascade steps (1-3),
+  // color shifts from yellow (low prob) → orange → red (high prob)
   if (showCasc && selected) {
     const pSel = project(selected.lat, selected.lon);
     if (pSel.z > 0) {
-      for (let ring = 1; ring <= 3; ring++) {
-        const phasedPulse = (pulse + ring * 0.8) % (Math.PI * 2);
-        const rScale = (ring / 3) * 0.45 + Math.sin(phasedPulse) * 0.05;
-        ctx.strokeStyle = `rgba(255,80,80,${0.3 - ring * 0.07})`;
-        ctx.lineWidth = 1.5 - ring * 0.3;
+      const steps = selected.cascade?.steps || [];
+      const ringCount = steps.length > 0 ? Math.min(steps.length, 3) : 2;
+      for (let ring = 1; ring <= ringCount; ring++) {
+        const step = steps[ring - 1];
+        const prob  = step?.probability ?? (0.6 - ring * 0.15);
+        const color = prob >= 0.65 ? '255,60,60' : prob >= 0.4 ? '255,165,50' : '255,210,50';
+        const phasedPulse = (pulse + ring * 1.1) % (Math.PI * 2);
+        const rScale = (ring / (ringCount + 1)) * 0.55 + Math.sin(phasedPulse) * 0.04;
+        const alpha  = (0.55 - ring * 0.12) * (0.7 + Math.sin(phasedPulse) * 0.3);
+        ctx.strokeStyle = `rgba(${color},${alpha.toFixed(2)})`;
+        ctx.lineWidth = Math.max(0.5, 2 - ring * 0.45);
         ctx.beginPath();
         ctx.arc(pSel.sx, pSel.sy, r * rScale, 0, Math.PI * 2);
         ctx.stroke();
       }
+      // Core dot
+      ctx.fillStyle = 'rgba(255,80,80,0.35)';
+      ctx.beginPath();
+      ctx.arc(pSel.sx, pSel.sy, 6 + Math.sin(pulse) * 2, 0, Math.PI * 2);
+      ctx.fill();
     }
   }
 
@@ -3560,58 +3680,79 @@ document.getElementById('simBtn').addEventListener('click', async function() {
   const res = document.getElementById('cascadeResults');
 
   if (cascadeActive) {
-    // Fetch cascade data from backend
-    this.textContent = '⚡ Loading simulation...';
+    this.textContent = '⏳ Simulating…';
+    this.disabled = true;
+    res.style.display = 'flex';
+    res.innerHTML = '<div style="padding:12px;color:var(--text3);font-size:12px;text-align:center">Running cascade analysis…</div>';
+
     try {
-      const response = await fetch(`http://localhost:5000/api/crises/${selected.id}/cascade?depth=2&threshold=50`);
+      // Use API_BASE from frontend-api.js (handles localhost vs production)
+      const API_BASE = window.GEOINTEL_API_BASE ||
+        (window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : 'https://geointel-production-9001.up.railway.app/api');
+      const response = await fetch(`${API_BASE}/crises/${selected.id}/cascade?depth=2&threshold=40`);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-      const cascadeData = await response.json();
+      const d = await response.json();
+      selected.cascade = d;
 
-      // Store cascade data on selected object for display
-      selected.cascade = cascadeData;
+      // ── Probability colour helper ─────────────────────
+      const probColor = p => p >= 0.7 ? '#ff4d4d' : p >= 0.45 ? '#ffb347' : p >= 0.25 ? '#ffd93d' : '#3dffaa';
+      const probBar   = p => `<div style="height:3px;border-radius:2px;background:rgba(255,255,255,0.08);margin-top:4px">
+          <div style="height:3px;border-radius:2px;width:${(p*100).toFixed(0)}%;background:${probColor(p)};transition:width .6s ease"></div></div>`;
 
-      // Render cascade results
-      if (cascadeData.steps && cascadeData.steps.length > 0) {
-        const stepsHtml = cascadeData.steps.map((step, i) => {
-          const actorNames = (step.affected_actor_names || []).join(', ') || step.actors.join(', ');
-          return `
-            <div class="causal-step" style="border-left:2px solid #ff5555${Math.floor(step.probability * 255).toString(16).padStart(2, '0')};animation:fadein .3s ${i*0.1}s both">
-              <span class="causal-num" style="color:#ff8888">[${step.hop}]</span>
-              <span class="causal-txt">
-                <strong>${actorNames}</strong> - ${step.mechanism}<br/>
-                <small style="color:#aaa">Probability: ${(step.probability * 100).toFixed(0)}% | Escalation: +${step.escalation_increase}</small>
-              </span>
+      if (d.steps && d.steps.length > 0) {
+        const overallProb = d.total_cascade_probability;
+        const summaryHtml = `
+          <div style="background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.15);border-radius:8px;padding:10px 12px;margin-bottom:10px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+              <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text3)">Cascade Forecast</span>
+              <span style="font-size:11px;font-weight:700;color:${probColor(overallProb)}">${(overallProb*100).toFixed(0)}% overall risk</span>
             </div>
-          `;
+            <div style="display:flex;gap:14px;font-size:11px;color:var(--text2)">
+              <span>⚡ ${d.total_steps} propagation hop${d.total_steps !== 1 ? 's' : ''}</span>
+              <span>⏱ ${d.estimated_timeline}</span>
+            </div>
+            ${probBar(overallProb)}
+          </div>`;
+
+        const stepsHtml = d.steps.map((step, i) => {
+          const names = (step.affected_actor_names || step.actors || []).join(', ');
+          const p = step.probability;
+          const color = probColor(p);
+          return `
+            <div style="padding:9px 11px;background:rgba(255,255,255,0.025);border-left:2px solid ${color}40;border-radius:6px;animation:slideInUp .25s ${i*0.08}s both">
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">
+                <span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:${color};background:${color}18;padding:2px 6px;border-radius:3px">Hop ${step.hop}</span>
+                <span style="font-size:11px;font-weight:600;color:var(--text)">${names}</span>
+              </div>
+              <div style="font-size:10.5px;color:var(--text2);line-height:1.4">${step.mechanism}</div>
+              <div style="display:flex;align-items:center;gap:10px;margin-top:4px;font-size:10px;color:var(--text3)">
+                <span style="color:${color};font-weight:600">${(p*100).toFixed(0)}% probability</span>
+                <span>+${step.escalation_increase} severity</span>
+              </div>
+              ${probBar(p)}
+            </div>`;
         }).join('');
 
-        const summaryHtml = `
-          <div style="background:#1a2a3a;border-radius:6px;padding:8px;margin-bottom:8px;font-size:12px">
-            <strong>Cascade Summary</strong><br/>
-            Total Steps: ${cascadeData.total_steps} | Overall Probability: ${(cascadeData.total_cascade_probability * 100).toFixed(0)}%<br/>
-            Estimated Timeline: ${cascadeData.estimated_timeline}
-          </div>
-        `;
-
         res.innerHTML = summaryHtml + stepsHtml;
-        res.style.display = 'flex';
       } else {
-        res.innerHTML = '<div class="causal-step"><span class="causal-txt">No cascade escalation predicted for this crisis</span></div>';
-        res.style.display = 'flex';
+        res.innerHTML = `<div style="padding:14px 12px;text-align:center;color:var(--text3);font-size:12px">
+          <div style="font-size:22px;margin-bottom:6px">🟢</div>
+          No significant cascade escalation predicted for this crisis at current threshold.
+        </div>`;
       }
 
       this.textContent = '⏹ Stop Simulation';
+      this.disabled = false;
     } catch (error) {
       console.error('Cascade simulation error:', error);
-      this.textContent = '⚠️ Simulation failed: ' + error.message;
-      res.innerHTML = `<div class="causal-step" style="color:#ff8888"><span class="causal-txt">Failed to load cascade analysis: ${error.message}</span></div>`;
-      res.style.display = 'flex';
+      this.textContent = '⚡ Simulate Escalation';
+      this.disabled = false;
+      res.innerHTML = `<div style="padding:12px;color:#ff8888;font-size:11px">⚠️ ${error.message}</div>`;
       cascadeActive = false;
-      this.classList.toggle('active', false);
+      document.getElementById('cascBtn').classList.remove('active');
     }
   } else {
-    // Stop simulation
     res.style.display = 'none';
     this.textContent = '⚡ Simulate Escalation';
   }
@@ -3874,13 +4015,20 @@ async function loadRealData() {
 
     console.log('Backend connected successfully');
 
-    // Load crises data
-    const crisisResult = await GeoIntelAPI.getCrises({ days: 365, min_severity: 0 });
+    // Parallel load: crises, actors, relationships fetch concurrently after health check
+    const t0 = performance.now();
+    const [crisisResult, actorResult, relResult] = await Promise.all([
+      GeoIntelAPI.getCrises({ days: 365, min_severity: 0 }),
+      GeoIntelAPI.getActors(),
+      GeoIntelAPI.getRelationships(),
+    ]);
+    console.log(`📡 Parallel data fetch in ${(performance.now() - t0).toFixed(0)}ms`);
+
+    // Process crises
     if (crisisResult.error) {
       throw new Error(`Failed to load crises: ${crisisResult.error}`);
     }
     if (crisisResult.crises && Array.isArray(crisisResult.crises)) {
-      // Transform API response to match frontend format
       let transformedCrises = crisisResult.crises.map(c => ({
         id: c.id,
         type: c.type,
@@ -3892,26 +4040,22 @@ async function loadRealData() {
         confidence: c.confidence,
         location_confidence: c.location_confidence,
         date: c.date || 'Recent',
-        date_start: c.date, // Keep for filtering
+        date_start: c.date,
         analysis: c.analysis || '',
         impact: c.impact || '',
         stakeholders: Array.isArray(c.stakeholders) ? c.stakeholders : [],
         domains: c.domains || { military: 50, economic: 50, political: 50, environment: 50, technology: 50, information: 50 },
-        forecasts: [], // Will be loaded when selected
+        forecasts: [],
         cascade: [],
         causal: [],
         analogy: null,
       }));
-
-      // Only show events from the last 30 days — keeps the globe feeling current
       CRISES = filterRecentEvents(transformedCrises, 720);
-      console.log(`✅ Loaded ${CRISES.length} current crises from backend (last 30 days)`);
-      // Apply deep link now that CRISES is populated
+      console.log(`✅ Loaded ${CRISES.length} current crises (last 30 days)`);
       setTimeout(applyDeepLink, 50);
     }
 
-    // Load actors data
-    const actorResult = await GeoIntelAPI.getActors();
+    // Process actors
     if (!actorResult.error && actorResult.actors) {
       ACTORS = actorResult.actors.map(a => ({
         id: a.id,
@@ -3919,20 +4063,24 @@ async function loadRealData() {
         color: a.color,
         lat: a.lat,
         lon: a.lon,
+        military_power: a.military || 50,
+        economic_power: a.economic || 50,
+        is_nuclear: a.is_nuclear || false,
       }));
-      console.log(`Loaded ${ACTORS.length} actors from backend`);
+      console.log(`Loaded ${ACTORS.length} actors`);
     }
 
-    // Load relationships data
-    const relResult = await GeoIntelAPI.getRelationships();
+    // Process relationships — include strength & stability for arc styling
     if (!relResult.error && relResult.relationships) {
       RELATIONSHIPS = relResult.relationships.map(r => ({
         a: r.a,
         b: r.b,
         type: r.type,
         label: r.label || '',
+        strength: r.strength || 50,
+        stability: r.stability || 50,
       }));
-      console.log(`Loaded ${RELATIONSHIPS.length} relationships from backend`);
+      console.log(`Loaded ${RELATIONSHIPS.length} relationships`);
     }
 
     return true;

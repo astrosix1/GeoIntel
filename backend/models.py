@@ -201,6 +201,7 @@ class Relationship(Base):
             'type': self.type,
             'label': self.label,
             'strength': self.strength,
+            'stability': self.stability,
         }
 
 
