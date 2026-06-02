@@ -7,6 +7,7 @@ from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from apscheduler.schedulers.background import BackgroundScheduler
 import logging
+import re
 from datetime import datetime, timedelta
 import os
 from dotenv import load_dotenv
@@ -41,7 +42,11 @@ logger = logging.getLogger(__name__)
 # Create Flask app (WebSocket optional)
 FRONTEND_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 app = Flask(__name__)
-CORS(app)
+# Restrict CORS to known origins. Set CORS_ORIGINS env var in production
+# (comma-separated list of allowed frontend URLs).
+_cors_origins_raw = os.getenv('CORS_ORIGINS', 'http://localhost:3000,http://localhost:5000,http://localhost:5173')
+_cors_origins = [o.strip() for o in _cors_origins_raw.split(',') if o.strip()]
+CORS(app, origins=_cors_origins)
 app.config['JSON_SORT_KEYS'] = False
 
 @app.route('/')
@@ -459,7 +464,7 @@ def fetch_wikipedia_image(country, title):
                 continue
             data = r.json()
             if data.get('thumbnail', {}).get('source'):
-                src = data['thumbnail']['source'].replace(r'/\d+px-/', '/480px-')
+                src = re.sub(r'/\d+px-/', '/480px-', data['thumbnail']['source'])
                 caption = data.get('description') or data.get('title') or term
                 return {'src': src, 'caption': caption}
         except Exception as e:
@@ -509,7 +514,7 @@ Recent News Headlines:
         image = fetch_wikipedia_image(crisis.country, crisis.title)
 
         # Call Claude API for briefing
-        if anthropic_client.api_key:
+        if anthropic_client and anthropic_client.api_key:
             try:
                 message = anthropic_client.messages.create(
                     model="claude-3-5-sonnet-20241022",
@@ -833,6 +838,8 @@ def get_crisis_detail(crisis_id):
 @app.route('/api/crises/<crisis_id>', methods=['PATCH'])
 def update_crisis(crisis_id):
     """Update crisis data (admin endpoint)"""
+    if not _check_admin_key():
+        return jsonify({'error': 'Unauthorized'}), 401
     try:
         session = Session()
 
@@ -1196,7 +1203,7 @@ def analyze_relationship():
                 f"Strength={known_strength}/100, Stability={known_stability}/100"
             )
 
-        if anthropic_client.api_key:
+        if anthropic_client and anthropic_client.api_key:
             try:
                 message = anthropic_client.messages.create(
                     model="claude-3-5-sonnet-20241022",
@@ -1452,11 +1459,13 @@ def get_crisis_news(crisis_id):
         result = [n.to_dict() for n in news]
         session.close()
 
-        # If no news found, generate contextual news for the crisis
+        # If no news found, generate contextual news for the crisis.
+        # Open a fresh session — the original was already closed above.
         if not result:
-            crisis = session.query(Crisis).filter(Crisis.id == crisis_id).first()
-            if crisis:
-                result = _generate_contextual_news(crisis)
+            with Session() as s:
+                crisis = s.query(Crisis).filter(Crisis.id == crisis_id).first()
+                if crisis:
+                    result = _generate_contextual_news(crisis)
 
         return jsonify({
             'crisis_id': crisis_id,
@@ -1554,9 +1563,21 @@ def _generate_contextual_news(crisis):
 # ADMIN ENDPOINTS
 # ════════════════════════════════════════════════════════════
 
+def _check_admin_key():
+    """Return True if the request carries a valid X-Admin-Key header.
+    Set ADMIN_KEY in the environment to enable protection.
+    If ADMIN_KEY is not set, admin endpoints are disabled entirely."""
+    admin_key = os.getenv('ADMIN_KEY', '')
+    if not admin_key:
+        return False  # No key configured — deny by default
+    return request.headers.get('X-Admin-Key', '') == admin_key
+
+
 @app.route('/api/admin/sync', methods=['POST'])
 def trigger_data_sync():
     """Manually trigger data sync from all sources"""
+    if not _check_admin_key():
+        return jsonify({'error': 'Unauthorized'}), 401
     try:
         DataAggregator.sync_all_sources()
 
