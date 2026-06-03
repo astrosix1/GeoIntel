@@ -5,6 +5,8 @@ source reliability, escalation analysis, economic impact, and AI briefings
 """
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from apscheduler.schedulers.background import BackgroundScheduler
 import logging
 import re
@@ -48,6 +50,37 @@ _cors_origins_raw = os.getenv('CORS_ORIGINS', 'http://localhost:3000,http://loca
 _cors_origins = [o.strip() for o in _cors_origins_raw.split(',') if o.strip()]
 CORS(app, origins=_cors_origins)
 app.config['JSON_SORT_KEYS'] = False
+
+# Initialize rate limiter: 100 requests per minute per IP
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=["100 per minute"],
+    storage_uri="memory://"  # In-memory storage; use Redis for production
+)
+
+# ════════════════════════════════════════════════════════════
+# GLOBAL ERROR HANDLING
+# ════════════════════════════════════════════════════════════
+
+@app.errorhandler(400)
+def bad_request(error):
+    logger.warning(f"Bad request: {error}")
+    return jsonify({'error': 'Invalid request parameters', 'details': str(error)}), 400
+
+@app.errorhandler(401)
+def unauthorized(error):
+    logger.warning(f"Unauthorized access attempt")
+    return jsonify({'error': 'Unauthorized — API key required'}), 401
+
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({'error': 'Resource not found'}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    logger.error(f"Internal server error: {error}")
+    return jsonify({'error': 'Internal server error — please try again later'}), 500
 
 @app.route('/')
 def serve_frontend():
