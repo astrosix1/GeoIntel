@@ -343,34 +343,174 @@ body {
     background: #999;
 }
 
-/* Responsive design */
-@media (max-width: 1200px) {
-    .sidebar {
-        width: 280px;
-    }
+/* ─── Responsive Design ──────────────────────────────────────────────────── */
 
-    .info-panel {
-        width: 280px;
-    }
+/* Large desktop — slightly tighter panels */
+@media (max-width: 1200px) {
+    .sidebar { width: 280px; }
+    .info-panel { width: 260px; min-width: 260px; }
 }
 
-@media (max-width: 900px) {
+/* Tablet (768px–1024px) — stack vertically, globe on top */
+@media (max-width: 1024px) {
+    body { overflow: auto; height: auto; }
+
     .container {
         flex-direction: column;
+        height: auto;
+        min-height: 100vh;
+        padding: 8px;
+        gap: 8px;
     }
 
-    .sidebar,
-    .info-panel {
+    .sidebar {
         width: 100%;
-        max-height: 200px;
+        max-height: 280px;
+        flex-shrink: 0;
     }
 
     .main-content {
         flex-direction: column;
+        height: auto;
+        gap: 8px;
     }
 
     .globe-container {
-        flex: 1;
-        min-height: 400px;
+        width: 100%;
+        min-width: 0;
+        min-height: 50vw;
+        max-height: 480px;
+        flex-shrink: 0;
     }
+
+    .info-panel {
+        width: 100%;
+        min-width: 0;
+        max-height: 360px;
+    }
+}
+
+/* Mobile (max 768px) — tab-based navigation, full-width panels */
+@media (max-width: 768px) {
+    body { overflow: auto; height: auto; }
+
+    .container {
+        flex-direction: column;
+        height: auto;
+        min-height: 100vh;
+        padding: 0;
+        gap: 0;
+    }
+
+    /* Mobile header */
+    .sidebar-header {
+        padding: 14px 16px;
+        position: sticky;
+        top: 0;
+        z-index: 100;
+    }
+
+    .sidebar-header h1 { font-size: 18px; }
+    .subtitle { font-size: 11px; }
+
+    /* Mobile tab bar — hide sidebar and info-panel by default */
+    .sidebar {
+        width: 100%;
+        max-height: none;
+        border-radius: 0;
+        flex-shrink: 0;
+    }
+
+    .sidebar-content { padding: 12px; max-height: 60vh; }
+
+    /* Globe takes full viewport width */
+    .main-content { flex-direction: column; }
+
+    .globe-container {
+        width: 100%;
+        min-width: 0;
+        min-height: 60vw;
+        max-height: 360px;
+        border-radius: 0;
+        flex-shrink: 0;
+    }
+
+    .info-panel {
+        width: 100%;
+        min-width: 0;
+        max-height: none;
+        border-radius: 0;
+        overflow-y: visible;
+    }
+
+    /* Touch-friendly controls */
+    .control-btn {
+        width: 44px;
+        height: 44px;
+        font-size: 20px;
+    }
+
+    .globe-controls {
+        top: 10px;
+        right: 10px;
+        gap: 8px;
+    }
+
+    /* Bigger tap targets on event items */
+    .event-item {
+        padding: 14px 12px;
+        font-size: 14px;
+    }
+
+    .event-item-title { font-size: 14px; }
+
+    /* Filter section on mobile */
+    .filter-section h3 { font-size: 15px; }
+    .filter-group label { font-size: 14px; padding: 4px 0; }
+    .filter-group input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        margin-right: 10px;
+    }
+
+    /* Search */
+    .search-box input { padding: 12px; font-size: 15px; }
+
+    /* Info panel details */
+    .event-details { padding: 16px; }
+    .event-details h2 { font-size: 20px; }
+    .event-details p { font-size: 15px; }
+}
+
+/* Small phones (max 480px) */
+@media (max-width: 480px) {
+    .sidebar-header h1 { font-size: 16px; }
+
+    .globe-container {
+        min-height: 56vw;
+        max-height: 280px;
+    }
+
+    .control-btn {
+        width: 40px;
+        height: 40px;
+        font-size: 18px;
+    }
+
+    .event-details h2 { font-size: 17px; }
+
+    .event-meta { gap: 6px; }
+    .event-category, .event-date { font-size: 11px; padding: 3px 8px; }
+
+    /* Stack event meta vertically on very small screens */
+    .event-item-title { font-size: 13px; }
+    .event-item-location { font-size: 11px; }
+}
+
+/* Very small phones (max 360px) */
+@media (max-width: 360px) {
+    .sidebar-header { padding: 10px 12px; }
+    .sidebar-content { padding: 10px; }
+    .event-details { padding: 12px; }
+    .search-box input { padding: 10px; font-size: 14px; }
 }
