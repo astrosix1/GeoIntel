@@ -18,6 +18,7 @@ from collections import defaultdict
 
 from models import Session, Crisis, News, Actor, Relationship, Forecast, EconomicData
 from data_sources import DataAggregator, init_actors, init_relationships
+from cache import cache_get, cache_set, cache_delete, cache_clear_prefix, cache_stats
 
 # Optional: Anthropic for AI briefings
 try:
@@ -726,20 +727,26 @@ def broadcast_new_crisis(crisis_dict, watch_list='all'):
 def get_crises():
     """Get all active crises with enhanced data"""
     try:
-        session = Session()
+        # Build a deterministic cache key from query params
+        crisis_type     = request.args.get('type', '')
+        min_severity    = request.args.get('min_severity', '0')
+        days            = request.args.get('days', '')
+        include_analysis = request.args.get('include_analysis', 'false').lower()
+        cache_key = f"crises:list:{crisis_type}:{min_severity}:{days}:{include_analysis}"
 
-        # Filters
-        crisis_type = request.args.get('type')
-        min_severity = int(request.args.get('min_severity', 0))
-        days = request.args.get('days')          # optional — omit to return all crises
-        include_analysis = request.args.get('include_analysis', 'false').lower() == 'true'
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return jsonify(cached)
+
+        session = Session()
+        min_severity_int = int(min_severity)
 
         query = session.query(Crisis).filter(Crisis.is_active == True)
 
         if crisis_type:
             query = query.filter(Crisis.type == crisis_type)
 
-        query = query.filter(Crisis.severity >= min_severity)
+        query = query.filter(Crisis.severity >= min_severity_int)
 
         # Only apply date window if caller explicitly requests it
         if days:
@@ -753,20 +760,24 @@ def get_crises():
             crisis_dict = c.to_dict()
 
             # Add enhanced analysis if requested
-            if include_analysis:
+            if include_analysis == 'true':
                 crisis_dict['source_reliability'] = calculate_source_reliability(c.id)
                 crisis_dict['escalation'] = analyze_escalation(c.id)
-                # Don't include economic impact by default (heavy computation)
 
             result.append(crisis_dict)
 
         session.close()
 
-        return jsonify({
+        response = {
             'count': len(result),
             'crises': result,
             'timestamp': datetime.utcnow().isoformat()
-        })
+        }
+
+        # Cache for 60s (crises don't change second-to-second)
+        cache_set(cache_key, response, ttl=60)
+
+        return jsonify(response)
 
     except Exception as e:
         logger.error(f"Error fetching crises: {e}")
@@ -781,10 +792,17 @@ def get_balanced_crises():
     Useful for the globe view to ensure worldwide coverage.
     """
     try:
-        session = Session()
+        days = request.args.get('days', '30')
+        per_region = request.args.get('per_region', '40')
+        cache_key = f"crises:balanced:{days}:{per_region}"
 
-        days = int(request.args.get('days', 30))
-        per_region = int(request.args.get('per_region', 40))
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return jsonify(cached)
+
+        session = Session()
+        days = int(days)
+        per_region = int(per_region)
 
         REGIONS = {
             'americas':    {'lat_min': -60, 'lat_max': 80,  'lon_min': -180, 'lon_max': -30},
@@ -826,12 +844,17 @@ def get_balanced_crises():
         # Sort combined results by severity
         all_crises.sort(key=lambda x: x.get('severity', 0), reverse=True)
 
-        return jsonify({
+        response = {
             'count': len(all_crises),
             'crises': all_crises,
             'regions': list(REGIONS.keys()),
             'timestamp': datetime.utcnow().isoformat(),
-        })
+        }
+
+        # Globe view — cache for 90s (heavier query, changes slowly)
+        cache_set(cache_key, response, ttl=90)
+
+        return jsonify(response)
 
     except Exception as e:
         logger.error(f"Error fetching balanced crises: {e}")
@@ -1028,17 +1051,21 @@ def get_crisis_full_analysis(crisis_id):
 def get_actors():
     """Get all geopolitical actors"""
     try:
-        session = Session()
+        cache_key = 'actors:all'
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return jsonify(cached)
 
+        session = Session()
         actors = session.query(Actor).all()
         result = [a.to_dict() for a in actors]
-
         session.close()
 
-        return jsonify({
-            'count': len(result),
-            'actors': result
-        })
+        response = {'count': len(result), 'actors': result}
+        # Actors rarely change — cache for 5 minutes
+        cache_set(cache_key, response, ttl=300)
+
+        return jsonify(response)
 
     except Exception as e:
         logger.error(f"Error fetching actors: {e}")
@@ -1614,8 +1641,14 @@ def trigger_data_sync():
     try:
         DataAggregator.sync_all_sources()
 
+        # Invalidate all crisis and actor caches so fresh data is served immediately
+        cache_clear_prefix('crises:')
+        cache_clear_prefix('actors:')
+        logger.info("Cache invalidated after admin sync")
+
         return jsonify({
             'status': 'sync_started',
+            'cache_cleared': True,
             'timestamp': datetime.utcnow().isoformat()
         })
 
@@ -1655,7 +1688,8 @@ def health_check():
     return jsonify({
         'status': 'ok',
         'timestamp': datetime.utcnow().isoformat(),
-        'version': '1.0.0'
+        'version': '1.0.0',
+        'cache': cache_stats()
     })
 
 
