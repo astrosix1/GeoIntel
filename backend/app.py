@@ -3,7 +3,7 @@ GeoIntel Backend API - Enhanced with Real-Time Intelligence
 Real-time geopolitical intelligence platform with WebSocket streaming,
 source reliability, escalation analysis, economic impact, and AI briefings
 """
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, make_response
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -15,6 +15,9 @@ import os
 from dotenv import load_dotenv
 import json
 from collections import defaultdict
+from functools import wraps
+import csv
+from io import StringIO
 
 from models import Session, Crisis, News, Actor, Relationship, Forecast, EconomicData
 from data_sources import DataAggregator, init_actors, init_relationships
@@ -1620,17 +1623,50 @@ def _generate_contextual_news(crisis):
 
 
 # ════════════════════════════════════════════════════════════
-# ADMIN ENDPOINTS
+# ADMIN ENDPOINTS & AUTHENTICATION
 # ════════════════════════════════════════════════════════════
 
+# Optional JWT support for Supabase auth
+try:
+    import jwt
+    jwt_available = True
+except:
+    jwt_available = False
+
 def _check_admin_key():
-    """Return True if the request carries a valid X-Admin-Key header.
-    Set ADMIN_KEY in the environment to enable protection.
-    If ADMIN_KEY is not set, admin endpoints are disabled entirely."""
+    """Return True if the request carries valid credentials.
+    Supports two methods:
+    1. X-Admin-Key header (legacy, simple API key)
+    2. Authorization: Bearer <JWT> (Supabase/JWT tokens)
+    """
+    # Method 1: Check legacy admin key header
     admin_key = os.getenv('ADMIN_KEY', '')
-    if not admin_key:
-        return False  # No key configured — deny by default
-    return request.headers.get('X-Admin-Key', '') == admin_key
+    if admin_key and request.headers.get('X-Admin-Key', '') == admin_key:
+        logger.info("Admin access granted via API key")
+        return True
+
+    # Method 2: Check JWT Bearer token
+    if jwt_available:
+        auth_header = request.headers.get('Authorization', '')
+        if auth_header.startswith('Bearer '):
+            token = auth_header[7:]  # Remove 'Bearer ' prefix
+            try:
+                # Decode without verification first to check issuer
+                decoded = jwt.decode(token, options={"verify_signature": False})
+
+                # Check if user email is in admin list
+                admin_emails = os.getenv('ADMIN_EMAILS', 'collins.nick999@gmail.com').split(',')
+                admin_emails = [e.strip() for e in admin_emails]
+
+                user_email = decoded.get('email') or decoded.get('user_metadata', {}).get('email')
+                if user_email and user_email in admin_emails:
+                    logger.info(f"Admin access granted via JWT for {user_email}")
+                    return True
+            except Exception as e:
+                logger.warning(f"JWT validation failed: {e}")
+                return False
+
+    return False
 
 
 @app.route('/api/admin/sync', methods=['POST'])
@@ -1679,6 +1715,57 @@ def get_stats():
 
     except Exception as e:
         logger.error(f"Error fetching stats: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/crises/export', methods=['GET'])
+def export_crises_csv():
+    """Export all crises as CSV. Optional query params: ?format=csv or ?status=active"""
+    try:
+        if not _check_admin_key():
+            return jsonify({'error': 'Unauthorized'}), 401
+
+        status_filter = request.args.get('status', '').lower()
+        session = Session()
+
+        # Query crises with optional status filter
+        query = session.query(Crisis)
+        if status_filter == 'active':
+            query = query.filter(Crisis.is_active == True)
+        elif status_filter == 'inactive':
+            query = query.filter(Crisis.is_active == False)
+
+        crises = query.order_by(Crisis.start_date.desc()).all()
+
+        # Create CSV in memory
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['ID', 'Title', 'Region', 'Severity', 'Status', 'Start Date', 'Last Updated', 'Description'])
+
+        for crisis in crises:
+            writer.writerow([
+                crisis.id,
+                crisis.title or '',
+                crisis.region or '',
+                crisis.severity or 0,
+                'Active' if crisis.is_active else 'Inactive',
+                crisis.start_date.isoformat() if crisis.start_date else '',
+                crisis.updated_at.isoformat() if crisis.updated_at else '',
+                crisis.description or ''
+            ])
+
+        session.close()
+
+        # Return as downloadable CSV file
+        response = make_response(output.getvalue())
+        response.headers['Content-Disposition'] = f'attachment; filename=crises_export_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.csv'
+        response.headers['Content-Type'] = 'text/csv'
+
+        logger.info(f"CSV export of {len(crises)} crises completed")
+        return response
+
+    except Exception as e:
+        logger.error(f"Error exporting crises to CSV: {e}")
         return jsonify({'error': str(e)}), 500
 
 
