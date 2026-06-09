@@ -56,11 +56,20 @@ CORS(app, origins=_cors_origins)
 app.config['JSON_SORT_KEYS'] = False
 
 # Initialize rate limiter: 100 requests per minute per IP
-# Uses Redis if REDIS_URL is set (shared across workers), otherwise falls back to in-memory
+# Uses Redis if REDIS_URL is set AND reachable, otherwise falls back to in-memory
 _redis_url = os.getenv('REDIS_URL', '')
-_limiter_storage = _redis_url if _redis_url else "memory://"
-if not _redis_url:
-    logger.warning("REDIS_URL not set — rate limiter using in-memory storage (not shared across workers)")
+_limiter_storage = "memory://"
+if _redis_url:
+    try:
+        import redis as _redis_test
+        _r = _redis_test.from_url(_redis_url)
+        _r.ping()
+        _limiter_storage = _redis_url
+        logger.info(f"Rate limiter using Redis: {_redis_url}")
+    except Exception as _e:
+        logger.warning(f"Redis unreachable for rate limiter ({_e}). Using in-memory storage.")
+else:
+    logger.info("No REDIS_URL set — rate limiter using in-memory storage.")
 limiter = Limiter(
     app=app,
     key_func=get_remote_address,
