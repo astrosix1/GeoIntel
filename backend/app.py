@@ -56,11 +56,16 @@ CORS(app, origins=_cors_origins)
 app.config['JSON_SORT_KEYS'] = False
 
 # Initialize rate limiter: 100 requests per minute per IP
+# Uses Redis if REDIS_URL is set (shared across workers), otherwise falls back to in-memory
+_redis_url = os.getenv('REDIS_URL', '')
+_limiter_storage = _redis_url if _redis_url else "memory://"
+if not _redis_url:
+    logger.warning("REDIS_URL not set — rate limiter using in-memory storage (not shared across workers)")
 limiter = Limiter(
     app=app,
     key_func=get_remote_address,
     default_limits=["100 per minute"],
-    storage_uri="memory://"  # In-memory storage; use Redis for production
+    storage_uri=_limiter_storage
 )
 
 # ════════════════════════════════════════════════════════════
@@ -98,7 +103,8 @@ def serve_static(filename):
 socketio = None
 try:
     from flask_socketio import SocketIO, emit, join_room
-    socketio = SocketIO(app, cors_allowed_origins="*")
+    # SECURITY FIX: Match WebSocket CORS to REST CORS (not wildcard)
+    socketio = SocketIO(app, cors_allowed_origins=_cors_origins)
     logger.info("SocketIO loaded successfully")
 except Exception as e:
     logger.warning(f"SocketIO not available: {e}. Running in REST-only mode.")
@@ -784,7 +790,7 @@ def get_crises():
 
     except Exception as e:
         logger.error(f"Error fetching crises: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
 
 
 @app.route('/api/crises/balanced', methods=['GET'])
@@ -861,7 +867,7 @@ def get_balanced_crises():
 
     except Exception as e:
         logger.error(f"Error fetching balanced crises: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
 
 
 @app.route('/api/crises/<crisis_id>', methods=['GET'])
@@ -891,7 +897,7 @@ def get_crisis_detail(crisis_id):
 
     except Exception as e:
         logger.error(f"Error fetching crisis detail: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
 
 
 @app.route('/api/crises/<crisis_id>', methods=['PATCH'])
@@ -929,7 +935,7 @@ def update_crisis(crisis_id):
 
     except Exception as e:
         logger.error(f"Error updating crisis: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
 
 
 # ════════════════════════════════════════════════════════════
@@ -944,7 +950,7 @@ def get_crisis_reliability(crisis_id):
         return jsonify(reliability)
     except Exception as e:
         logger.error(f"Error analyzing reliability: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
 
 
 @app.route('/api/crises/<crisis_id>/escalation', methods=['GET'])
@@ -958,7 +964,7 @@ def get_crisis_escalation(crisis_id):
             return jsonify({'error': 'Crisis not found'}), 404
     except Exception as e:
         logger.error(f"Error analyzing escalation: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
 
 
 @app.route('/api/crises/<crisis_id>/cascade', methods=['GET'])
@@ -980,7 +986,7 @@ def get_crisis_cascade(crisis_id):
             return jsonify({'error': 'Crisis not found'}), 404
     except Exception as e:
         logger.error(f"Error analyzing cascade: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
 
 
 @app.route('/api/crises/<crisis_id>/economic', methods=['GET'])
@@ -994,7 +1000,7 @@ def get_crisis_economic_impact(crisis_id):
             return jsonify({'error': 'Crisis not found'}), 404
     except Exception as e:
         logger.error(f"Error analyzing economic impact: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
 
 
 @app.route('/api/crises/<crisis_id>/briefing', methods=['GET'])
@@ -1011,7 +1017,7 @@ def get_crisis_briefing(crisis_id):
             }), 503
     except Exception as e:
         logger.error(f"Error generating briefing: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
 
 
 @app.route('/api/crises/<crisis_id>/full-analysis', methods=['GET'])
@@ -1043,7 +1049,7 @@ def get_crisis_full_analysis(crisis_id):
 
     except Exception as e:
         logger.error(f"Error generating full analysis: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
 
 
 # ════════════════════════════════════════════════════════════
@@ -1072,7 +1078,7 @@ def get_actors():
 
     except Exception as e:
         logger.error(f"Error fetching actors: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
 
 
 @app.route('/api/actors/<actor_id>', methods=['GET'])
@@ -1100,7 +1106,7 @@ def get_actor(actor_id):
 
     except Exception as e:
         logger.error(f"Error fetching actor: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
 
 
 # ════════════════════════════════════════════════════════════
@@ -1132,7 +1138,7 @@ def get_relationships():
 
     except Exception as e:
         logger.error(f"Error fetching relationships: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
 
 
 def fetch_wikipedia_bilateral(country_a, country_b):
@@ -1336,7 +1342,7 @@ Be specific and factual. Total: 250-350 words."""
 
     except Exception as e:
         logger.error(f"Analyze relationship error: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
 
 
 # ════════════════════════════════════════════════════════════
@@ -1437,7 +1443,7 @@ def get_forecasts(crisis_id):
 
     except Exception as e:
         logger.error(f"Error fetching forecasts: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
 
 
 # ════════════════════════════════════════════════════════════
@@ -1481,7 +1487,7 @@ def get_news():
 
     except Exception as e:
         logger.error(f"Error fetching news: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
 
 
 # ════════════════════════════════════════════════════════════
@@ -1510,7 +1516,7 @@ def get_economic_data(country_code):
 
     except Exception as e:
         logger.error(f"Error fetching economic data: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
 
 
 @app.route('/api/crises/<crisis_id>/news', methods=['GET'])
@@ -1537,7 +1543,7 @@ def get_crisis_news(crisis_id):
         })
     except Exception as e:
         logger.error(f"Error fetching news: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
 
 
 def _generate_contextual_news(crisis):
@@ -1608,14 +1614,16 @@ def _generate_contextual_news(crisis):
     now = datetime.utcnow()
     for i in range(3):
         published = now - timedelta(hours=random.randint(1, 48))
+        # SECURITY FIX: Clearly mark synthetic content — never impersonate real news sources
         article = {
-            'source': random.choice(['Reuters', 'AP News', 'BBC', 'Al Jazeera', 'DW', 'France24']),
+            'source': 'GeoIntel (AI-generated summary)',
             'title': random.choice(template_list),
-            'description': f"Ongoing developments in {crisis.country} related to {crisis.title.lower()}. Severity level: {crisis.severity}/100.",
-            'url': f"https://example.com/news/{crisis.id}_{i}",
+            'description': f"No indexed news found for this event. This is an AI-generated summary based on crisis data for {crisis.country}.",
+            'url': None,
             'urlToImage': None,
             'publishedAt': published.isoformat(),
-            'content': f"Recent updates on the {crisis.title} situation...",
+            'content': f"AI-generated context for {crisis.title}. No real news articles are currently indexed for this event.",
+            'is_synthetic': True,
         }
         news_articles.append(article)
 
@@ -1637,7 +1645,7 @@ def _check_admin_key():
     """Return True if the request carries valid credentials.
     Supports two methods:
     1. X-Admin-Key header (legacy, simple API key)
-    2. Authorization: Bearer <JWT> (Supabase/JWT tokens)
+    2. Authorization: Bearer <JWT> (Supabase/JWT tokens — signature verified)
     """
     # Method 1: Check legacy admin key header
     admin_key = os.getenv('ADMIN_KEY', '')
@@ -1645,26 +1653,34 @@ def _check_admin_key():
         logger.info("Admin access granted via API key")
         return True
 
-    # Method 2: Check JWT Bearer token
+    # Method 2: Check JWT Bearer token with proper signature verification
     if jwt_available:
         auth_header = request.headers.get('Authorization', '')
         if auth_header.startswith('Bearer '):
-            token = auth_header[7:]  # Remove 'Bearer ' prefix
+            token = auth_header[7:]
+            jwt_secret = os.getenv('SUPABASE_JWT_SECRET', '')
+            if not jwt_secret:
+                logger.warning("SUPABASE_JWT_SECRET not set — JWT auth disabled")
+                return False
             try:
-                # Decode without verification first to check issuer
-                decoded = jwt.decode(token, options={"verify_signature": False})
-
-                # Check if user email is in admin list
-                admin_emails = os.getenv('ADMIN_EMAILS', 'collins.nick999@gmail.com').split(',')
-                admin_emails = [e.strip() for e in admin_emails]
-
+                # SECURITY FIX: Verify signature using Supabase JWT secret
+                decoded = jwt.decode(
+                    token,
+                    jwt_secret,
+                    algorithms=["HS256"],
+                    options={"verify_exp": True}
+                )
+                admin_emails = [e.strip() for e in os.getenv('ADMIN_EMAILS', 'collins.nick999@gmail.com').split(',')]
                 user_email = decoded.get('email') or decoded.get('user_metadata', {}).get('email')
                 if user_email and user_email in admin_emails:
                     logger.info(f"Admin access granted via JWT for {user_email}")
                     return True
-            except Exception as e:
-                logger.warning(f"JWT validation failed: {e}")
-                return False
+                logger.warning(f"JWT valid but email not in admin list: {user_email}")
+            except jwt.ExpiredSignatureError:
+                logger.warning("JWT rejected: token expired")
+            except jwt.InvalidTokenError as e:
+                logger.warning(f"JWT rejected: {e}")
+            return False
 
     return False
 
@@ -1690,12 +1706,15 @@ def trigger_data_sync():
 
     except Exception as e:
         logger.error(f"Error triggering sync: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
 
 
 @app.route('/api/admin/stats', methods=['GET'])
 def get_stats():
-    """Get database stats"""
+    """Get database stats — admin only"""
+    # SECURITY FIX: Protect stats endpoint (was publicly readable)
+    if not _check_admin_key():
+        return jsonify({'error': 'Unauthorized'}), 401
     try:
         session = Session()
 
@@ -1715,7 +1734,7 @@ def get_stats():
 
     except Exception as e:
         logger.error(f"Error fetching stats: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
 
 
 @app.route('/api/crises/export', methods=['GET'])
@@ -1766,7 +1785,7 @@ def export_crises_csv():
 
     except Exception as e:
         logger.error(f"Error exporting crises to CSV: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
 
 
 @app.route('/api/health', methods=['GET'])
