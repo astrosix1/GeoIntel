@@ -1406,6 +1406,19 @@ input[type=range]::-moz-range-thumb:hover { width:14px; height:14px; box-shadow:
   <div class="pane" style="flex:0 0 auto">
     <div class="pane-hdr"><h2>⚠️ Active Alerts</h2></div>
     <div class="pane-body" id="alertsList" style="gap:4px;padding:6px"></div>
+
+    <!-- Email alert subscription -->
+    <div style="padding:8px 10px;border-top:1px solid var(--border);">
+      <div id="alertSubForm" style="display:flex;flex-direction:column;gap:6px;">
+        <p style="color:var(--text-dim);font-size:11px;margin:0;">Get email alerts when a tracked region escalates:</p>
+        <input id="alertSubName"  type="text"  placeholder="Your name"   style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-size:12px;outline:none;">
+        <input id="alertSubEmail" type="email" placeholder="your@email.com" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-size:12px;outline:none;">
+        <p style="color:var(--text-dim);font-size:10px;margin:0;">Region: auto-set from selected crisis, or type below:</p>
+        <input id="alertSubRegion" type="text" placeholder="Country / region (or 'all')" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-size:12px;outline:none;">
+        <button onclick="submitAlertSubscription()" style="background:var(--accent);color:#fff;border:none;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:700;cursor:pointer;">🔔 Subscribe to Alerts</button>
+        <p id="alertSubMsg" style="color:#22c55e;font-size:11px;margin:0;display:none;"></p>
+      </div>
+    </div>
   </div>
 
 <!-- Breaking Alert Toast -->
@@ -4158,6 +4171,50 @@ function showBreakingAlert(crisis) {
 
 async function loadReliabilityData(id) { try { const r = await fetch(`http://localhost:5000/api/crises/${id}/reliability`); return r.ok ? await r.json() : null; } catch (e) { return null; } }
 async function loadEscalationData(id) { try { const r = await fetch(`http://localhost:5000/api/crises/${id}/escalation`); return r.ok ? await r.json() : null; } catch (e) { return null; } }
+
+// ── Alert email subscriptions ─────────────────────────────────────────────────
+async function submitAlertSubscription() {
+  const name   = document.getElementById('alertSubName').value.trim();
+  const email  = document.getElementById('alertSubEmail').value.trim();
+  const region = document.getElementById('alertSubRegion').value.trim() ||
+                 (window._selectedCrisis?.country) || 'all';
+  const msg    = document.getElementById('alertSubMsg');
+
+  if (!email || !email.includes('@')) {
+    msg.textContent = '⚠️ Please enter a valid email.';
+    msg.style.color = '#f59e0b';
+    msg.style.display = 'block';
+    return;
+  }
+
+  try {
+    const res = await fetch('http://localhost:5000/api/alerts/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name || 'Subscriber', email, regions: [region] }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      msg.textContent = `✅ Subscribed! You'll receive alerts for: ${region}`;
+      msg.style.color = '#22c55e';
+      document.getElementById('alertSubEmail').value = '';
+      document.getElementById('alertSubName').value = '';
+    } else {
+      msg.textContent = `⚠️ ${data.error || 'Subscription failed.'}`;
+      msg.style.color = '#f59e0b';
+    }
+  } catch (e) {
+    msg.textContent = '⚠️ Could not connect to server.';
+    msg.style.color = '#f59e0b';
+  }
+  msg.style.display = 'block';
+}
+
+// Pre-fill region when a crisis is selected
+function prefillAlertRegion(country) {
+  const field = document.getElementById('alertSubRegion');
+  if (field && country) field.value = country;
+}
 async function loadEconomicData(id) { try { const r = await fetch(`http://localhost:5000/api/crises/${id}/economic`); return r.ok ? await r.json() : null; } catch (e) { return null; } }
 async function loadBriefing(id) { try { const r = await fetch(`http://localhost:5000/api/crises/${id}/briefing`); return r.ok ? await r.json() : null; } catch (e) { return null; } }
 
@@ -4473,6 +4530,8 @@ function updateBriefingPanel(br) {
 const originalSelectCrisis = selectCrisis;
 selectCrisis = async function(crisis) {
   selected = crisis;
+  window._selectedCrisis = crisis; // For alert subscription pre-fill
+  prefillAlertRegion(crisis.country);
   document.getElementById('colRight').classList.add('open');
 
   if (!crisis.forecasts || crisis.forecasts.length === 0) {

@@ -915,6 +915,9 @@ def update_crisis(crisis_id):
 
         data = request.get_json()
 
+        # Capture old severity before update (for alert comparison)
+        old_severity = crisis.severity
+
         # Allow updates to severity, analysis, impact, stakeholders
         allowed_fields = ['severity', 'confidence', 'analysis', 'impact', 'stakeholders', 'is_verified']
 
@@ -926,6 +929,10 @@ def update_crisis(crisis_id):
         session.commit()
 
         result = crisis.to_dict()
+
+        # Fire alert emails if severity escalated significantly
+        check_and_fire_alerts(crisis, old_severity)
+
         session.close()
 
         # Broadcast update to clients
@@ -1797,6 +1804,215 @@ def health_check():
         'version': '1.0.0',
         'cache': cache_stats()
     })
+
+
+# ════════════════════════════════════════════════════════════
+# CRISIS ALERT SUBSCRIPTIONS
+# Research feature: email users when tracked regions escalate
+# ════════════════════════════════════════════════════════════
+
+# In-memory alert subscriptions store (persisted to JSON file)
+import json as _json
+
+ALERTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'alert_subscriptions.json')
+
+def _load_subscriptions() -> list:
+    """Load alert subscriptions from disk."""
+    try:
+        if os.path.exists(ALERTS_FILE):
+            with open(ALERTS_FILE, 'r') as f:
+                return _json.load(f)
+    except Exception as e:
+        logger.warning(f"Could not load alert subscriptions: {e}")
+    return []
+
+def _save_subscriptions(subs: list) -> None:
+    """Persist alert subscriptions to disk."""
+    try:
+        with open(ALERTS_FILE, 'w') as f:
+            _json.dump(subs, f, indent=2)
+    except Exception as e:
+        logger.error(f"Could not save alert subscriptions: {e}")
+
+def _send_alert_email(email: str, name: str, crisis_title: str, country: str,
+                      severity: int, old_severity: int, trend: str) -> bool:
+    """Send a crisis escalation alert email via Resend."""
+    resend_key = os.getenv('RESEND_API_KEY', '')
+    if not resend_key:
+        logger.warning("RESEND_API_KEY not set — alert email skipped")
+        return False
+
+    change = severity - old_severity
+    direction = f"+{change}" if change > 0 else str(change)
+    urgency_color = '#ef4444' if severity >= 80 else '#f59e0b' if severity >= 60 else '#3b82f6'
+
+    html = f"""
+<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#0f172a;font-family:-apple-system,sans-serif;">
+  <table width="100%" style="max-width:560px;margin:40px auto;">
+    <tr>
+      <td style="background:#1e293b;border-radius:16px 16px 0 0;padding:28px 32px;text-align:center;border:1px solid #334155;border-bottom:none;">
+        <div style="font-size:28px;margin-bottom:8px;">🚨</div>
+        <h1 style="color:#f1f5f9;font-size:20px;font-weight:800;margin:0 0 4px;">Crisis Escalation Alert</h1>
+        <p style="color:#64748b;font-size:13px;margin:0;">{datetime.utcnow().strftime('%B %d, %Y — %H:%M UTC')}</p>
+      </td>
+    </tr>
+    <tr>
+      <td style="background:#1e293b;padding:24px 32px;border-left:1px solid #334155;border-right:1px solid #334155;">
+        <p style="color:#cbd5e1;font-size:15px;margin:0 0 16px;">Hi {name},</p>
+        <p style="color:#cbd5e1;font-size:15px;margin:0 0 20px;">
+          A crisis you are tracking has escalated significantly.
+        </p>
+        <div style="background:#0f172a;border-radius:12px;padding:20px;border:1px solid #334155;margin-bottom:20px;">
+          <p style="color:#94a3b8;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin:0 0 8px;">Crisis</p>
+          <p style="color:#f1f5f9;font-size:17px;font-weight:700;margin:0 0 4px;">{crisis_title}</p>
+          <p style="color:#64748b;font-size:13px;margin:0 0 16px;">📍 {country}</p>
+          <div style="display:flex;gap:16px;">
+            <div style="text-align:center;flex:1;">
+              <p style="color:#94a3b8;font-size:11px;margin:0 0 4px;">SEVERITY</p>
+              <p style="color:{urgency_color};font-size:28px;font-weight:800;margin:0;">{severity}</p>
+              <p style="color:#64748b;font-size:11px;margin:0;">/100</p>
+            </div>
+            <div style="text-align:center;flex:1;">
+              <p style="color:#94a3b8;font-size:11px;margin:0 0 4px;">CHANGE</p>
+              <p style="color:{urgency_color};font-size:28px;font-weight:800;margin:0;">{direction}</p>
+              <p style="color:#64748b;font-size:11px;margin:0;">points</p>
+            </div>
+            <div style="text-align:center;flex:1;">
+              <p style="color:#94a3b8;font-size:11px;margin:0 0 4px;">TREND</p>
+              <p style="color:{urgency_color};font-size:18px;font-weight:800;margin:0 0 4px;">
+                {'📈' if trend == 'escalating' else '📉' if trend == 'de-escalating' else '➡️'}
+              </p>
+              <p style="color:#64748b;font-size:11px;margin:0;">{trend}</p>
+            </div>
+          </div>
+        </div>
+      </td>
+    </tr>
+    <tr>
+      <td style="background:#0f172a;border-radius:0 0 16px 16px;padding:20px 32px;text-align:center;border:1px solid #334155;border-top:none;">
+        <p style="color:#475569;font-size:12px;margin:0;">
+          Sent by <strong>GeoIntel</strong> · You subscribed to alerts for {country}.
+          Reply to unsubscribe.
+        </p>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>"""
+
+    try:
+        import urllib.request
+        import urllib.error
+        payload = _json.dumps({
+            'from': os.getenv('ALERT_FROM_EMAIL', 'GeoIntel <alerts@asix.live>'),
+            'to': [email],
+            'subject': f"🚨 Crisis Alert: {crisis_title} — Severity {severity}/100",
+            'html': html,
+        }).encode('utf-8')
+        req = urllib.request.Request(
+            'https://api.resend.com/emails',
+            data=payload,
+            headers={
+                'Authorization': f'Bearer {resend_key}',
+                'Content-Type': 'application/json',
+            },
+            method='POST'
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            logger.info(f"Alert email sent to {email} for crisis '{crisis_title}'")
+            return True
+    except Exception as e:
+        logger.error(f"Failed to send alert email to {email}: {e}")
+        return False
+
+
+@app.route('/api/alerts/subscribe', methods=['POST'])
+def subscribe_alerts():
+    """Subscribe an email to crisis alerts for a region/country."""
+    data = request.get_json() or {}
+    email = (data.get('email') or '').strip().lower()
+    name = (data.get('name') or 'Subscriber').strip()
+    regions = data.get('regions', [])  # list of country names or 'all'
+
+    # Validate
+    if not email or '@' not in email:
+        return jsonify({'error': 'Valid email required'}), 400
+    if not regions:
+        return jsonify({'error': 'At least one region required'}), 400
+    # Limit regions list length
+    regions = [str(r)[:100] for r in regions[:20]]
+
+    subs = _load_subscriptions()
+
+    # Upsert — update if email already exists
+    existing = next((s for s in subs if s['email'] == email), None)
+    if existing:
+        existing['regions'] = regions
+        existing['name'] = name
+        existing['updated_at'] = datetime.utcnow().isoformat()
+        action = 'updated'
+    else:
+        subs.append({
+            'email': email,
+            'name': name,
+            'regions': regions,
+            'subscribed_at': datetime.utcnow().isoformat(),
+            'updated_at': datetime.utcnow().isoformat(),
+        })
+        action = 'created'
+
+    _save_subscriptions(subs)
+    logger.info(f"Alert subscription {action} for {email}: {regions}")
+    return jsonify({'status': action, 'email': email, 'regions': regions}), 201
+
+
+@app.route('/api/alerts/unsubscribe', methods=['POST'])
+def unsubscribe_alerts():
+    """Remove an email from all crisis alerts."""
+    data = request.get_json() or {}
+    email = (data.get('email') or '').strip().lower()
+    if not email:
+        return jsonify({'error': 'Email required'}), 400
+
+    subs = _load_subscriptions()
+    before = len(subs)
+    subs = [s for s in subs if s['email'] != email]
+    _save_subscriptions(subs)
+
+    removed = before - len(subs)
+    return jsonify({'status': 'unsubscribed', 'removed': removed})
+
+
+def check_and_fire_alerts(crisis: 'Crisis', old_severity: int) -> None:
+    """
+    Called whenever a crisis severity changes.
+    Sends alert emails to subscribers watching that region.
+    Only fires if severity increased by 10+ points.
+    """
+    if not crisis or old_severity is None:
+        return
+    change = (crisis.severity or 0) - old_severity
+    if change < 10:
+        return  # Not significant enough to alert
+
+    subs = _load_subscriptions()
+    escalation = analyze_escalation(crisis.id)
+    trend = escalation.get('trend', 'escalating') if escalation else 'escalating'
+
+    for sub in subs:
+        watched = sub.get('regions', [])
+        if 'all' in watched or crisis.country in watched:
+            _send_alert_email(
+                email=sub['email'],
+                name=sub.get('name', 'Subscriber'),
+                crisis_title=crisis.title,
+                country=crisis.country,
+                severity=crisis.severity,
+                old_severity=old_severity,
+                trend=trend,
+            )
 
 
 # ════════════════════════════════════════════════════════════
