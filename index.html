@@ -4169,8 +4169,8 @@ function showBreakingAlert(crisis) {
   } catch (e) {}
 }
 
-async function loadReliabilityData(id) { try { const r = await fetch(`http://localhost:5000/api/crises/${id}/reliability`); return r.ok ? await r.json() : null; } catch (e) { return null; } }
-async function loadEscalationData(id) { try { const r = await fetch(`http://localhost:5000/api/crises/${id}/escalation`); return r.ok ? await r.json() : null; } catch (e) { return null; } }
+async function loadReliabilityData(id) { try { const r = await fetch(`${(window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : 'https://geointel-production-9001.up.railway.app/api')}/crises/${id}/reliability`); return r.ok ? await r.json() : null; } catch (e) { return null; } }
+async function loadEscalationData(id) { try { const r = await fetch(`${(window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : 'https://geointel-production-9001.up.railway.app/api')}/crises/${id}/escalation`); return r.ok ? await r.json() : null; } catch (e) { return null; } }
 
 // ── Alert email subscriptions ─────────────────────────────────────────────────
 async function submitAlertSubscription() {
@@ -4188,7 +4188,7 @@ async function submitAlertSubscription() {
   }
 
   try {
-    const res = await fetch('http://localhost:5000/api/alerts/subscribe', {
+    const res = await fetch((window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : 'https://geointel-production-9001.up.railway.app/api') + '/alerts/subscribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: name || 'Subscriber', email, regions: [region] }),
@@ -4215,8 +4215,8 @@ function prefillAlertRegion(country) {
   const field = document.getElementById('alertSubRegion');
   if (field && country) field.value = country;
 }
-async function loadEconomicData(id) { try { const r = await fetch(`http://localhost:5000/api/crises/${id}/economic`); return r.ok ? await r.json() : null; } catch (e) { return null; } }
-async function loadBriefing(id) { try { const r = await fetch(`http://localhost:5000/api/crises/${id}/briefing`); return r.ok ? await r.json() : null; } catch (e) { return null; } }
+async function loadEconomicData(id) { try { const r = await fetch(`${(window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : 'https://geointel-production-9001.up.railway.app/api')}/crises/${id}/economic`); return r.ok ? await r.json() : null; } catch (e) { return null; } }
+async function loadBriefing(id) { try { const r = await fetch(`${(window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : 'https://geointel-production-9001.up.railway.app/api')}/crises/${id}/briefing`); return r.ok ? await r.json() : null; } catch (e) { return null; } }
 
 // Fallback: Fetch a representative image from Wikipedia if briefing didn't include one
 async function fetchWikiImage(crisis) {
@@ -4772,7 +4772,7 @@ async function analyzeRelPair(nameA, nameB, relHint) {
   anaDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
   try {
-    const res  = await fetch('http://localhost:5000/api/relationships/analyze', {
+    const res  = await fetch((window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : 'https://geointel-production-9001.up.railway.app/api') + '/relationships/analyze', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ country_a: nameA, country_b: nameB })
@@ -4814,7 +4814,7 @@ async function runRelationshipLookup() {
     </div>`;
 
   try {
-    const res  = await fetch('http://localhost:5000/api/relationships/analyze', {
+    const res  = await fetch((window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : 'https://geointel-production-9001.up.railway.app/api') + '/relationships/analyze', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ country_a: nameA, country_b: nameB })
