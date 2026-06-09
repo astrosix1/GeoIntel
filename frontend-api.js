@@ -3,8 +3,10 @@
  * Handles all communication with backend REST API
  */
 
+// Use Vercel proxy (/api) in production to avoid CORS — Vercel forwards to Railway.
+// Use localhost directly in development.
 const API_BASE = window.GEOINTEL_API_BASE
-  || (window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : 'https://geointel-production-9001.up.railway.app/api');
+  || (window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : '/api');
 
 class GeoIntelAPI {
   /**
