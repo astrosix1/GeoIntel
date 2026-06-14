@@ -530,7 +530,17 @@ def generate_ai_briefing(crisis_id):
     """
     Generate AI-powered briefing summary using Claude API.
     Returns structured brief with briefing text and Wikipedia image.
+    Briefings are cached for 1 hour to avoid redundant Anthropic API calls.
     """
+    # ── Cache check ──────────────────────────────────────────────────────────
+    cache_key = f"briefing:{crisis_id}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        logger.info(f"[Briefing] Cache hit for crisis {crisis_id}")
+        return cached
+
+    logger.info(f"[Briefing] Cache miss for crisis {crisis_id} — generating via Claude API")
+
     session = Session()
     try:
         crisis = session.query(Crisis).filter(Crisis.id == crisis_id).first()
@@ -612,13 +622,21 @@ Be specific and analytical. Avoid vague language. Write at least 400 words total
                 }
                 if image:
                     result['image'] = image
+                # Cache for 1 hour — briefings change slowly and each API call
+                # costs real money. TTL 3600 means at most one Claude call per
+                # crisis per hour across all concurrent users.
+                cache_set(cache_key, result, ttl=3600)
+                logger.info(f"[Briefing] Cached briefing for crisis {crisis_id} (TTL 3600s)")
                 return result
             except Exception as e:
                 logger.error(f"AI briefing error: {e}")
                 return None
         else:
             logger.info("ANTHROPIC_API_KEY not set — generating static briefing")
-            return _generate_static_briefing(crisis, escalation, economic, reliability, news, image)
+            result = _generate_static_briefing(crisis, escalation, economic, reliability, news, image)
+            if result:
+                cache_set(cache_key, result, ttl=3600)
+            return result
     finally:
         session.close()
 
