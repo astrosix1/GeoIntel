@@ -2,6 +2,12 @@
 .env
 .env.local
 .env.*.local
+backend/.env
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
 
 # Python
 __pycache__/
