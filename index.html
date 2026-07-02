@@ -4099,12 +4099,13 @@ async function loadRealData() {
     return true;
   } catch (error) {
     console.error('Backend connection failed:', error.message);
-    // Show user-facing alert
+    const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
     const alertEl = document.createElement('div');
     alertEl.style.cssText = 'position:fixed;top:10px;right:10px;background:#ff3b3b33;border:1px solid #ff3b3b66;color:#ff8888;padding:10px 15px;border-radius:6px;z-index:1000;font-size:12px;max-width:300px;';
-    alertEl.innerHTML = `<strong>⚠️ Backend Unavailable</strong><br>Run <code style="background:#000;padding:2px 5px;border-radius:3px;">python app.py</code> from the backend/ directory to enable real data.`;
+    alertEl.innerHTML = isLocalDev
+      ? `<strong>⚠️ Backend Unavailable</strong><br>Run <code style="background:#000;padding:2px 5px;border-radius:3px;">python app.py</code> from the backend/ directory to enable real data.`
+      : `<strong>⚠️ Service Unavailable</strong><br>Intelligence data could not be loaded. Please refresh the page or try again shortly.`;
     document.body.appendChild(alertEl);
-    console.warn('Proceeding with fallback data (not implemented - will use placeholder)');
     return false;
   }
 }
