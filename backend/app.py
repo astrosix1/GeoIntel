@@ -201,15 +201,75 @@ def calculate_source_reliability(crisis_id):
         session.close()
 
 
-def analyze_escalation(crisis_id):
+def _reliability_from_news(news_list):
+    """Shared scoring logic used by both the single-crisis and batched
+    source-reliability helpers, so the two stay consistent."""
+    if not news_list:
+        return {'reliability': 'unknown', 'score': 50, 'source_count': 0, 'sources': []}
+
+    reliability_scores = []
+    unique_sources = set()
+    for article in news_list:
+        source = article.source or 'Unknown'
+        unique_sources.add(source)
+        reliability_scores.append(SOURCE_RELIABILITY.get(source, 65))
+
+    avg_score = sum(reliability_scores) / len(reliability_scores)
+    source_count = len(unique_sources)
+
+    if source_count >= 3 and avg_score >= 85:
+        reliability_level = 'verified'
+    elif source_count >= 2 and avg_score >= 75:
+        reliability_level = 'corroborated'
+    elif source_count >= 1 and avg_score >= 70:
+        reliability_level = 'reported'
+    else:
+        reliability_level = 'unverified'
+
+    return {
+        'reliability': reliability_level,
+        'score': round(avg_score),
+        'source_count': source_count,
+        'sources': list(unique_sources)
+    }
+
+
+def calculate_source_reliability_batch(crisis_ids):
+    """
+    Batched version of calculate_source_reliability() for use when scoring
+    many crises at once (e.g. GET /api/crises?include_analysis=true).
+    Issues a single query for all News rows instead of one query per crisis.
+    Returns { crisis_id: reliability_dict }.
+    """
+    if not crisis_ids:
+        return {}
+    session = Session()
+    try:
+        news = session.query(News).filter(News.crisis_id.in_(crisis_ids)).all()
+        by_crisis = defaultdict(list)
+        for article in news:
+            by_crisis[article.crisis_id].append(article)
+        return {cid: _reliability_from_news(by_crisis.get(cid, [])) for cid in crisis_ids}
+    finally:
+        session.close()
+
+
+def analyze_escalation(crisis_id, _crisis=None):
     """
     Analyze escalation trajectory for a crisis.
     Returns trend, velocity, and warnings.
     Generates mock historical data for visualization.
+
+    If the caller already has the Crisis row loaded (e.g. iterating a query
+    result), pass it as `_crisis` to avoid a redundant lookup query.
     """
-    session = Session()
+    session = None
     try:
-        crisis = session.query(Crisis).filter(Crisis.id == crisis_id).first()
+        if _crisis is not None:
+            crisis = _crisis
+        else:
+            session = Session()
+            crisis = session.query(Crisis).filter(Crisis.id == crisis_id).first()
         if not crisis:
             return None
 
@@ -269,7 +329,8 @@ def analyze_escalation(crisis_id):
             'history': [{'severity': h['severity'], 'date': h['timestamp'].isoformat()} for h in history]
         }
     finally:
-        session.close()
+        if session is not None:
+            session.close()
 
 
 def analyze_cascade(crisis_id, depth=2, threshold=50):
@@ -791,14 +852,21 @@ def get_crises():
 
         crises = query.order_by(Crisis.severity.desc()).all()
 
+        # When analysis is requested, fetch reliability data for all crises in
+        # one batched query instead of one query per crisis (N+1 avoidance).
+        reliability_by_id = {}
+        if include_analysis == 'true':
+            reliability_by_id = calculate_source_reliability_batch([c.id for c in crises])
+
         result = []
         for c in crises:
             crisis_dict = c.to_dict()
 
             # Add enhanced analysis if requested
             if include_analysis == 'true':
-                crisis_dict['source_reliability'] = calculate_source_reliability(c.id)
-                crisis_dict['escalation'] = analyze_escalation(c.id)
+                crisis_dict['source_reliability'] = reliability_by_id.get(c.id)
+                # Pass the already-loaded crisis row to skip a redundant lookup query
+                crisis_dict['escalation'] = analyze_escalation(c.id, _crisis=c)
 
             result.append(crisis_dict)
 
