@@ -4018,15 +4018,11 @@ function filterRecentEvents(crises, hoursOld = 72) {
 
 async function loadRealData() {
   try {
-    console.log('Attempting to connect to backend API...');
-
     // Check if backend is available
     const healthCheck = await GeoIntelAPI.healthCheck();
     if (!healthCheck.status || healthCheck.status !== 'ok') {
       throw new Error('Backend health check failed');
     }
-
-    console.log('Backend connected successfully');
 
     // Parallel load: crises, actors, relationships fetch concurrently after health check
     const t0 = performance.now();
@@ -4080,7 +4076,6 @@ async function loadRealData() {
         economic_power: a.economic || 50,
         is_nuclear: a.is_nuclear || false,
       }));
-      console.log(`Loaded ${ACTORS.length} actors`);
     }
 
     // Process relationships — include strength & stability for arc styling
@@ -4093,7 +4088,6 @@ async function loadRealData() {
         strength: r.strength || 50,
         stability: r.stability || 50,
       }));
-      console.log(`Loaded ${RELATIONSHIPS.length} relationships`);
     }
 
     return true;
@@ -4576,15 +4570,13 @@ async function initApp() {
   buildAlerts();
 
   // Connect to real-time event stream
-  console.log('Connecting to real-time event stream...');
   connectToEventStream();
 
   // Load data from backend, with graceful fallback
   const backendAvailable = await loadRealData();
 
-  // If no backend data loaded, ensure we have data to work with
+  // If no backend data loaded, ensure we have empty arrays rather than undefined
   if (!CRISES || CRISES.length === 0) {
-    console.log('Using minimal fallback data');
     CRISES = [];
     ACTORS = [];
     RELATIONSHIPS = [];
@@ -4605,7 +4597,6 @@ async function initApp() {
 
 // Auto-refresh data every hour
 setInterval(async () => {
-  console.log('Auto-refreshing data from backend...');
   await loadRealData();
   updateEventsList();
   buildNewsFeed();

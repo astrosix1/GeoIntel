@@ -1788,23 +1788,23 @@ def export_crises_csv():
         elif status_filter == 'inactive':
             query = query.filter(Crisis.is_active == False)
 
-        crises = query.order_by(Crisis.start_date.desc()).all()
+        crises = query.order_by(Crisis.date_start.desc()).all()
 
         # Create CSV in memory
         output = StringIO()
         writer = csv.writer(output)
-        writer.writerow(['ID', 'Title', 'Region', 'Severity', 'Status', 'Start Date', 'Last Updated', 'Description'])
+        writer.writerow(['ID', 'Title', 'Country', 'Severity', 'Status', 'Start Date', 'Last Updated', 'Analysis'])
 
         for crisis in crises:
             writer.writerow([
                 crisis.id,
                 crisis.title or '',
-                crisis.region or '',
+                crisis.country or '',
                 crisis.severity or 0,
                 'Active' if crisis.is_active else 'Inactive',
-                crisis.start_date.isoformat() if crisis.start_date else '',
-                crisis.updated_at.isoformat() if crisis.updated_at else '',
-                crisis.description or ''
+                crisis.date_start.isoformat() if crisis.date_start else '',
+                crisis.date_updated.isoformat() if crisis.date_updated else '',
+                crisis.analysis or ''
             ])
 
         session.close()

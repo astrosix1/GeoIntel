@@ -124,24 +124,20 @@ class MultilingualNewsConnector:
         return articles
 
     def detect_crises_from_articles(self, articles: list, language_label: str) -> list:
-        """Run crisis detection on fetched articles, returning Crisis objects."""
+        """Run crisis detection on fetched articles, returning Crisis-shaped dicts."""
         crises = []
         seen_ids = set()
 
         for article in articles:
             try:
-                # Build a combined text blob for location/keyword matching
-                title = article.get('title') or ''
-                description = article.get('description') or ''
-                content = article.get('content') or ''
-                combined = f"{title} {description} {content}"
-
-                crisis = self.detector.detect_crisis_from_article(article, combined)
-                if crisis and crisis.id not in seen_ids:
+                # _extract_crisis_from_article takes just the raw article dict — it
+                # builds its own title+description text blob internally.
+                crisis = self.detector._extract_crisis_from_article(article)
+                if crisis and crisis['id'] not in seen_ids:
                     # Tag as multilingual source
-                    crisis.source = f'NEWS_API_{language_label.upper()}'
+                    crisis['source'] = f'NEWS_API_{language_label.upper()}'
                     crises.append(crisis)
-                    seen_ids.add(crisis.id)
+                    seen_ids.add(crisis['id'])
             except Exception as e:
                 logger.debug(f"Crisis detection skipped: {e}")
 
@@ -153,26 +149,32 @@ class MultilingualNewsConnector:
 
         total_added = 0
 
-        for lang_config in LANGUAGE_CONFIGS:
-            logger.info(
-                f"[Multilingual] Fetching {lang_config['label']} news "
-                f"({lang_config['region_hint']})..."
-            )
-            articles = self.fetch_articles(lang_config, days=days)
-            crises = self.detect_crises_from_articles(articles, lang_config['label'])
-
-            for crisis in crises:
-                existing = db_session.query(Crisis).filter_by(id=crisis.id).first()
-                if not existing:
-                    db_session.add(crisis)
-                    total_added += 1
-
-            if crises:
+        try:
+            for lang_config in LANGUAGE_CONFIGS:
                 logger.info(
-                    f"[Multilingual] {lang_config['label']}: "
-                    f"{len(articles)} articles → {len(crises)} crises"
+                    f"[Multilingual] Fetching {lang_config['label']} news "
+                    f"({lang_config['region_hint']})..."
                 )
+                articles = self.fetch_articles(lang_config, days=days)
+                # Crisis-shaped dicts, not ORM instances — build/merge the model here.
+                crisis_dicts = self.detect_crises_from_articles(articles, lang_config['label'])
 
-        db_session.commit()
-        logger.info(f"[Multilingual] Sync complete — {total_added} new crises added")
-        return total_added
+                for crisis_data in crisis_dicts:
+                    existing = db_session.query(Crisis).filter_by(id=crisis_data['id']).first()
+                    if not existing:
+                        db_session.add(Crisis(**crisis_data))
+                        total_added += 1
+
+                if crisis_dicts:
+                    logger.info(
+                        f"[Multilingual] {lang_config['label']}: "
+                        f"{len(articles)} articles → {len(crisis_dicts)} crises"
+                    )
+
+            db_session.commit()
+            logger.info(f"[Multilingual] Sync complete — {total_added} new crises added")
+            return total_added
+        except Exception as e:
+            db_session.rollback()
+            logger.error(f"[Multilingual] Sync failed, rolled back: {e}")
+            return total_added

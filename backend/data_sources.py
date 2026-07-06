@@ -4,6 +4,7 @@ Data source connectors for real-world geopolitical data
 import requests
 import os
 from datetime import datetime, timedelta
+from collections import defaultdict
 from models import Crisis, News, Actor, Relationship, EconomicData, Session
 import json
 import logging
@@ -107,6 +108,13 @@ class ACLEDConnector:
             fatalities = int(event.get('fatalities', 0))
             severity = min(100, 30 + (fatalities // 2))  # Scale fatalities to severity
 
+            # Parse ACLED's event_date (YYYY-MM-DD) into a datetime; fall back to now
+            event_date_raw = event.get('event_date')
+            try:
+                date_start = datetime.strptime(event_date_raw, '%Y-%m-%d') if event_date_raw else datetime.utcnow()
+            except ValueError:
+                date_start = datetime.utcnow()
+
             return {
                 'id': f"acled_{event.get('data_id')}",
                 'type': crisis_type,
@@ -117,7 +125,7 @@ class ACLEDConnector:
                 'severity': severity,
                 'confidence': 85,  # ACLED is well-documented
                 'location_confidence': 85,  # ACLED provides precise coordinates
-                'date': event.get('event_date'),
+                'date_start': date_start,  # Crisis model field is date_start, not date
                 'analysis': event.get('notes', ''),
                 'impact': f"{event.get('fatalities', 0)} fatalities, {event.get('event_type')}",
                 'source': 'ACLED',
@@ -879,27 +887,29 @@ class NewsBasedCrisisDetector:
 class WorldBankConnector:
     """Fetch economic data from World Bank"""
 
+    # Map World Bank indicator codes to the matching EconomicData model column
+    INDICATOR_FIELD_MAP = {
+        'NY.GDP.MKTP.CD': 'gdp',            # GDP (current US$) — converted to billions below
+        'NY.GDP.MKTP.KD.ZG': 'gdp_growth',  # GDP growth (annual %)
+        'NE.EXP.GNFS.CD': 'exports',        # Exports of goods and services (current US$, billions)
+        'NE.IMP.GNFS.CD': 'imports',        # Imports of goods and services (current US$, billions)
+        'FP.CPI.TOTL.ZG': 'inflation',      # Inflation (annual %)
+        'SL.UEM.TOTL.ZS': 'unemployment',   # Unemployment rate (%)
+    }
+
     @staticmethod
     def fetch_country_indicators(country_codes=['US', 'CN', 'RU', 'JP', 'DE', 'IN']):
         """
-        Fetch economic indicators for countries
+        Fetch economic indicators for countries and merge them into one
+        EconomicData-shaped record per (country, year), matching the model's columns.
         """
         try:
-            indicators = {
-                'NY.GDP.MKTP.CD': 'GDP (current US$)',
-                'NY.GDP.DEFL.ZS': 'GDP deflator',
-                'NE.EXP.GNFS.CD': 'Exports of goods and services',
-                'NE.IMP.GNFS.CD': 'Imports of goods and services',
-                'FP.CPI.TOTL.ZG': 'Inflation',
-                'SL.UEM.TOTL.ZS': 'Unemployment rate',
-            }
-
-            economic_data = []
+            # per_country[country][year] = {field_name: value, ...}
+            per_country = defaultdict(lambda: defaultdict(dict))
 
             for country in country_codes:
-                try:
-                    # Fetch latest data for each indicator
-                    for ind_code, ind_name in indicators.items():
+                for ind_code, field_name in WorldBankConnector.INDICATOR_FIELD_MAP.items():
+                    try:
                         response = requests.get(
                             f"{WORLDBANK_BASE}/country/{country}/indicator/{ind_code}",
                             params={'format': 'json', 'per_page': 10},
@@ -908,36 +918,40 @@ class WorldBankConnector:
                         response.raise_for_status()
 
                         data = response.json()
-                        if len(data) > 1:
+                        if len(data) > 1 and data[1]:
                             for record in data[1]:
-                                econ = WorldBankConnector._parse_economic_data(country, ind_code, record)
-                                if econ:
-                                    economic_data.append(econ)
+                                value = record.get('value')
+                                year_raw = record.get('date')
+                                if value is None or not year_raw:
+                                    continue
+                                year = int(year_raw)
+                                # GDP/exports/imports come back in raw USD — convert to billions
+                                if field_name in ('gdp', 'exports', 'imports'):
+                                    value = value / 1e9
+                                per_country[country][year][field_name] = value
 
-                except Exception as e:
-                    logger.warning(f"Error fetching {ind_code} for {country}: {e}")
+                    except Exception as e:
+                        logger.warning(f"Error fetching {ind_code} for {country}: {e}")
 
-            logger.info(f"Fetched {len(economic_data)} economic indicators")
+            # Flatten into one dict per (country, year) matching EconomicData columns
+            economic_data = []
+            for country, years in per_country.items():
+                for year, fields in years.items():
+                    if not fields:
+                        continue
+                    economic_data.append({
+                        'id': f"wb_{country}_{year}",
+                        'country_code': country,
+                        'year': year,
+                        **fields,
+                    })
+
+            logger.info(f"Fetched {len(economic_data)} economic records")
             return economic_data
 
         except Exception as e:
             logger.error(f"World Bank fetch error: {e}")
             return []
-
-    @staticmethod
-    def _parse_economic_data(country, indicator, record):
-        """Convert World Bank data to EconomicData object"""
-        try:
-            return {
-                'id': f"wb_{country}_{record.get('date')}",
-                'country_code': country,
-                'indicator': indicator,
-                'value': record.get('value'),
-                'year': int(record.get('date', 0)),
-            }
-        except Exception as e:
-            logger.error(f"Error parsing economic data: {e}")
-            return None
 
 
 class DataAggregator:
@@ -1047,15 +1061,20 @@ def init_actors():
         {'id': 'NK', 'name': 'North Korea', 'latitude': 39, 'longitude': 127, 'color': '#ff4444', 'is_nuclear': True},
     ]
 
-    for actor_data in actors_data:
-        existing = session.query(Actor).filter(Actor.id == actor_data['id']).first()
-        if not existing:
-            actor = Actor(**actor_data)
-            session.add(actor)
+    try:
+        for actor_data in actors_data:
+            existing = session.query(Actor).filter(Actor.id == actor_data['id']).first()
+            if not existing:
+                actor = Actor(**actor_data)
+                session.add(actor)
 
-    session.commit()
-    session.close()
-    logger.info("Actors initialized")
+        session.commit()
+        logger.info("Actors initialized")
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Error initializing actors: {e}")
+    finally:
+        session.close()
 
 
 def init_relationships():
@@ -1078,15 +1097,20 @@ def init_relationships():
         {'id': 'US-NK-conflict', 'actor_a': 'US', 'actor_b': 'NK', 'type': 'conflict', 'label': 'Nuclear Standoff', 'strength': 85, 'stability': 50},
     ]
 
-    for rel_data in relationships_data:
-        existing = session.query(Relationship).filter(Relationship.id == rel_data['id']).first()
-        if not existing:
-            relationship = Relationship(**rel_data)
-            session.add(relationship)
+    try:
+        for rel_data in relationships_data:
+            existing = session.query(Relationship).filter(Relationship.id == rel_data['id']).first()
+            if not existing:
+                relationship = Relationship(**rel_data)
+                session.add(relationship)
 
-    session.commit()
-    session.close()
-    logger.info("Relationships initialized")
+        session.commit()
+        logger.info("Relationships initialized")
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Error initializing relationships: {e}")
+    finally:
+        session.close()
 
 
 if __name__ == '__main__':
