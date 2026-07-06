@@ -4244,15 +4244,36 @@ function renderMarkdown(el, text) {
   el.innerHTML = html;
 }
 
+// Shared helper: when a panel's data failed to load (as opposed to nothing
+// being selected yet), swap the "empty" placeholder to a distinct message so
+// the user isn't told to "select a crisis" when they already have one open.
+function showPanelUnavailable(emptyEl, message) {
+  if (!emptyEl) return;
+  if (!emptyEl.dataset.defaultHtml) emptyEl.dataset.defaultHtml = emptyEl.innerHTML;
+  emptyEl.innerHTML = `<div class="empty-icon">⚠️</div><div>${message}</div>`;
+  emptyEl.style.display = 'flex';
+}
+
+function resetPanelEmpty(emptyEl) {
+  if (!emptyEl) return;
+  if (emptyEl.dataset.defaultHtml) emptyEl.innerHTML = emptyEl.dataset.defaultHtml;
+}
+
 function updateReliabilityPanel(rel) {
   const content = document.getElementById('reliabilityContent');
   const empty = document.getElementById('reliabilityEmpty');
 
   if (!rel) {
     if (content) content.style.display = 'none';
-    if (empty) empty.style.display = 'flex';
+    if (selected) {
+      showPanelUnavailable(empty, 'Source reliability data<br>could not be loaded');
+    } else {
+      resetPanelEmpty(empty);
+      if (empty) empty.style.display = 'flex';
+    }
     return;
   }
+  resetPanelEmpty(empty);
 
   if (empty) empty.style.display = 'none';
   if (content) content.style.display = 'flex';
@@ -4296,10 +4317,16 @@ function updateEscalationPanel(esc) {
 
   if (!esc || !esc.trend) {
     if (content) content.style.display = 'none';
-    if (empty) empty.style.display = 'flex';
+    if (selected) {
+      showPanelUnavailable(empty, 'Escalation trajectory data<br>could not be loaded');
+    } else {
+      resetPanelEmpty(empty);
+      if (empty) empty.style.display = 'flex';
+    }
     return;
   }
 
+  resetPanelEmpty(empty);
   if (empty) empty.style.display = 'none';
   if (content) content.style.display = 'flex';
 
@@ -4480,7 +4507,17 @@ function drawEscalationChart(canvas, history) {
 
 function updateEconomicPanel(eco) {
   const c = document.getElementById('economicContent'), e = document.getElementById('economicEmpty');
-  if (!eco) { c.style.display='none'; e.style.display='flex'; return; }
+  if (!eco) {
+    c.style.display='none';
+    if (selected) {
+      showPanelUnavailable(e, 'Economic impact data<br>could not be loaded');
+    } else {
+      resetPanelEmpty(e);
+      e.style.display='flex';
+    }
+    return;
+  }
+  resetPanelEmpty(e);
   e.style.display='none'; c.style.display='flex';
   const col = eco.impact_severity==='severe'?'#ff3b3b':eco.impact_severity==='significant'?'#ff8833':eco.impact_severity==='moderate'?'#ffd93d':'#3dffaa';
   const se = document.getElementById('econ-severity');
@@ -4499,11 +4536,18 @@ function updateBriefingPanel(br) {
   const imgEl     = document.getElementById('briefing-image');
 
   if (!br) {
-    c.style.display = 'flex'; e.style.display = 'none';
+    c.style.display = 'none';
     loadingEl.style.display = 'none'; textEl.style.display = 'none';
     imgWrap.style.display = 'none';
+    if (selected) {
+      showPanelUnavailable(e, 'AI briefing unavailable for this crisis<br>(check ANTHROPIC_API_KEY on the backend, or try again shortly)');
+    } else {
+      resetPanelEmpty(e);
+      e.style.display = 'flex';
+    }
     return;
   }
+  resetPanelEmpty(e);
   e.style.display = 'none'; c.style.display = 'flex';
   loadingEl.style.display = 'none'; textEl.style.display = 'block';
 
