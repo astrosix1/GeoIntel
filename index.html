@@ -3964,7 +3964,6 @@ setTimeout(() => {
         // User scrolled near bottom - load more crises
         const oldLimit = crisisDisplayLimit;
         crisisDisplayLimit = Math.min(crisisDisplayLimit + 25, CRISES.length);
-        console.log(`📜 Infinite scroll: ${oldLimit} → ${crisisDisplayLimit} crises`);
         updateEventsList();
         drawGlobe();
       }
@@ -4024,14 +4023,15 @@ async function loadRealData() {
       throw new Error('Backend health check failed');
     }
 
+    // Clear any previously shown "backend unavailable" banner now that it's reachable again
+    document.getElementById('backendUnavailableAlert')?.remove();
+
     // Parallel load: crises, actors, relationships fetch concurrently after health check
-    const t0 = performance.now();
     const [crisisResult, actorResult, relResult] = await Promise.all([
       GeoIntelAPI.getCrises({ days: 365, min_severity: 0 }),
       GeoIntelAPI.getActors(),
       GeoIntelAPI.getRelationships(),
     ]);
-    console.log(`📡 Parallel data fetch in ${(performance.now() - t0).toFixed(0)}ms`);
 
     // Process crises
     if (crisisResult.error) {
@@ -4060,7 +4060,6 @@ async function loadRealData() {
         analogy: null,
       }));
       CRISES = filterRecentEvents(transformedCrises, 720);
-      console.log(`✅ Loaded ${CRISES.length} current crises (last 30 days)`);
       setTimeout(applyDeepLink, 50);
     }
 
@@ -4093,12 +4092,22 @@ async function loadRealData() {
     return true;
   } catch (error) {
     console.error('Backend connection failed:', error.message);
-    // Show user-facing alert
-    const alertEl = document.createElement('div');
-    alertEl.style.cssText = 'position:fixed;top:10px;right:10px;background:#ff3b3b33;border:1px solid #ff3b3b66;color:#ff8888;padding:10px 15px;border-radius:6px;z-index:1000;font-size:12px;max-width:300px;';
-    alertEl.innerHTML = `<strong>⚠️ Backend Unavailable</strong><br>Run <code style="background:#000;padding:2px 5px;border-radius:3px;">python app.py</code> from the backend/ directory to enable real data.`;
-    document.body.appendChild(alertEl);
-    console.warn('Proceeding with fallback data (not implemented - will use placeholder)');
+    const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    // Avoid stacking duplicate banners on repeated failures (e.g. hourly auto-refresh)
+    let alertEl = document.getElementById('backendUnavailableAlert');
+    if (!alertEl) {
+      alertEl = document.createElement('div');
+      alertEl.id = 'backendUnavailableAlert';
+      alertEl.style.cssText = 'position:fixed;top:10px;right:10px;background:#ff3b3b33;border:1px solid #ff3b3b66;color:#ff8888;padding:10px 15px;border-radius:6px;z-index:1000;font-size:12px;max-width:300px;';
+      document.body.appendChild(alertEl);
+    }
+    const message = isLocalDev
+      ? `Run <code style="background:#000;padding:2px 5px;border-radius:3px;">python app.py</code> from the backend/ directory to enable real data.`
+      : `Intelligence data could not be loaded. Please refresh the page or try again shortly.`;
+    const title = isLocalDev ? '⚠️ Backend Unavailable' : '⚠️ Service Unavailable';
+    alertEl.innerHTML = `
+      <button onclick="this.parentElement.remove()" style="position:absolute;top:4px;right:6px;background:none;border:none;color:#ff8888;cursor:pointer;font-size:13px;line-height:1;padding:2px 4px;" aria-label="Dismiss">✕</button>
+      <strong style="display:block;padding-right:14px;">${title}</strong>${message}`;
     return false;
   }
 }
@@ -4122,13 +4131,11 @@ function connectToEventStream() {
     });
 
     socket.on('connect', () => {
-      console.log('✅ Connected to real-time event stream');
       socket.emit('subscribe', { watch_list: 'all' });
     });
 
     socket.on('new_crisis', (data) => {
       const crisis = data.crisis;
-      console.log('🔴 BREAKING:', crisis.title);
       showBreakingAlert(crisis);
       const idx = CRISES.findIndex(c => c.id === crisis.id);
       if (idx >= 0) CRISES[idx] = crisis;
@@ -4694,7 +4701,6 @@ async function authThenInit() {
 
   // LOCALHOST BYPASS: Skip authentication for local development
   if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    console.log('🔓 Localhost detected - skipping authentication');
     document.getElementById('auth-gate').style.display = 'none';
     await initApp();
     loop();
