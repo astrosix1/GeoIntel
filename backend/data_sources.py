@@ -76,6 +76,7 @@ class ACLEDConnector:
             # Try ACLED API
             response = requests.get(
                 f"{ACLED_BASE}/year/?year={end_date.year}",
+                params=params,
                 timeout=10
             )
             response.raise_for_status()
