@@ -3771,9 +3771,23 @@ document.getElementById('simBtn').addEventListener('click', async function() {
   }
 });
 
+// Debounce helper: delays invoking fn until `wait` ms have passed since the last call
+function debounce(fn, wait) {
+  let timer = null;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), wait);
+  };
+}
+
 // Timeline
 const timeSlider = document.getElementById('timeSlider');
 const yearLabel  = document.getElementById('yearLabel');
+const renderTimelineFrame = debounce(() => {
+  updateTimelineActivity();
+  updateEventsList();
+  drawGlobe();
+}, 60);
 timeSlider.addEventListener('input', () => {
   currentYear = 2020 + Math.round(parseInt(timeSlider.value) / 100 * 6);
   yearLabel.textContent = currentYear;
@@ -3782,9 +3796,7 @@ timeSlider.addEventListener('input', () => {
   const timeCount = document.querySelector('.timeline-count');
   if (timeCount) timeCount.textContent = `${eventsInYear.length} events`;
 
-  updateTimelineActivity();
-  updateEventsList();
-  drawGlobe();
+  renderTimelineFrame();
 });
 
 document.getElementById('playBtn').addEventListener('click', function() {
@@ -4740,9 +4752,19 @@ authThenInit().catch(err => {
 
 const ARC_COLORS = { conflict:'#ff3b3b', alliance:'#3dffaa', tension:'#ffd93d', economic:'#4e9eff', proxy:'#b94eff' };
 
+// Escape HTML special chars so untrusted text can't inject markup/scripts
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // Simple markdown → HTML for AI analysis output
 function renderMd(text) {
-  return text
+  return escapeHtml(text)
     .replace(/^## (.+)$/gm, '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--accent);margin:12px 0 4px;">$1</div>')
     .replace(/^- (.+)$/gm, '<div style="display:flex;gap:6px;margin:3px 0;"><span style="color:var(--accent);flex-shrink:0;">•</span><span>$1</span></div>')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
@@ -4881,10 +4903,10 @@ async function runRelationshipLookup() {
 
     result.innerHTML = `
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
-        <div style="font-size:12px;font-weight:700;color:#e8f4ff;">${nameA} ↔ ${nameB}</div>
+        <div style="font-size:12px;font-weight:700;color:#e8f4ff;">${escapeHtml(nameA)} ↔ ${escapeHtml(nameB)}</div>
         ${badge}
       </div>
-      ${data.label ? `<div style="font-size:10px;color:var(--text2);">${data.label}</div>` : ''}
+      ${data.label ? `<div style="font-size:10px;color:var(--text2);">${escapeHtml(data.label)}</div>` : ''}
       ${strBar}
       ${!data.known ? '<div style="font-size:9px;color:var(--yellow);padding:5px 8px;background:rgba(255,208,26,.06);border-radius:6px;">⚠ No tracked relationship — analysis based on open-source knowledge</div>' : ''}
       <div style="padding-top:8px;border-top:1px solid var(--border);">
@@ -4968,7 +4990,7 @@ function flyToLatLon(lat, lon) {
       .slice(0, 8);
 
     if (!results.length) {
-      dropdown.innerHTML = `<div class="search-no-results">No crises found for "${query}"</div>`;
+      dropdown.innerHTML = `<div class="search-no-results">No crises found for "${escapeHtml(query)}"</div>`;
       dropdown.classList.add('open');
       return;
     }
@@ -5005,7 +5027,8 @@ function flyToLatLon(lat, lon) {
     focusIdx = -1;
   }
 
-  input.addEventListener('input', e => showDropdown(e.target.value));
+  const debouncedShowDropdown = debounce(showDropdown, 120);
+  input.addEventListener('input', e => debouncedShowDropdown(e.target.value));
 
   input.addEventListener('keydown', e => {
     const rows = dropdown.querySelectorAll('.search-result');
