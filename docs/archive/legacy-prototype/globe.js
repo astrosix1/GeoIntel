@@ -1,3 +1,12 @@
+// Escape untrusted strings before interpolating them into innerHTML (same
+// pattern as app.js's escapeHtml — kept even though this file is currently
+// unreferenced, since event.title/location/country/category are exactly
+// the kind of external-feed-shaped fields that pattern exists to protect).
+const ESCAPE_MAP = { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' };
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ESCAPE_MAP[ch]);
+}
+
 // Sample event data
 const eventData = [
     {
@@ -388,7 +397,7 @@ function showEventDetails(event) {
     document.getElementById('eventDate').textContent = formatDate(event.date);
     document.getElementById('eventDescription').textContent = event.description;
     document.getElementById('eventLocation').innerHTML =
-        `<strong>Location:</strong> ${event.location}<br><strong>Country:</strong> ${event.country}`;
+        `<strong>Location:</strong> ${escapeHtml(event.location)}<br><strong>Country:</strong> ${escapeHtml(event.country)}`;
 
     panel.style.display = 'block';
     emptyState.style.display = 'none';
@@ -409,9 +418,9 @@ function updateEventsList(events) {
         const eventEl = document.createElement('div');
         eventEl.className = 'event-item' + (selectedEvent?.id === event.id ? ' active' : '');
         eventEl.innerHTML = `
-            <div class="event-item-title">${event.title}</div>
-            <div class="event-item-location">${event.country}</div>
-            <span class="event-item-category">${event.category}</span>
+            <div class="event-item-title">${escapeHtml(event.title)}</div>
+            <div class="event-item-location">${escapeHtml(event.country)}</div>
+            <span class="event-item-category">${escapeHtml(event.category)}</span>
         `;
         eventEl.addEventListener('click', () => {
             showEventDetails(event);

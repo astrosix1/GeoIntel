@@ -267,8 +267,17 @@
     </div>
 </div>
 
-<script src="topojson.min.js"></script>
+<script src="../../../topojson.min.js"></script>
 <script>
+// Escape untrusted strings before interpolating them into innerHTML (same
+// pattern as app.js's escapeHtml). EVENTS below is hardcoded sample data,
+// not externally sourced, so this is defense-in-depth rather than a live
+// bug — kept for consistency with the rest of the codebase.
+const ESCAPE_MAP = { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' };
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ESCAPE_MAP[ch]);
+}
+
 // ─────────────────────────────────────────────
 // DATA
 // ─────────────────────────────────────────────
@@ -549,9 +558,9 @@ const activeFilters = new Set(categories);
 categories.forEach(cat => {
     const label = document.createElement('label');
     label.innerHTML = `
-        <input type="checkbox" checked value="${cat}">
+        <input type="checkbox" checked value="${escapeHtml(cat)}">
         <span class="dot" style="background:${CAT_COLORS[cat]}"></span>
-        ${cat.charAt(0).toUpperCase() + cat.slice(1)}
+        ${escapeHtml(cat.charAt(0).toUpperCase() + cat.slice(1))}
     `;
     label.querySelector('input').addEventListener('change', e => {
         e.target.checked ? activeFilters.add(cat) : activeFilters.delete(cat);
@@ -575,7 +584,7 @@ function renderList() {
             el.dataset.id = ev.id;
             el.innerHTML = `
                 <span class="dot" style="background:${CAT_COLORS[ev.category]}"></span>
-                <div><div class="event-name">${ev.title}</div><div class="event-country">${ev.country}</div></div>
+                <div><div class="event-name">${escapeHtml(ev.title)}</div><div class="event-country">${escapeHtml(ev.country)}</div></div>
             `;
             el.addEventListener('click', () => selectEvent(ev));
             list.appendChild(el);
@@ -586,7 +595,7 @@ renderList();
 // ─────────────────────────────────────────────
 // LOAD WORLD DATA
 // ─────────────────────────────────────────────
-fetch('countries-110m.json')
+fetch('../../../countries-110m.json')
     .then(r => r.json())
     .then(data => { worldTopo = data; })
     .catch(err => console.error('Failed to load map data:', err));

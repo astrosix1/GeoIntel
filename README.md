@@ -35,7 +35,9 @@ GeoIntel is a full-stack intelligence platform that combines:
 **2. Run Backend**
 ```bash
 cd backend
-python app.py    # Or: run_backend.bat (Windows) / ./run_backend.sh (Mac/Linux)
+pip install -r requirements.txt
+alembic upgrade head    # creates/updates the database schema
+python app.py            # Or: run_backend.bat (Windows) / ./run_backend.sh (Mac/Linux) — these run the alembic step for you
 ```
 
 **3. Open Frontend**
@@ -44,7 +46,7 @@ python app.py    # Or: run_backend.bat (Windows) / ./run_backend.sh (Mac/Linux)
 # Should see globe with real crises!
 ```
 
-**That's it!** See [QUICK_START.md](QUICK_START.md) for details.
+**That's it!** See [SETUP_GUIDE.md](SETUP_GUIDE.md) for details.
 
 ---
 
@@ -54,7 +56,7 @@ python app.py    # Or: run_backend.bat (Windows) / ./run_backend.sh (Mac/Linux)
 ┌─────────────────────────────┐
 │  Frontend (JavaScript)       │     ← Browser-based dashboard
 │  - 3D Canvas Globe          │       No build step, no npm
-│  - Crisis Dashboard         │       ~1430 lines of pure JS
+│  - Crisis Dashboard         │       app.js + app.css, plain <script>/<link>
 └────────────┬────────────────┘
              │
         JSON/HTTP (CORS)
@@ -103,10 +105,9 @@ python app.py    # Or: run_backend.bat (Windows) / ./run_backend.sh (Mac/Linux)
 
 | File | Purpose |
 |------|---------|
-| **[QUICK_START.md](QUICK_START.md)** | 5-minute setup guide |
 | **[SETUP_GUIDE.md](SETUP_GUIDE.md)** | Detailed setup with troubleshooting |
-| **[INTEGRATION_COMPLETE.md](INTEGRATION_COMPLETE.md)** | What was built, next features |
-| **backend/README.md** | API endpoint reference |
+| **[backend/README.md](backend/README.md)** | API endpoint reference |
+| **[docs/archive/](docs/archive/)** | Historical dev notes and feature write-ups (not current docs) |
 
 ## 🛠️ Tools & Scripts
 
@@ -356,9 +357,15 @@ NEWSAPI_KEY=your_actual_key_here
 pip install -r backend/requirements.txt
 ```
 
+**"no such table" errors**
+```bash
+cd backend
+alembic upgrade head
+```
+
 **Port 5000 already in use**
 - Kill the existing process using port 5000
-- Or edit `backend/app.py` line 421 to use different port
+- Or set the `PORT` env var to use a different port, e.g. `PORT=5001 python app.py`
 
 See [SETUP_GUIDE.md](SETUP_GUIDE.md) for more troubleshooting.
 
@@ -382,10 +389,9 @@ This is a single-person project. Feel free to fork and extend!
 ## 📞 Support
 
 Questions? Check:
-1. [QUICK_START.md](QUICK_START.md) - Fast setup
-2. [SETUP_GUIDE.md](SETUP_GUIDE.md) - Detailed guide
-3. Browser console (F12) - Error messages
-4. Backend terminal - Server logs
+1. [SETUP_GUIDE.md](SETUP_GUIDE.md) - Detailed setup guide
+2. Browser console (F12) - Error messages
+3. Backend terminal - Server logs
 
 ---
 

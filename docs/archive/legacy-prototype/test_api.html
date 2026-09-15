@@ -13,8 +13,16 @@ body { font-family: monospace; background: #222; color: #0f0; padding: 20px; }
 <h2>Testing GeoIntel API Connection</h2>
 <div id="output"></div>
 
-<script src="frontend-api.js"></script>
+<script src="../../../frontend-api.js"></script>
 <script>
+// Escape untrusted strings before interpolating into innerHTML (same
+// pattern used by the live app's escapeHtml — c.title/c.country come
+// straight from the API response).
+const ESCAPE_MAP = { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' };
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ESCAPE_MAP[ch]);
+}
+
 async function test() {
   const out = document.getElementById('output');
 
@@ -28,7 +36,7 @@ async function test() {
       return;
     }
   } catch (e) {
-    out.innerHTML += `<p class="bad">[ERROR] ${e.message}</p>`;
+    out.innerHTML += `<p class="bad">[ERROR] ${escapeHtml(e.message)}</p>`;
     return;
   }
 
@@ -36,15 +44,15 @@ async function test() {
   try {
     const result = await GeoIntelAPI.getCrises({ days: 365 });
     if (result.error) {
-      out.innerHTML += `<p class="bad">[ERROR] ${result.error}</p>`;
+      out.innerHTML += `<p class="bad">[ERROR] ${escapeHtml(result.error)}</p>`;
     } else {
       out.innerHTML += `<p class="good">[OK] Got ${result.crises.length} crises</p>`;
       result.crises.slice(0, 3).forEach(c => {
-        out.innerHTML += `<p>&nbsp;&nbsp;- ${c.title} (${c.country}, severity: ${c.severity})</p>`;
+        out.innerHTML += `<p>&nbsp;&nbsp;- ${escapeHtml(c.title)} (${escapeHtml(c.country)}, severity: ${c.severity})</p>`;
       });
     }
   } catch (e) {
-    out.innerHTML += `<p class="bad">[ERROR] ${e.message}</p>`;
+    out.innerHTML += `<p class="bad">[ERROR] ${escapeHtml(e.message)}</p>`;
   }
 }
 
