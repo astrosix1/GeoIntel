@@ -1,0 +1,23 @@
+{
+  "_comment": "News/data source trust scores (0-100, higher = more reliable), used by calculate_source_reliability() in app.py. A source not listed here scores DEFAULT_SOURCE_SCORE (see app.py). Add new outlets here — no code change needed.",
+  "Reuters": 95,
+  "AP": 94,
+  "Bloomberg": 92,
+  "BBC": 91,
+  "Associated Press": 94,
+  "AFP": 93,
+  "Xinhua": 75,
+  "NewsAPI": 70,
+  "ACLED": 85,
+  "MANUAL": 50,
+  "News.com.au": 70,
+  "CNN": 85,
+  "BBC News": 91,
+  "The Guardian": 88,
+  "Financial Times": 90,
+  "Al Jazeera": 85,
+  "Breitbart News": 60,
+  "The Times of India": 75,
+  "Hoover.org": 80,
+  "Activistpost.com": 55
+}

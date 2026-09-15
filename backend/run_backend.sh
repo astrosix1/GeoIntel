@@ -38,15 +38,14 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Check if database exists, initialize if not
-if [ ! -f "geointel.db" ]; then
-    echo ""
-    echo "Initializing database..."
-    python3 models.py
-    if [ $? -ne 0 ]; then
-        echo "ERROR: Failed to initialize database"
-        exit 1
-    fi
+# Create/update the database schema (safe to run every time — Alembic
+# no-ops if it's already at the latest revision)
+echo ""
+echo "Applying database migrations..."
+alembic upgrade head
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to apply database migrations"
+    exit 1
 fi
 
 # Start the Flask server

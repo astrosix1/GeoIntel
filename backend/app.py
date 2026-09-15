@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 import os
 from dotenv import load_dotenv
 import json
+import secrets
 from collections import defaultdict
 from functools import wraps
 import csv
@@ -108,6 +109,39 @@ def serve_frontend():
 def serve_static(filename):
     return send_from_directory(FRONTEND_DIR, filename)
 
+
+# ════════════════════════════════════════════════════════════
+# SECURITY HEADERS
+# ════════════════════════════════════════════════════════════
+# script-src/style-src need 'unsafe-inline' because the frontend ships as
+# inline <script>/<style> blocks in index.html (no build step). This keeps
+# CSP from blocking the app, but it means CSP is not a backstop against
+# injected <script> tags — the actual fix for that is escaping all
+# untrusted data before it reaches innerHTML (see index.html's escapeHtml
+# helper). Tightening this further requires splitting the inline JS out
+# and switching to a nonce- or hash-based policy.
+_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.socket.io; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+    "font-src 'self' https://fonts.gstatic.com; "
+    "img-src 'self' data: https:; "
+    "connect-src 'self' https://en.wikipedia.org https://*.supabase.co; "
+    "frame-ancestors 'none'; "
+    "base-uri 'self'; "
+    "object-src 'none'"
+)
+
+@app.after_request
+def set_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['Content-Security-Policy'] = _CSP
+    if request.is_secure:
+        response.headers['Strict-Transport-Security'] = 'max-age=63072000; includeSubDomains'
+    return response
+
 # Try to load SocketIO, but don't fail if it's not available
 socketio = None
 try:
@@ -125,29 +159,24 @@ scheduler = BackgroundScheduler()
 # Track crisis history for escalation analysis
 crisis_history = defaultdict(list)
 
-# Source reliability mapping (higher = more trustworthy)
-SOURCE_RELIABILITY = {
-    'Reuters': 95,
-    'AP': 94,
-    'Bloomberg': 92,
-    'BBC': 91,
-    'Associated Press': 94,
-    'AFP': 93,
-    'Xinhua': 75,
-    'NewsAPI': 70,
-    'ACLED': 85,
-    'MANUAL': 50,
-    'News.com.au': 70,
-    'CNN': 85,
-    'BBC News': 91,
-    'The Guardian': 88,
-    'Financial Times': 90,
-    'Al Jazeera': 85,
-    'Breitbart News': 60,
-    'The Times of India': 75,
-    'Hoover.org': 80,
-    'Activistpost.com': 55,
-}
+# Source reliability mapping (higher = more trustworthy). Lives in
+# config/source_reliability.json so a new outlet can be added without a
+# code change; a source missing from the file scores DEFAULT_SOURCE_SCORE.
+DEFAULT_SOURCE_SCORE = 65
+_SOURCE_RELIABILITY_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), 'config', 'source_reliability.json'
+)
+
+def _load_source_reliability():
+    try:
+        with open(_SOURCE_RELIABILITY_PATH, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return {k: v for k, v in data.items() if not k.startswith('_')}
+    except Exception as e:
+        logger.error(f"Could not load {_SOURCE_RELIABILITY_PATH}: {e}. Using empty source reliability table (every source will score {DEFAULT_SOURCE_SCORE}).")
+        return {}
+
+SOURCE_RELIABILITY = _load_source_reliability()
 
 
 # ════════════════════════════════════════════════════════════
@@ -172,7 +201,7 @@ def calculate_source_reliability(crisis_id):
         for article in news:
             source = article.source or 'Unknown'
             unique_sources.add(source)
-            score = SOURCE_RELIABILITY.get(source, 65)  # Default to moderate
+            score = SOURCE_RELIABILITY.get(source, DEFAULT_SOURCE_SCORE)
             reliability_scores.append({
                 'source': source,
                 'score': score
@@ -212,7 +241,7 @@ def _reliability_from_news(news_list):
     for article in news_list:
         source = article.source or 'Unknown'
         unique_sources.add(source)
-        reliability_scores.append(SOURCE_RELIABILITY.get(source, 65))
+        reliability_scores.append(SOURCE_RELIABILITY.get(source, DEFAULT_SOURCE_SCORE))
 
     avg_score = sum(reliability_scores) / len(reliability_scores)
     source_count = len(unique_sources)
@@ -279,18 +308,26 @@ def analyze_escalation(crisis_id, _crisis=None):
         base_date = crisis.date_start if crisis.date_start else datetime.utcnow()
 
         # Create 7-day mock history
+        # BUG FIX: today (days_ago=0) must land on the crisis's actual
+        # current_severity, with earlier days showing where it likely came
+        # from — that's what makes a "high severity => escalating" story
+        # coherent. The previous `(6 - days_ago)` multiplier did the
+        # opposite: it anchored *6-days-ago* at current_severity and
+        # subtracted the most from *today*, so every high-severity crisis
+        # computed a falling (de-escalating) mock trend despite the comments
+        # below describing a rise.
         history = []
         for days_ago in range(6, -1, -1):
             # Mock history: severity increased or stayed stable based on current severity
             if current_severity > 75:
                 # High severity: likely escalated recently
-                mock_severity = max(30, current_severity - (6 - days_ago) * 8)
+                mock_severity = max(30, current_severity - days_ago * 8)
             elif current_severity > 50:
                 # Medium severity: gradual increase
-                mock_severity = max(20, current_severity - (6 - days_ago) * 4)
+                mock_severity = max(20, current_severity - days_ago * 4)
             else:
                 # Low severity: stayed relatively low
-                mock_severity = current_severity - (6 - days_ago) * 2
+                mock_severity = current_severity - days_ago * 2
 
             mock_date = base_date - timedelta(days=days_ago)
             history.append({
@@ -996,6 +1033,7 @@ def get_crisis_detail(crisis_id):
 
 
 @app.route('/api/crises/<crisis_id>', methods=['PATCH'])
+@limiter.limit("10 per minute")
 def update_crisis(crisis_id):
     """Update crisis data (admin endpoint)"""
     if not _check_admin_key():
@@ -1750,8 +1788,11 @@ def _check_admin_key():
     2. Authorization: Bearer <JWT> (Supabase/JWT tokens — signature verified)
     """
     # Method 1: Check legacy admin key header
+    # SECURITY FIX: constant-time comparison — plain == leaks a timing signal
+    # proportional to how many leading bytes of ADMIN_KEY the caller guessed.
     admin_key = os.getenv('ADMIN_KEY', '')
-    if admin_key and request.headers.get('X-Admin-Key', '') == admin_key:
+    supplied_key = request.headers.get('X-Admin-Key', '')
+    if admin_key and secrets.compare_digest(supplied_key, admin_key):
         logger.info("Admin access granted via API key")
         return True
 
@@ -1788,6 +1829,7 @@ def _check_admin_key():
 
 
 @app.route('/api/admin/sync', methods=['POST'])
+@limiter.limit("10 per minute")
 def trigger_data_sync():
     """Manually trigger data sync from all sources"""
     if not _check_admin_key():
@@ -1812,6 +1854,7 @@ def trigger_data_sync():
 
 
 @app.route('/api/admin/stats', methods=['GET'])
+@limiter.limit("10 per minute")
 def get_stats():
     """Get database stats — admin only"""
     # SECURITY FIX: Protect stats endpoint (was publicly readable)
@@ -1840,6 +1883,7 @@ def get_stats():
 
 
 @app.route('/api/crises/export', methods=['GET'])
+@limiter.limit("10 per minute")
 def export_crises_csv():
     """Export all crises as CSV. Optional query params: ?format=csv or ?status=active"""
     try:

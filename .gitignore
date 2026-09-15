@@ -18,8 +18,10 @@ __pycache__/
 dist/
 build/
 .venv/
+.venv*/
 venv/
 env/
+.pytest_cache/
 
 # Claude
 .claude/

@@ -270,5 +270,8 @@ class EconomicData(Base):
         }
 
 
-# Create all tables
-Base.metadata.create_all(engine)
+# Schema creation/changes are now handled by Alembic (see backend/migrations/),
+# not by create_all() here. create_all() only ever creates missing tables —
+# it never alters an existing one — so relying on it silently masks schema
+# drift between dev and production. Run `alembic upgrade head` (from
+# backend/) to create or update the database.
