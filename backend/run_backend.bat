@@ -41,16 +41,15 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-REM Check if database exists, initialize if not
-if not exist "geointel.db" (
-    echo.
-    echo Initializing database...
-    python models.py
-    if %errorlevel% neq 0 (
-        echo ERROR: Failed to initialize database
-        pause
-        exit /b 1
-    )
+REM Create/update the database schema (safe to run every time — Alembic
+REM no-ops if it's already at the latest revision)
+echo.
+echo Applying database migrations...
+alembic upgrade head
+if %errorlevel% neq 0 (
+    echo ERROR: Failed to apply database migrations
+    pause
+    exit /b 1
 )
 
 REM Start the Flask server

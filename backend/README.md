@@ -33,10 +33,13 @@ DEBUG=True
 ### 3. Initialize Database
 
 ```bash
-python models.py
+alembic upgrade head
 ```
 
-This creates tables and initializes core actors.
+This creates (or updates) the schema. Safe to re-run — it's a no-op once
+the database is already at the latest revision. Future schema changes
+should ship as a new migration (`alembic revision --autogenerate -m "..."`
+after editing `models.py`), not a direct edit to a live table.
 
 ### 4. Run the API
 
@@ -130,6 +133,8 @@ backend/
 ├── models.py           # SQLAlchemy ORM models
 ├── data_sources.py     # Connectors to external APIs
 ├── app.py              # Flask API server
+├── migrations/         # Alembic schema migrations (alembic upgrade head)
+├── tests/              # pytest suite (pytest, from backend/)
 ├── requirements.txt    # Python dependencies
 ├── .env               # Configuration
 └── geointel.db        # SQLite database
@@ -294,9 +299,11 @@ def generate_forecasts_for_crisis(crisis_id):
 - ACLED is free and requires no API key
 - NewsAPI requires free account (newsapi.org)
 - World Bank data is freely available via API
-- For production, migrate from SQLite to PostgreSQL
-- Add Redis for caching frequent queries
-- Consider adding authentication for admin endpoints
+- For production, set `DATABASE_URL` to a PostgreSQL connection string
+  (SQLite is the dev default)
+- Set `REDIS_URL` to move the cache and rate limiter off in-memory storage
+- Admin endpoints require either an `X-Admin-Key` header (set `ADMIN_KEY`)
+  or a Supabase JWT bearer token (set `SUPABASE_JWT_SECRET` + `ADMIN_EMAILS`)
 - Rate limits on external APIs should be respected
 
 ## Next Steps

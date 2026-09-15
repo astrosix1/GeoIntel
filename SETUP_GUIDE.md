@@ -63,13 +63,17 @@ REDIS_URL=redis://localhost:6379
 ### C. Initialize Database
 
 ```bash
-python models.py
+alembic upgrade head
 ```
 
 This creates:
 - SQLite database (`geointel.db`)
 - 6 tables (crises, actors, relationships, forecasts, news, economic_data)
-- Preloaded actors (US, China, Russia, EU, India, Iran, Israel, North Korea)
+
+Safe to re-run any time — it's a no-op once the database is already at the
+latest migration. Preloaded actors (US, China, Russia, EU, India, Iran,
+Israel, North Korea) are seeded automatically when the backend handles its
+first request, not by this step.
 
 ### D. Run the Backend Server
 
@@ -100,6 +104,8 @@ The server:
    ```
    Event Globe/
    ├── index.html           ← Open this in browser
+   ├── app.js               ← Dashboard/globe application logic
+   ├── app.css              ← Dashboard/globe styles
    ├── frontend-api.js      ← API client (auto-imported)
    ├── topojson.min.js      ← Map data library
    ├── countries-110m.json  ← Country boundary data
@@ -220,7 +226,7 @@ curl -X POST http://localhost:5000/api/admin/sync
 **Solution**:
 1. Ensure only ONE `python app.py` instance running
 2. Delete `geointel.db` to reset
-3. Run `python models.py` to recreate
+3. Run `alembic upgrade head` to recreate
 
 ### Module not found errors
 **Problem**: Missing Python packages
@@ -245,9 +251,10 @@ pip install -r requirements.txt
    - Add historical analogs database
 
 3. **Production Deployment**:
-   - Migrate from SQLite to PostgreSQL
-   - Add Redis caching for frequent queries
-   - Implement authentication for admin endpoints
+   - Set `DATABASE_URL` to a PostgreSQL connection string
+   - Set `REDIS_URL` for distributed caching/rate limiting
+   - Admin endpoints already require `ADMIN_KEY` or a Supabase JWT — make
+     sure `ADMIN_KEY`/`SUPABASE_JWT_SECRET`/`ADMIN_EMAILS` are set
    - Use Gunicorn/uWSGI instead of Flask dev server
    - Set up SSL/TLS certificates
 
@@ -306,7 +313,7 @@ pip install -r requirements.txt
 ✅ **Cascade Simulation**: What-if escalation scenarios  
 ✅ **Sentiment Analysis**: News article emotional tone  
 ✅ **Historical Analogs**: Pattern matching with past crises  
-✅ **Zero-Auth Design**: Fully public by default, easy to add auth later  
+✅ **Admin Auth Built In**: Admin routes require an API key or Supabase JWT  
 
 ---
 

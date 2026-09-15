@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 """
-Test if data sources are working
+Manual diagnostic: hits ACLED/NewsAPI/World Bank live and prints ✅/❌ for
+each. This is NOT part of the automated test suite (no assertions, makes
+real network calls) — run it by hand when data sync looks broken:
+
+    python backend/scripts/check_data_sources.py
+
+For the actual test suite, see backend/tests/ (run with `pytest` from
+backend/).
 """
 import os
 import sys
