@@ -1265,7 +1265,7 @@ function drawPins() {
       connectorLines.push({ x1: p.sx, y1: p.sy, x2: sx, y2: sy, confidence: c.location_confidence ?? 75 });
     }
 
-    return { c, p: {...p, sx, sy}, city };
+    return { c, p: {...p, sx, sy}, city, _alreadySpread: total > 1 };
   });
 
   // Draw connector lines first (behind pins)
@@ -1282,16 +1282,23 @@ function drawPins() {
   });
 
   // ── CLUSTERING — merge nearby pins when zoomed out ───────────────────────────
+  // Pins already pulled apart into a ring above (_alreadySpread — exact/
+  // near-duplicate coordinates) are exempt: they were deliberately made
+  // individually visible, and re-merging them into an anonymous "N" blob
+  // here defeated that entirely (they're only ~20-55px from their shared
+  // centre, well inside CLUSTER_DIST, so without this they always got
+  // re-clustered at anything under zoom 1.4 — including the default zoom).
   const CLUSTER_DIST = 38; // px — merge pins closer than this
   if (zoom < 1.4) {
     const assigned = new Set();
     const clusters = [];
     visible.forEach((item, i) => {
       if (assigned.has(i)) return;
+      if (item._alreadySpread) { assigned.add(i); clusters.push([item]); return; }
       const group = [item];
       assigned.add(i);
       visible.forEach((other, j) => {
-        if (assigned.has(j)) return;
+        if (assigned.has(j) || other._alreadySpread) return;
         const d = Math.hypot(item.p.sx - other.p.sx, item.p.sy - other.p.sy);
         if (d < CLUSTER_DIST) { group.push(other); assigned.add(j); }
       });
