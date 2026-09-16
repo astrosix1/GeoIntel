@@ -533,7 +533,14 @@ function fitCanvasToDisplay(cvs, context) {
 
 fitCanvasToDisplay(canvas, ctx);
 
-function R()  { return (Math.min(canvas.clientWidth, canvas.clientHeight) / 2 - 48) * zoom; }
+// Clamped to a minimum of 1px: on a narrow/short canvas (small window,
+// mobile portrait layout, or a transient layout state where the pane hasn't
+// reached its normal size yet) `min(width,height)/2 - 48` can go negative,
+// and createRadialGradient() throws synchronously on a negative radius —
+// which, since this runs inside drawGlobe() before requestAnimationFrame()
+// reschedules the next frame, permanently kills the render loop rather
+// than just drawing one bad frame.
+function R()  { return Math.max(1, (Math.min(canvas.clientWidth, canvas.clientHeight) / 2 - 48) * zoom); }
 function CX() { return canvas.clientWidth  / 2; }
 function CY() { return canvas.clientHeight / 2; }
 
@@ -2030,7 +2037,7 @@ canvas.addEventListener('wheel', e => {
   // cursor under the OLD zoom, then nudge rotation so that same point stays
   // under the cursor after the zoom change.
   const cx = CX(), cy = CY();
-  const oldR = (Math.min(canvas.clientWidth, canvas.clientHeight) / 2 - 48) * oldZoom;
+  const oldR = Math.max(1, (Math.min(canvas.clientWidth, canvas.clientHeight) / 2 - 48) * oldZoom);
   const nx = (cmx - cx) / oldR;   // globe-space x  (-1 … 1)
   const ny = -(cmy - cy) / oldR;  // globe-space y  (-1 … 1)
 
