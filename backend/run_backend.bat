@@ -41,11 +41,12 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-REM Create/update the database schema (safe to run every time — Alembic
-REM no-ops if it's already at the latest revision)
+REM Create/update the database schema (safe to run every time — no-ops if
+REM already at the latest revision; also handles a pre-existing DB from
+REM before Alembic was introduced by stamping instead of re-creating tables)
 echo.
 echo Applying database migrations...
-alembic upgrade head
+python scripts\ensure_db.py
 if %errorlevel% neq 0 (
     echo ERROR: Failed to apply database migrations
     pause

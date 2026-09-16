@@ -38,11 +38,12 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Create/update the database schema (safe to run every time — Alembic
-# no-ops if it's already at the latest revision)
+# Create/update the database schema (safe to run every time — no-ops if
+# already at the latest revision; also handles a pre-existing DB from
+# before Alembic was introduced by stamping instead of re-creating tables)
 echo ""
 echo "Applying database migrations..."
-alembic upgrade head
+python3 scripts/ensure_db.py
 if [ $? -ne 0 ]; then
     echo "ERROR: Failed to apply database migrations"
     exit 1
