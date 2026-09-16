@@ -1967,6 +1967,24 @@ let rotVelX = 0, rotVelY = 0;
 const INERTIA_FRICTION = 0.94;   // per-frame velocity decay while gliding
 const INERTIA_EPSILON  = 0.0002; // below this, treat velocity as fully stopped
 
+// If the pointer stops moving but the button/touch is still held down, no
+// further mousemove/touchmove events fire at all — so without this, the
+// velocity EMA just sits frozen at whatever it was from the last actual
+// movement, and releasing after a deliberate pause still launches the
+// glide from that stale, possibly-large value ("drag, stop, let go, and
+// it keeps spinning"). Zero it out once the pointer's been still for a
+// bit while still dragging, so only a real flick right up to release
+// carries any velocity into the glide.
+const DRAG_STALL_MS = 60;
+let lastDragMoveAt = 0;
+
+function decayStaleDragVelocity() {
+  if (!drag) return;
+  if (performance.now() - lastDragMoveAt > DRAG_STALL_MS) {
+    rotVelX = 0; rotVelY = 0;
+  }
+}
+
 function applyInertia() {
   if (drag || flatMap) return; // user is actively driving rotation, or globe isn't shown
   if (Math.abs(rotVelX) < INERTIA_EPSILON && Math.abs(rotVelY) < INERTIA_EPSILON) return;
@@ -1982,6 +2000,7 @@ function applyInertia() {
 canvas.addEventListener('mousedown', e => {
   drag = true; rotVelX = 0; rotVelY = 0;
   lastMX = e.clientX; lastMY = e.clientY;
+  lastDragMoveAt = performance.now();
   markMotion();
 });
 document.addEventListener('mouseup',  () => drag = false);
@@ -1992,6 +2011,7 @@ canvas.addEventListener('touchstart', e => {
     drag = true; rotVelX = 0; rotVelY = 0;
     lastMX = e.touches[0].clientX;
     lastMY = e.touches[0].clientY;
+    lastDragMoveAt = performance.now();
     markMotion();
   }
 }, { passive: true });
@@ -2007,6 +2027,7 @@ canvas.addEventListener('touchmove', e => {
   rotVelX = rotVelX * 0.7 + dY * 0.3;
   lastMX = e.touches[0].clientX;
   lastMY = e.touches[0].clientY;
+  lastDragMoveAt = performance.now();
   markMotion();
 }, { passive: false });
 document.addEventListener('mousemove', e => {
@@ -2022,6 +2043,7 @@ document.addEventListener('mousemove', e => {
     rotVelY = rotVelY * 0.7 + dX * 0.3;
     rotVelX = rotVelX * 0.7 + dY * 0.3;
     lastMX = e.clientX; lastMY = e.clientY;
+    lastDragMoveAt = performance.now();
     markMotion();
   }
   canvas.style.cursor = drag ? 'grabbing' : 'grab';
@@ -2724,6 +2746,7 @@ document.getElementById('panelClose').addEventListener('click', () => {
 // ════════════════════════════════════════════════════════════
 
 function loop() {
+  decayStaleDragVelocity();
   applyInertia();
   drawGlobe();
   requestAnimationFrame(loop);
