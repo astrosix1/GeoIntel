@@ -603,27 +603,42 @@ function isPointInCountry(feature, x, y) {
 // Estimate trade volume label from route volume tier
 const TRADE_VOL_LABEL = ['', '~$200B/yr', '~$500B/yr', '~$1T+/yr'];
 
-// Approximate great-circle distance in degrees between two lat/lon points
-function geoDistDeg(la1, lo1, la2, lo2) {
-  const dLat = la1 - la2, dLon = lo1 - lo2;
-  return Math.sqrt(dLat * dLat + dLon * dLon);
+// Great-circle distance in km between two lat/lon points (haversine).
+// Replaces a naive sqrt(dLat²+dLon²) "degree distance" that was labeled
+// great-circle but wasn't one: it treated 1° of longitude as the same
+// real-world distance as 1° of latitude everywhere, true only at the
+// equator — longitude degrees shrink by cos(latitude) toward the poles,
+// so the old formula understated how close two points actually are at
+// high latitude (e.g. North Atlantic / Arctic shipping routes, or any
+// crisis proximity check north of ~40°).
+const EARTH_RADIUS_KM = 6371;
+function geoDistKm(la1, lo1, la2, lo2) {
+  const phi1 = la1 * Math.PI / 180, phi2 = la2 * Math.PI / 180;
+  const dPhi = (la2 - la1) * Math.PI / 180;
+  const dLambda = (lo2 - lo1) * Math.PI / 180;
+  const a = Math.sin(dPhi / 2) ** 2 + Math.cos(phi1) * Math.cos(phi2) * Math.sin(dLambda / 2) ** 2;
+  return 2 * EARTH_RADIUS_KM * Math.asin(Math.min(1, Math.sqrt(a)));
 }
 
 // For each trade route, compute a risk level (0–3) based on nearby active crises
 function routeRiskLevel(lat1, lon1, lat2, lon2) {
-  // Sample midpoint and quarter-points along the route
-  const samples = [
-    [lat1, lon1],
-    [(lat1 + lat2) / 2, (lon1 + lon2) / 2],
-    [lat2, lon2],
-    [(lat1 * 3 + lat2) / 4, (lon1 * 3 + lon2) / 4],
-    [(lat1 + lat2 * 3) / 4, (lon1 + lon2 * 3) / 4],
-  ];
+  // Sample along the *actual* great-circle path — the same SLERP used to
+  // draw the arc (see drawArc/latLonToVec/slerpVec below) — rather than
+  // naive lat/lon linear interpolation. That mattered a lot here: every
+  // trans-Pacific route in TRADE_ROUTES (Shanghai-LA, Tokyo-LA,
+  // Singapore-LA) crosses the antimeridian, where linearly "averaging"
+  // longitude lands nowhere near the real path — e.g. Shanghai (121.5°E)
+  // and LA (-118.2°) average to ~1.65°E, near Africa, while the real
+  // route crosses the Pacific near 180°. Risk was being checked against
+  // the wrong hemisphere entirely for those routes.
+  const v1 = latLonToVec(lat1, lon1);
+  const v2 = latLonToVec(lat2, lon2);
+  const samples = [0, 0.25, 0.5, 0.75, 1].map(t => vecToLatLon(slerpVec(v1, v2, t)));
   let maxSev = 0;
   let nearby = 0;
   for (const c of CRISES) {
     for (const [sla, slo] of samples) {
-      if (geoDistDeg(c.lat || 0, c.lon || 0, sla, slo) < 15) {
+      if (geoDistKm(c.lat || 0, c.lon || 0, sla, slo) < 1650) {  // ~15° at the equator
         nearby++;
         maxSev = Math.max(maxSev, c.severity || 0);
         break; // count each crisis once
@@ -949,8 +964,21 @@ function renderLandAndBorders(targetCtx, features, borders, cx, cy, r) {
     ACTORS.forEach(actor => {
       const p = project(actor.lat, actor.lon);
       if (p.z > 0) {
-        const grd = targetCtx.createRadialGradient(p.sx, p.sy, 0, p.sx, p.sy, r * 0.35);
-        grd.addColorStop(0, actor.color + '44');
+        // This is meant to be a *power* heatmap, not just an actor-location
+        // marker — so the glow needs to actually scale with power. It
+        // previously used a fixed radius/intensity for every actor
+        // regardless of their military/economic/political/tech scores,
+        // making a superpower and a minor actor look identical.
+        const power = (
+          (actor.military_power ?? 50) +
+          (actor.economic_power ?? 50) +
+          (actor.political_influence ?? 50) +
+          (actor.technological_capability ?? 50)
+        ) / 400; // 0–1
+        const glowR = r * (0.14 + power * 0.34);
+        const innerAlphaHex = Math.round(40 + power * 170).toString(16).padStart(2, '0');
+        const grd = targetCtx.createRadialGradient(p.sx, p.sy, 0, p.sx, p.sy, glowR);
+        grd.addColorStop(0, actor.color + innerAlphaHex);
         grd.addColorStop(1, 'transparent');
         targetCtx.fillStyle = grd;
         targetCtx.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
@@ -1160,6 +1188,29 @@ function drawGlobe() {
     const pSel = project(selected.lat, selected.lon);
     if (pSel.z > 0) {
       const steps = selected.cascade?.steps || [];
+
+      // Arcs from the crisis origin to each step's *actual* affected
+      // actors — the backend's cascade analysis already resolves real
+      // actor locations (step.actors → ACTORS lat/lon), but the rings
+      // below are purely decorative concentric circles that pulse at the
+      // origin regardless of which direction or how far the cascade
+      // actually reaches. Draw the real geography instead of discarding it.
+      if (steps.length > 0) {
+        const actorById = {};
+        ACTORS.forEach(a => { actorById[a.id] = a; });
+        steps.forEach((step, i) => {
+          const prob = step.probability ?? 0.3;
+          const color = prob >= 0.65 ? '#ff3c3c' : prob >= 0.4 ? '#ffa532' : '#ffd23c';
+          const breathe = 0.7 + Math.sin(pulse + i * 0.8) * 0.3;
+          const alpha = (0.3 + prob * 0.45) * breathe;
+          (step.actors || []).forEach(actorId => {
+            const actor = actorById[actorId];
+            if (!actor || actor.lat == null || actor.lon == null) return;
+            drawArc(selected.lat, selected.lon, actor.lat, actor.lon, color, 1 + prob * 2, alpha);
+          });
+        });
+      }
+
       const ringCount = steps.length > 0 ? Math.min(steps.length, 3) : 2;
       for (let ring = 1; ring <= ringCount; ring++) {
         const step = steps[ring - 1];
@@ -1989,11 +2040,12 @@ document.addEventListener('mousemove', e => {
       const riskLabel = ROUTE_RISK_LABELS[closest.risk];
       // Find nearby threatening crises
       const [, lat1, lon1, lat2, lon2] = route;
+      // Same great-circle sampling as routeRiskLevel() — see its comment
+      // for why naive lat/lon-linear midpoints are wrong for these routes.
+      const rv1 = latLonToVec(lat1, lon1), rv2 = latLonToVec(lat2, lon2);
+      const routeSamples = [0, 0.5, 1].map(t => vecToLatLon(slerpVec(rv1, rv2, t)));
       const threats = CRISES
-        .filter(c => {
-          const samples = [[lat1,lon1],[(lat1+lat2)/2,(lon1+lon2)/2],[lat2,lon2]];
-          return samples.some(([sl,so]) => geoDistDeg(c.lat||0, c.lon||0, sl, so) < 15);
-        })
+        .filter(c => routeSamples.some(([sl,so]) => geoDistKm(c.lat||0, c.lon||0, sl, so) < 1650))  // ~15° at the equator
         .sort((a, b) => b.severity - a.severity)
         .slice(0, 3);
       const threatHtml = threats.length
@@ -2756,6 +2808,8 @@ async function loadRealData() {
         lon: a.lon,
         military_power: a.military || 50,
         economic_power: a.economic || 50,
+        political_influence: a.political || 50,
+        technological_capability: a.technology || 50,
         is_nuclear: a.is_nuclear || false,
       }));
     }
