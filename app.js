@@ -1360,9 +1360,12 @@ function drawPins() {
   // ── Zoom-scaled display cap ──────────────────────────────────────────────────
   // At zoom=1 (default) show crisisDisplayLimit pins.
   // Zoom in (>1) → more pins; zoom out (<1) → fewer pins to reduce clutter.
+  // Cap raised from 250 → 600: zoom goes up to 10x, and at that scale the
+  // globe has far more screen real estate per pin, so the old cap was
+  // throttling pin count well before zoom itself would have.
   const maxDisplayLimit = Math.min(
     Math.round(crisisDisplayLimit * Math.max(0.4, zoom)),   // zoom=1 → full limit
-    250                                                       // hard cap
+    600                                                       // hard cap
   );
 
   // ── Year filter ──────────────────────────────────────────────────────────────
@@ -1456,11 +1459,16 @@ function drawPins() {
   // Pins already pulled apart into a ring above (_alreadySpread — exact/
   // near-duplicate coordinates) are exempt: they were deliberately made
   // individually visible, and re-merging them into an anonymous "N" blob
-  // here defeated that entirely (they're only ~20-55px from their shared
-  // centre, well inside CLUSTER_DIST, so without this they always got
-  // re-clustered at anything under zoom 1.4 — including the default zoom).
-  const CLUSTER_DIST = 38; // px — merge pins closer than this
-  if (zoom < 1.4) {
+  // here defeated that entirely.
+  //
+  // The cluster radius itself shrinks as you zoom in (instead of a fixed
+  // 38px that only ever got fully switched off past a hard zoom>=1.4
+  // cutoff), so decluttering fades out smoothly — the more zoomed in you
+  // are, the more individual pins show individually, right up to zoom 10
+  // where clustering is effectively off. That also directly means more
+  // pins become visible the further in you zoom, not just a step change.
+  const CLUSTER_DIST = 38 / Math.max(1, zoom);
+  if (CLUSTER_DIST > 4) { // below this it's not doing anything meaningful
     const assigned = new Set();
     const clusters = [];
     visible.forEach((item, i) => {
