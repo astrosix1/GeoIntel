@@ -950,12 +950,113 @@ flatCanvas.addEventListener('touchmove', e => {
   drawFlatMap();
 }, { passive: false });
 
+// ── Terrain relief shading ───────────────────────────────────────────────
+// Real elevation data (NASA-derived grayscale equirectangular bump map),
+// loaded once and kept as raw pixel data so sampling it per-globe-pixel is
+// just an array index, not a draw call. Only ever applied inside the
+// high-detail cached bitmap (see applyTerrainShading below) — like the
+// 50m country mesh, per-pixel raycasting the whole globe disc is too
+// expensive to redo every frame, so it only runs once per settle.
+let elevationPixels = null, elevationW = 0, elevationH = 0;
+(function loadElevationTexture() {
+  const img = new Image();
+  img.onload = () => {
+    const off = document.createElement('canvas');
+    off.width = img.width;
+    off.height = img.height;
+    const offCtx = off.getContext('2d');
+    offCtx.drawImage(img, 0, 0);
+    elevationPixels = offCtx.getImageData(0, 0, img.width, img.height).data;
+    elevationW = img.width;
+    elevationH = img.height;
+  };
+  img.onerror = () => console.warn('Terrain elevation texture failed to load — globe will render without relief shading.');
+  img.src = 'earth-elevation.jpg';
+})();
+
+// Inverse of project(): given a point on the unit sphere in screen-facing
+// coordinates (nx, ny, nz — z toward the viewer), recover [lat, lon] in
+// degrees. Used to sample the equirectangular elevation texture per pixel.
+// Derived by inverting project()'s rotation order: project() first builds
+// the standard spherical vector (cos(phi)cos(u), cos(phi)sin(u), sin(phi))
+// with u = lon + rotY, then rotates the (z, that-x) pair by rotX to get
+// (y, z); this undoes both steps in reverse.
+function unprojectToLatLon(nx, ny, nz, cosRotX, sinRotX) {
+  const s = ny * cosRotX + nz * sinRotX;       // sin(phi)
+  const a = -ny * sinRotX + nz * cosRotX;      // cos(phi) * cos(u)
+  const phi = Math.asin(Math.max(-1, Math.min(1, s)));
+  const u = Math.atan2(nx, a);
+  const lam = u - rotY;
+  const lat = phi * 180 / Math.PI;
+  let lon = lam * 180 / Math.PI;
+  lon = ((lon + 180) % 360 + 360) % 360 - 180; // normalize to [-180, 180]
+  return [lat, lon];
+}
+
+// Darkens valleys / lightens peaks on the already-filled land pixels of an
+// offscreen bitmap, by inverse-projecting each land pixel back to lat/lon
+// and sampling the elevation texture there. Only touches pixels the land
+// fill already made opaque (alpha > 0) — ocean and space are left alone,
+// so the existing ocean gradient (drawn separately, underneath) shows
+// through unaffected.
+function applyTerrainShading(offCtx, cx, cy, r) {
+  if (!elevationPixels) return; // texture still loading — skip gracefully
+  const w = offCtx.canvas.width, h = offCtx.canvas.height;
+  const minX = Math.max(0, Math.floor(cx - r)), maxX = Math.min(w, Math.ceil(cx + r));
+  const minY = Math.max(0, Math.floor(cy - r)), maxY = Math.min(h, Math.ceil(cy + r));
+  if (maxX <= minX || maxY <= minY) return;
+
+  const imgData = offCtx.getImageData(minX, minY, maxX - minX, maxY - minY);
+  const px = imgData.data;
+  const boxW = maxX - minX;
+  const cosRotX = Math.cos(rotX), sinRotX = Math.sin(rotX);
+  const rSq = r * r;
+
+  for (let py = minY; py < maxY; py++) {
+    const ddy = py - cy;
+    for (let pxi = minX; pxi < maxX; pxi++) {
+      const idx = ((py - minY) * boxW + (pxi - minX)) * 4;
+      if (px[idx + 3] === 0) continue; // not land
+      const ddx = pxi - cx;
+      const distSq = ddx * ddx + ddy * ddy;
+      if (distSq > rSq) continue;
+      const nx = ddx / r, ny = -ddy / r;
+      const nzSq = 1 - nx * nx - ny * ny;
+      if (nzSq < 0) continue;
+      const nz = Math.sqrt(nzSq);
+
+      const [lat, lon] = unprojectToLatLon(nx, ny, nz, cosRotX, sinRotX);
+      const tx = Math.min(elevationW - 1, Math.max(0, Math.floor((lon + 180) / 360 * elevationW)));
+      const ty = Math.min(elevationH - 1, Math.max(0, Math.floor((90 - lat) / 180 * elevationH)));
+      const elev = elevationPixels[(ty * elevationW + tx) * 4]; // grayscale: R=G=B
+
+      // Shade around a neutral midpoint so typical lowland terrain stays
+      // close to the original land color, high peaks brighten it, and
+      // ocean-floor-depth-style low values darken it.
+      const factor = 1 + (elev - 55) / 255 * 0.85;
+      px[idx]     = Math.min(255, Math.max(0, px[idx]     * factor));
+      px[idx + 1] = Math.min(255, Math.max(0, px[idx + 1] * factor));
+      px[idx + 2] = Math.min(255, Math.max(0, px[idx + 2] * factor));
+    }
+  }
+  offCtx.putImageData(imgData, minX, minY);
+}
+
 // Renders land fill + highlighted-country glow + borders for one frame,
 // against whichever context it's given. Pulled out of drawGlobe() so it can
 // target either the live main canvas (cheap low-res mesh, every frame) or
 // an offscreen canvas (expensive high-res mesh, built once and cached —
 // see the high-detail cache in drawGlobe()).
 function renderLandAndBorders(targetCtx, features, borders, cx, cy, r) {
+  renderLandFill(targetCtx, features, cx, cy, r);
+  renderBorders(targetCtx, borders);
+}
+
+// Land fill + highlighted-country glow only (no borders) — split out so the
+// high-detail cache can slot the expensive per-pixel terrain shading pass
+// in between the fill and the borders, keeping border strokes crisp on top
+// of the raster relief shading rather than getting shaded themselves.
+function renderLandFill(targetCtx, features, cx, cy, r) {
   if (showHeat) {
     features.forEach(f => {
       targetCtx.fillStyle = '#1a4a2e';
@@ -1006,8 +1107,9 @@ function renderLandAndBorders(targetCtx, features, borders, cx, cy, r) {
     drawGeoFeature(highlightedCountry.feature.geometry, false, targetCtx);
     targetCtx.restore();
   }
+}
 
-  // Borders
+function renderBorders(targetCtx, borders) {
   targetCtx.strokeStyle = 'rgba(255,255,255,0.18)';
   targetCtx.lineWidth = 0.5;
   drawGeoMesh(borders, targetCtx);
@@ -1027,6 +1129,7 @@ function getHighDetailLandBitmap(features, borders, cx, cy, r) {
   const key = [
     rotX, rotY, zoom, canvas.clientWidth, canvas.clientHeight,
     showHeat, highlightedCountry?.feature?.id ?? null,
+    !!elevationPixels, // texture loads async — rebuild once it's ready so terrain doesn't stay missing from a bitmap cached before it arrived
   ].join('|');
 
   if (highDetailCache && highDetailCacheKey === key) return highDetailCache;
@@ -1037,7 +1140,17 @@ function getHighDetailLandBitmap(features, borders, cx, cy, r) {
   const offCtx = off.getContext('2d');
   offCtx.save();
   offCtx.beginPath(); offCtx.arc(cx, cy, r, 0, Math.PI * 2); offCtx.clip();
-  renderLandAndBorders(offCtx, features, borders, cx, cy, r);
+  renderLandFill(offCtx, features, cx, cy, r);
+  offCtx.restore();
+
+  // Terrain relief shading — only in the cached high-detail tier (see
+  // applyTerrainShading's comment); runs on the raw pixels after the land
+  // fill but before borders, so border strokes stay crisp on top.
+  if (!showHeat) applyTerrainShading(offCtx, cx, cy, r);
+
+  offCtx.save();
+  offCtx.beginPath(); offCtx.arc(cx, cy, r, 0, Math.PI * 2); offCtx.clip();
+  renderBorders(offCtx, borders);
   offCtx.restore();
 
   highDetailCache = off;
