@@ -993,6 +993,29 @@ function unprojectToLatLon(nx, ny, nz, cosRotX, sinRotX) {
   return [lat, lon];
 }
 
+// Bilinear-sample the elevation texture at (lon, lat) instead of a nearest-
+// neighbor lookup — at typical globe-zoom levels each source texel covers
+// several screen pixels, so nearest-neighbor produced visibly blocky
+// terrain edges. Blends the 4 surrounding texels; wraps horizontally
+// (longitude is circular) and clamps vertically (no wrap at the poles).
+function sampleElevationBilinear(lon, lat) {
+  const fx = (lon + 180) / 360 * elevationW - 0.5;
+  const fy = (90 - lat) / 180 * elevationH - 0.5;
+  const x0 = Math.floor(fx), y0 = Math.floor(fy);
+  const tx = fx - x0, ty = fy - y0;
+  const wrapX = x => ((x % elevationW) + elevationW) % elevationW;
+  const clampY = y => Math.min(elevationH - 1, Math.max(0, y));
+  const x0w = wrapX(x0), x1w = wrapX(x0 + 1);
+  const y0c = clampY(y0), y1c = clampY(y0 + 1);
+  const p00 = elevationPixels[(y0c * elevationW + x0w) * 4];
+  const p10 = elevationPixels[(y0c * elevationW + x1w) * 4];
+  const p01 = elevationPixels[(y1c * elevationW + x0w) * 4];
+  const p11 = elevationPixels[(y1c * elevationW + x1w) * 4];
+  const top = p00 + (p10 - p00) * tx;
+  const bottom = p01 + (p11 - p01) * tx;
+  return top + (bottom - top) * ty;
+}
+
 // Darkens valleys / lightens peaks on the already-filled land pixels of an
 // offscreen bitmap, by inverse-projecting each land pixel back to lat/lon
 // and sampling the elevation texture there. Only touches pixels the land
@@ -1026,9 +1049,7 @@ function applyTerrainShading(offCtx, cx, cy, r) {
       const nz = Math.sqrt(nzSq);
 
       const [lat, lon] = unprojectToLatLon(nx, ny, nz, cosRotX, sinRotX);
-      const tx = Math.min(elevationW - 1, Math.max(0, Math.floor((lon + 180) / 360 * elevationW)));
-      const ty = Math.min(elevationH - 1, Math.max(0, Math.floor((90 - lat) / 180 * elevationH)));
-      const elev = elevationPixels[(ty * elevationW + tx) * 4]; // grayscale: R=G=B
+      const elev = sampleElevationBilinear(lon, lat);
 
       // Shade around a neutral midpoint so typical lowland terrain stays
       // close to the original land color, high peaks brighten it, and
@@ -1040,6 +1061,76 @@ function applyTerrainShading(offCtx, cx, cy, r) {
     }
   }
   offCtx.putImageData(imgData, minX, minY);
+}
+
+// Cheap, low-resolution terrain preview shown WHILE the globe is actively
+// moving. Full-detail shading only ever runs once settled (~230ms — far
+// too slow for every frame), but showing nothing at all while dragging
+// made the terrain feel like it was disappearing every time the globe
+// moved, which read as more jarring than the same live/settled split
+// already used for country-boundary detail (that swap is subtle; flat
+// color vs. visible relief is not). Downscales sharply — renders at
+// roughly 1/14th linear resolution, so the per-pixel shading pass costs a
+// few ms instead of hundreds — then scales the blurred result back up.
+// Soft, but keeps a continuous sense of relief instead of flattening out.
+// Reused every frame instead of allocating a new canvas each time — a
+// fresh document.createElement('canvas') per frame was a measurable chunk
+// of this overlay's cost (GC pressure from constant small-canvas churn).
+const _liveTerrainCanvas = document.createElement('canvas');
+const _liveTerrainCtx = _liveTerrainCanvas.getContext('2d');
+let _liveTerrainRefreshDue = true;
+
+function drawLiveTerrainOverlay(cx, cy, r) {
+  if (!elevationPixels || showHeat) return;
+  // Fixed target size, NOT r/zoom-scaled: R() scales with zoom, so a
+  // "downscale by a constant ratio" box grows right along with it — at
+  // zoom 4 that was already a 180x180 box (16x the pixel count of zoom 1),
+  // eating most of the frame budget it was supposed to protect. A fixed
+  // box bounds the per-frame cost of this pass regardless of zoom; it's a
+  // blurred preview by design, so more blur relative to screen size at
+  // high zoom is an acceptable tradeoff for staying cheap.
+  //
+  // (Tried re-rendering the low-res land mesh straight onto the small
+  // canvas via a scale transform instead of copying pixels back from the
+  // main canvas, hoping to dodge a GPU readback sync — measured worse:
+  // re-projecting ~8k mesh points a second time cost as much as the
+  // entire rest of the live frame. The drawImage-based downscale below
+  // wins in practice, so keeping it.)
+  const boxSize = 80;
+
+  const needsResize = _liveTerrainCanvas.width !== boxSize || _liveTerrainCanvas.height !== boxSize;
+  if (needsResize) {
+    _liveTerrainCanvas.width = boxSize;
+    _liveTerrainCanvas.height = boxSize;
+  }
+
+  // Refresh the downscaled source + shading only every other frame — one
+  // frame (~16ms) of staleness is imperceptible on a preview that's
+  // already blurred to 80x80px, and this halves the cost of the only two
+  // non-trivial steps here (the cross-canvas readback and the per-pixel
+  // shading loop) for the whole time the globe is being dragged. Still
+  // blits the (possibly-reused) result below every frame, so there's no
+  // visible skip/flicker — only the underlying detail updates less often.
+  _liveTerrainRefreshDue = needsResize || !_liveTerrainRefreshDue;
+  if (_liveTerrainRefreshDue) {
+    if (!needsResize) _liveTerrainCtx.clearRect(0, 0, boxSize, boxSize);
+    // canvas's own pixel buffer is DPR-scaled (device pixels), but cx/cy/r
+    // are in the CSS-pixel space every other coordinate here uses —
+    // convert when reading it back, since drawImage's source rect is
+    // always in the source's native pixel space.
+    const dpr = window.devicePixelRatio || 1;
+    _liveTerrainCtx.drawImage(
+      canvas,
+      (cx - r) * dpr, (cy - r) * dpr, 2 * r * dpr, 2 * r * dpr,
+      0, 0, boxSize, boxSize
+    );
+    applyTerrainShading(_liveTerrainCtx, boxSize / 2, boxSize / 2, boxSize / 2);
+  }
+
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip();
+  ctx.drawImage(_liveTerrainCanvas, cx - r, cy - r, 2 * r, 2 * r);
+  ctx.restore();
 }
 
 // Renders land fill + highlighted-country glow + borders for one frame,
@@ -1217,6 +1308,7 @@ function drawGlobe() {
       ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip();
       renderLandAndBorders(ctx, features, borders, cx, cy, r);
       ctx.restore();
+      drawLiveTerrainOverlay(cx, cy, r);
     }
   }
 
