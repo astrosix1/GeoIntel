@@ -1129,7 +1129,17 @@ function drawLiveTerrainOverlay(cx, cy, r) {
 
   ctx.save();
   ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip();
+  // The 80px source has to stretch up to 2r screen pixels — at typical
+  // zoom that's a 5-20x upscale, and canvas's default 'low'-quality
+  // resampling renders that as visible blocky patches rather than the
+  // soft blur this preview is supposed to be. 'high' quality plus an
+  // explicit blur (scaled to the upscale factor, so higher zoom — a
+  // bigger stretch — gets proportionally more softening) fixes that.
+  const upscale = (2 * r) / boxSize;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.filter = `blur(${Math.min(10, Math.max(2, upscale * 0.35))}px)`;
   ctx.drawImage(_liveTerrainCanvas, cx - r, cy - r, 2 * r, 2 * r);
+  ctx.filter = 'none';
   ctx.restore();
 }
 
