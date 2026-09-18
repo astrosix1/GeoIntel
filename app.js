@@ -2118,8 +2118,17 @@ function applyInertia() {
   markMotion();
 }
 
+// Total raw pixel movement since the pointer went down — lets the 'click'
+// handler tell a genuine click from a drag-release. Native 'click' fires
+// on mouseup whenever mousedown also targeted this element, no matter how
+// far the pointer moved in between, so without this, releasing a drag
+// over a country/pin/actor selects it as if it had been clicked directly.
+let dragDistance = 0;
+const CLICK_DRAG_THRESHOLD = 5; // px — below this, treat it as a click even with tiny jitter
+
 canvas.addEventListener('mousedown', e => {
   drag = true; rotVelX = 0; rotVelY = 0;
+  dragDistance = 0;
   lastMX = e.clientX; lastMY = e.clientY;
   lastDragMoveAt = performance.now();
   markMotion();
@@ -2130,6 +2139,7 @@ document.addEventListener('mouseup',  () => drag = false);
 canvas.addEventListener('touchstart', e => {
   if (e.touches.length === 1) {
     drag = true; rotVelX = 0; rotVelY = 0;
+    dragDistance = 0;
     lastMX = e.touches[0].clientX;
     lastMY = e.touches[0].clientY;
     lastDragMoveAt = performance.now();
@@ -2140,8 +2150,15 @@ canvas.addEventListener('touchend', () => { drag = false; }, { passive: true });
 canvas.addEventListener('touchmove', e => {
   if (!drag || e.touches.length !== 1) return;
   e.preventDefault();
-  const dX = (e.touches[0].clientX - lastMX) * 0.007;
-  const dY = (e.touches[0].clientY - lastMY) * 0.004;
+  // Divide by zoom: the globe's projected radius R() scales with zoom, so
+  // a fixed radians-per-pixel constant makes the same finger movement spin
+  // the globe much faster (in apparent surface speed) at high zoom, since
+  // the same angular change sweeps a proportionally larger radius. Scaling
+  // inversely with zoom keeps a pixel of drag feeling like the same amount
+  // of globe at any zoom level.
+  const dX = (e.touches[0].clientX - lastMX) * 0.007 / zoom;
+  const dY = (e.touches[0].clientY - lastMY) * 0.004 / zoom;
+  dragDistance += Math.hypot(e.touches[0].clientX - lastMX, e.touches[0].clientY - lastMY);
   rotY += dX;
   rotX  = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, rotX + dY));
   rotVelY = rotVelY * 0.7 + dX * 0.3;
@@ -2156,8 +2173,12 @@ document.addEventListener('mousemove', e => {
   mx = e.clientX - rect.left;
   my = e.clientY - rect.top;
   if (drag) {
-    const dX = (e.clientX - lastMX) * 0.007;
-    const dY = (e.clientY - lastMY) * 0.004;
+    // See the matching comment in touchmove: divide by zoom so drag speed
+    // (in apparent globe-surface terms) stays consistent regardless of
+    // zoom, instead of spinning faster the more zoomed in you are.
+    const dX = (e.clientX - lastMX) * 0.007 / zoom;
+    const dY = (e.clientY - lastMY) * 0.004 / zoom;
+    dragDistance += Math.hypot(e.clientX - lastMX, e.clientY - lastMY);
     rotY += dX;
     rotX  = Math.max(-Math.PI/2, Math.min(Math.PI/2, rotX + dY));
     // Smoothed (EMA) velocity estimate — becomes the post-release glide speed.
@@ -2261,6 +2282,13 @@ flatCanvas.addEventListener('click', e => {
 });
 
 canvas.addEventListener('click', e => {
+  // Native 'click' fires on mouseup regardless of how far the pointer
+  // moved since mousedown, so releasing a drag-to-rotate gesture would
+  // otherwise select whatever pin/actor/country happens to be under the
+  // cursor at the release point. Only treat it as a real click — and run
+  // any of the hit-testing below — if the pointer barely moved.
+  if (dragDistance > CLICK_DRAG_THRESHOLD) return;
+
   const rect = canvas.getBoundingClientRect();
   const emx = e.clientX - rect.left, emy = e.clientY - rect.top;
 
