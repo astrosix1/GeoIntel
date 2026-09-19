@@ -954,6 +954,21 @@ input[type=range]::-moz-range-thumb:hover { width:14px; height:14px; box-shadow:
   .tab { padding:5px 8px; font-size:8px; }
   .pane-hdr h2 { font-size:10px; }
   .search-dropdown { position:fixed; top:auto; bottom:0; left:0; right:0; border-radius:14px 14px 0 0; max-height:60vh; }
+
+  /* Backend-unavailable banner (app.js injects it fixed at top:10px/right:10px
+     for desktop, where it sits clear of everything). On mobile the crisis
+     panel is normal document flow (.col-right above), so its header — title,
+     confidence badge, close button — scrolls up into that same top-right
+     corner and lands underneath the banner, which is on top (z-index 1000)
+     and opaque: the close button becomes unreachable and the banner's own
+     text overlaps the panel's. Moving the banner to the bottom on mobile
+     keeps it out of that shared region entirely. !important is required to
+     beat the inline style the JS sets it up with. */
+  #backendUnavailableAlert {
+    top:auto !important; bottom:8px !important;
+    left:8px !important; right:8px !important;
+    max-width:none !important;
+  }
 }
 
 /* ── Keyboard shortcut hint ── */
