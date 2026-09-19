@@ -1058,6 +1058,14 @@ input[type=range]::-moz-range-thumb:hover { width:14px; height:14px; box-shadow:
   color:var(--accent);
   font-style:italic;
 }
+#briefing-text a {
+  color:var(--accent);
+  text-decoration:underline;
+  text-underline-offset:2px;
+}
+#briefing-text a:hover {
+  color:#fff;
+}
 #briefing-text h2 {
   font-size:12px;
   font-weight:700;

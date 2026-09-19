@@ -645,11 +645,33 @@ def generate_ai_briefing(crisis_id):
         if not crisis:
             return None
 
-        # Gather context
-        news = session.query(News).filter(News.crisis_id == crisis_id).limit(5).all()
+        # Gather context. Journalists/commentators using this briefing need to
+        # be able to trace claims back to a real source, so pull enough
+        # headlines (with outlet + link, not just a title) to cite from, and
+        # number them up front — the prompt below tells Claude to cite by
+        # that number rather than inventing its own reference format.
+        news = (session.query(News)
+                .filter(News.crisis_id == crisis_id)
+                .order_by(News.published_at.desc())
+                .limit(10).all())
         escalation = analyze_escalation(crisis_id)
         economic = get_economic_impact(crisis_id)
         reliability = calculate_source_reliability(crisis_id)
+
+        numbered_sources = []
+        for i, n in enumerate(news, 1):
+            pub = n.published_at.strftime('%Y-%m-%d') if n.published_at else 'undated'
+            numbered_sources.append({
+                'n': i,
+                'title': n.title,
+                'source': n.source or 'Unknown outlet',
+                'url': n.url or '',
+                'published': pub,
+            })
+        sources_block = '\n'.join(
+            f"[{s['n']}] {s['title']} — {s['source']}, {s['published']}. {s['url']}"
+            for s in numbered_sources
+        ) or 'No indexed news sources are available for this crisis.'
 
         # Build context for Claude
         context = f"""
@@ -666,8 +688,8 @@ Escalation Trend: {escalation['trend']} (velocity: {escalation['velocity']} poin
 Economic Impact: {economic['impact_severity']}
 Affected Sectors: {', '.join(economic['estimated_impact']['industry_sectors_affected'])}
 
-Recent News Headlines:
-{chr(10).join(f"- {n.title[:80]}..." for n in news)}
+Numbered Source List (cite these by number — see instructions):
+{sources_block}
 """
 
         # Fetch Wikipedia image (non-blocking, optional)
@@ -678,43 +700,55 @@ Recent News Headlines:
             try:
                 message = anthropic_client.messages.create(
                     model="claude-3-5-sonnet-20241022",
-                    max_tokens=1500,
+                    max_tokens=2800,
                     messages=[
                         {
                             "role": "user",
-                            "content": f"""Generate a comprehensive intelligence briefing for this geopolitical crisis. Write in the style of a senior analyst at a major intelligence agency — precise, authoritative, and detailed.
+                            "content": f"""Generate an in-depth intelligence briefing for this geopolitical crisis, written for a journalist or political commentator who needs both the analytical depth of an intelligence product AND a verifiable factual trail. Write in the style of a senior analyst at a major intelligence agency — precise, authoritative, and detailed.
 
-Format your response EXACTLY as follows (keep the headers):
+CITATION RULES (this briefing will be published under this outlet's name, so sourcing discipline matters):
+- A numbered source list is provided below. Whenever you state a specific fact, figure, quote, or claim that comes from one of those sources, cite it inline immediately after the claim using its bracketed number, e.g. "...forces reportedly withdrew from the eastern district [3]."
+- A single sentence may carry multiple citations if it draws on more than one source, e.g. "[2][5]".
+- Only cite numbers that appear in the provided source list. Never invent a source, a number, a quote, or a statistic that isn't backed by the list or by the structured Crisis Context data above it.
+- Analytical judgment, historical background, and forward-looking assessment that come from your own reasoning rather than a listed source should NOT carry a citation — present it plainly as analysis. It is expected and fine for a briefing like this to contain uncited analytical sentences; just don't dress them up with a fake citation.
+- If the source list is empty or too thin to support a claim, say so explicitly rather than filling the gap with an uncited "fact."
+
+Format your response EXACTLY as follows (keep the headers, and do not add a "Sources" section yourself — one is appended automatically after your response):
 
 ## Situation Report
-[3-4 sentences describing the current state of the crisis with specific facts, figures, and timeline]
+[5-7 sentences describing the current state of the crisis with specific facts, figures, and timeline, citing the source list where you draw on it]
 
 ## Strategic Context
-[3-4 sentences explaining the historical background, root causes, and how this fits into broader regional or global dynamics]
+[5-7 sentences explaining the historical background, root causes, and how this fits into broader regional or global dynamics]
 
 ## Key Actors & Interests
-[Bullet list of 3-5 key actors involved and what each stands to gain or lose]
+[Bullet list of 4-6 key actors involved, what each stands to gain or lose, and their likely next moves]
 
 ## Impact Assessment
-[3-4 sentences on military, economic, political, and humanitarian consequences — both immediate and medium-term]
+[5-6 sentences on military, economic, political, and humanitarian consequences — both immediate and medium-term]
 
 ## Escalation Scenarios
-[2-3 plausible near-term escalation or de-escalation pathways with likelihood assessment]
+[3 plausible near-term escalation or de-escalation pathways, each with a stated likelihood and the specific trigger that would produce it]
+
+## What To Watch
+[3-4 concrete, specific indicators a journalist could actually monitor going forward — named events, dates, decisions, or thresholds — not vague generalities]
 
 ## Intelligence Gaps
-[1-2 sentences on what remains uncertain or unknown that could change the picture]
+[2-3 sentences on what remains uncertain or unknown, and specifically what additional reporting or disclosure would resolve it]
 
 Crisis Context:
 {context}
 
-Be specific and analytical. Avoid vague language. Write at least 400 words total."""
+Be specific and analytical — name actors, places, and figures rather than speaking in generalities. This is for publication, so err toward more detail and more precision rather than less. Write at least 800 words total across the sections above (excluding the source list, which is appended separately)."""
                         }
                     ]
                 )
 
                 briefing_text = message.content[0].text
+                briefing_text += _format_sources_section(numbered_sources)
                 result = {
                     'briefing': briefing_text,
+                    'sources': numbered_sources,
                     'model': 'claude-3-5-sonnet-20241022',
                     'timestamp': datetime.utcnow().isoformat()
                 }
@@ -731,7 +765,7 @@ Be specific and analytical. Avoid vague language. Write at least 400 words total
                 return None
         else:
             logger.info("ANTHROPIC_API_KEY not set — generating static briefing")
-            result = _generate_static_briefing(crisis, escalation, economic, reliability, news, image)
+            result = _generate_static_briefing(crisis, escalation, economic, reliability, numbered_sources, image)
             if result:
                 cache_set(cache_key, result, ttl=3600)
             return result
@@ -739,7 +773,21 @@ Be specific and analytical. Avoid vague language. Write at least 400 words total
         session.close()
 
 
-def _generate_static_briefing(crisis, escalation, economic, reliability, news, image):
+def _format_sources_section(numbered_sources):
+    """Render a '## Sources' markdown section from our own structured news
+    rows — never model-generated — so every link is real and the numbering
+    matches exactly what the briefing (AI or static) was told to cite."""
+    if not numbered_sources:
+        return "\n\n## Sources\n*No indexed news sources were available for this crisis at generation time.*"
+    lines = [
+        f"{s['n']}. [{s['source']} — {s['title']}]({s['url']}) ({s['published']})"
+        if s['url'] else f"{s['n']}. {s['source']} — {s['title']} ({s['published']})"
+        for s in numbered_sources
+    ]
+    return "\n\n## Sources\n" + '\n'.join(lines)
+
+
+def _generate_static_briefing(crisis, escalation, economic, reliability, numbered_sources, image):
     """Generate a rule-based intelligence briefing when no API key is available."""
     sev = crisis.severity
     trend = escalation.get('trend', 'stable') if escalation else 'stable'
@@ -748,7 +796,11 @@ def _generate_static_briefing(crisis, escalation, economic, reliability, news, i
     sectors = ', '.join(economic.get('estimated_impact', {}).get('industry_sectors_affected', [])) if economic else 'General Economy'
     src_count = reliability.get('source_count', 1) if reliability else 1
     rel_label = reliability.get('reliability', 'moderate') if reliability else 'moderate'
-    news_lines = '\n'.join(f'• {n["title"][:90]}' for n in (news or [])[:4]) or '• No recent headlines indexed.'
+    # Cite the two most recent headlines inline by their source-list number
+    # rather than just listing titles with no way to trace them — matches
+    # the citation convention the AI-generated path uses.
+    lead_citations = ''.join(f"[{s['n']}]" for s in numbered_sources[:2])
+    has_citable_news = bool(numbered_sources)
 
     severity_label = 'Critical' if sev >= 85 else ('High' if sev >= 65 else ('Moderate' if sev >= 40 else 'Low'))
     trend_desc = {
@@ -781,7 +833,7 @@ def _generate_static_briefing(crisis, escalation, economic, reliability, news, i
     }.get(crisis.type, 'a geopolitical flashpoint')
 
     briefing_text = f"""## Situation Report
-{crisis.title} ({crisis.country}) is rated **{severity_label}** at severity {sev}/100. The situation is {trend_desc}. The crisis involves {type_context}. Cross-domain impact spans {domain_str}, with {impact_sev} economic consequences affecting {sectors}.
+{crisis.title} ({crisis.country}) is rated **{severity_label}** at severity {sev}/100{lead_citations}. The situation is {trend_desc}. The crisis involves {type_context}. Cross-domain impact spans {domain_str}, with {impact_sev} economic consequences affecting {sectors}. {"Recent reporting indicates the situation remains fluid" + lead_citations + "." if has_citable_news else "No recent indexed reporting is available to corroborate developments beyond the structured data above."}
 
 ## Strategic Context
 This crisis sits within a broader pattern of regional instability in {crisis.country} and surrounding areas. {crisis.analysis or 'Detailed analytical context is unavailable for this event.'} The {crisis.type} dimension suggests structural drivers that are unlikely to resolve quickly without deliberate diplomatic or military intervention.
@@ -801,17 +853,22 @@ Economic impact is rated **{impact_sev}**, with {sectors} sectors most exposed. 
 2. **Stalemate / frozen conflict** (moderate plausibility): situation locks in at current severity, reducing acute risk but entrenching structural instability
 3. **Rapid de-escalation** (lower plausibility without mediation): requires significant concessions or third-party intervention
 
-## Intelligence Gaps
-Key unknowns include internal decision-making dynamics of primary actors and the degree of external support flows. Confidence in this assessment is {crisis.confidence}% based on {src_count} source(s).
+## What To Watch
+- Any shift in the {sev}/100 severity score or the {trend} trend line, which would indicate the drivers above are actually changing rather than holding
+- Statements or troop/resource movements from the primary stakeholders in {crisis.country}
+- Whether {sectors} sector exposure translates into visible price or supply effects
+{"- Follow-on reporting from the sources below, which may update or contradict the current picture" if has_citable_news else "- Emergence of indexed reporting to corroborate or update this structured-data-only assessment"}
 
----
-*Recent Headlines*
-{news_lines}
+## Intelligence Gaps
+Key unknowns include internal decision-making dynamics of primary actors and the degree of external support flows. Confidence in this assessment is {crisis.confidence}% based on {src_count} source(s). {"This briefing is generated analytically from structured severity/escalation/economic data plus the numbered sources below — it is not a substitute for original reporting, and every numbered citation should be independently verified before publication." if has_citable_news else "No indexed news sources were available at generation time, so this briefing rests entirely on structured severity/escalation/economic data — treat it as a starting point, not a substitute for original reporting."}
 
 *This briefing was generated analytically from structured data. Set ANTHROPIC_API_KEY for AI-powered deep analysis.*"""
 
+    briefing_text += _format_sources_section(numbered_sources)
+
     result = {
         'briefing': briefing_text,
+        'sources': numbered_sources,
         'model': 'static-rules',
         'timestamp': datetime.utcnow().isoformat()
     }

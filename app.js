@@ -3271,6 +3271,14 @@ function renderMarkdown(el, text) {
     .replace(/^\*\s+(.+)$/gm, '<li>$1</li>')
     .replace(/^-\s+(.+)$/gm, '<li>$1</li>')
     .replace(/(<li>.*<\/li>\n?)+/gs, match => `<ul>${match}</ul>`)
+    // Source citations render as markdown links, e.g. "[Reuters — Title](url)"
+    // in the ## Sources section. escapeHtml already ran, so both the link
+    // text and URL are entity-escaped — safe to drop straight into the
+    // anchor. Restricted to http(s) so a malformed source URL can't smuggle
+    // in a javascript: scheme. Bare bracket citations like "[3]" in the body
+    // text have no following "(...)" and are left untouched (intentional —
+    // they're footnote markers, not links).
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
     .replace(/\n\n/g, '<br><br>')
