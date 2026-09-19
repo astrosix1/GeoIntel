@@ -516,8 +516,19 @@ const ctx = canvas.getContext('2d');
 // CSS-size * devicePixelRatio, then scale the context so all drawing code
 // keeps working in CSS-pixel coordinates (R()/CX()/CY() below use
 // clientWidth/clientHeight, not width/height, for exactly this reason).
+//
+// devicePixelRatio is capped at 2: many phones report 3 (some higher),
+// which would size the backing store to 9x the pixel count of a DPR=1
+// screen (3x in each dimension) — for a full-viewport canvas redrawn every
+// frame, including a per-pixel terrain-shading pass, that's a dominant cost
+// on hardware already weaker than desktop. 2x is still indistinguishable
+// from native on a phone screen; the difference above that is not visible
+// at normal viewing distance but the CPU/GPU cost of pushing that many
+// more pixels every frame very much is.
+function getCanvasDPR() { return Math.min(2, window.devicePixelRatio || 1); }
+
 function fitCanvasToDisplay(cvs, context) {
-  const dpr  = window.devicePixelRatio || 1;
+  const dpr  = getCanvasDPR();
   const cssW = cvs.clientWidth  || cvs.offsetWidth;
   const cssH = cvs.clientHeight || cvs.offsetHeight;
   const pxW  = Math.round(cssW * dpr);
@@ -1117,8 +1128,10 @@ function drawLiveTerrainOverlay(cx, cy, r) {
     // canvas's own pixel buffer is DPR-scaled (device pixels), but cx/cy/r
     // are in the CSS-pixel space every other coordinate here uses —
     // convert when reading it back, since drawImage's source rect is
-    // always in the source's native pixel space.
-    const dpr = window.devicePixelRatio || 1;
+    // always in the source's native pixel space. Must match the (clamped)
+    // ratio the backing store was actually sized with in fitCanvasToDisplay,
+    // not the raw devicePixelRatio, or this crops the wrong region.
+    const dpr = getCanvasDPR();
     _liveTerrainCtx.drawImage(
       canvas,
       (cx - r) * dpr, (cy - r) * dpr, 2 * r * dpr, 2 * r * dpr,
@@ -1918,7 +1931,7 @@ function updateAllPanels() {
   document.getElementById('forecastEmpty').style.display = 'none';
   const fc = document.getElementById('forecastContent');
   fc.style.display = 'flex';
-  fc.innerHTML = c.forecasts.map(f => `
+  fc.innerHTML = (c.forecasts || []).map(f => `
     <div class="forecast-item">
       <div class="forecast-q">${escapeHtml(f.q)}</div>
       <div class="prob-bars">
@@ -1945,7 +1958,7 @@ function updateAllPanels() {
   document.getElementById('domainsEmpty').style.display = 'none';
   const dc = document.getElementById('domainsContent');
   dc.style.display = 'flex';
-  dc.innerHTML = Object.entries(c.domains).map(([key, val]) => {
+  dc.innerHTML = Object.entries(c.domains || {}).map(([key, val]) => {
     const d = DOMAINS[key];
     const domColor = val > 75 ? '#ff3b3b' : val > 50 ? '#ff8833' : '#ffd93d';
     return `
@@ -3593,29 +3606,37 @@ selectCrisis = async function(crisis) {
   prefillAlertRegion(crisis.country);
   document.getElementById('colRight').classList.add('open');
 
-  if (!crisis.forecasts || crisis.forecasts.length === 0) {
-    try {
-      const fr = await GeoIntelAPI.getForecasts(crisis.id);
-      if (!fr.error && fr.forecasts) {
-        crisis.forecasts = fr.forecasts.map(f => ({ q:f.q, low:f.low, mid:f.mid, high:f.high }));
-      }
-    } catch (e) {}
-  }
+  // These six lookups are independent — each is its own network round-trip
+  // with no data dependency on the others. Awaiting them one at a time (as
+  // this used to) means the total wait is their SUM; on higher-latency
+  // connections (mobile/cellular especially, where 150-300ms per request
+  // isn't unusual) that turned clicking a pin into a multi-second wait
+  // before anything past the overview panel populated. Firing them
+  // concurrently drops that to roughly the slowest single request.
+  if (!crisis.briefing) document.getElementById('briefing-loading').style.display = 'block';
 
-  if (!crisis.news) {
-    try {
-      const nr = await GeoIntelAPI.getNews({ crisis_id: crisis.id, days: 30, limit: 5 });
-      if (!nr.error && nr.articles) { crisis.news = nr.articles; }
-    } catch (e) {}
-  }
-
-  if (!crisis.reliability) { crisis.reliability = await loadReliabilityData(crisis.id); }
-  if (!crisis.escalation) { crisis.escalation = await loadEscalationData(crisis.id); }
-  if (!crisis.economic) { crisis.economic = await loadEconomicData(crisis.id); }
-  if (!crisis.briefing) {
-    document.getElementById('briefing-loading').style.display = 'block';
-    crisis.briefing = await loadBriefing(crisis.id);
-  }
+  await Promise.all([
+    (async () => {
+      if (crisis.forecasts && crisis.forecasts.length > 0) return;
+      try {
+        const fr = await GeoIntelAPI.getForecasts(crisis.id);
+        if (!fr.error && fr.forecasts) {
+          crisis.forecasts = fr.forecasts.map(f => ({ q:f.q, low:f.low, mid:f.mid, high:f.high }));
+        }
+      } catch (e) {}
+    })(),
+    (async () => {
+      if (crisis.news) return;
+      try {
+        const nr = await GeoIntelAPI.getNews({ crisis_id: crisis.id, days: 30, limit: 5 });
+        if (!nr.error && nr.articles) { crisis.news = nr.articles; }
+      } catch (e) {}
+    })(),
+    (async () => { if (!crisis.reliability) crisis.reliability = await loadReliabilityData(crisis.id); })(),
+    (async () => { if (!crisis.escalation) crisis.escalation = await loadEscalationData(crisis.id); })(),
+    (async () => { if (!crisis.economic) crisis.economic = await loadEconomicData(crisis.id); })(),
+    (async () => { if (!crisis.briefing) crisis.briefing = await loadBriefing(crisis.id); })(),
+  ]);
 
   updateAllPanels();
   updateReliabilityPanel(crisis.reliability);
@@ -3675,17 +3696,30 @@ async function initApp() {
     })
     .catch(err => console.error('Map data error (low-res):', err));
 
-  fetch('countries-50m.json')
-    .then(r => r.json())
-    .then(data => {
-      worldTopoHigh = data;
-      const buildHighResCache = () => {
-        topoFeaturesHigh = topojson.feature(worldTopoHigh, worldTopoHigh.objects.countries).features;
-        topoMeshHigh     = topojson.mesh(worldTopoHigh, worldTopoHigh.objects.countries, (a, b) => a !== b);
-      };
-      window.requestIdleCallback ? window.requestIdleCallback(buildHighResCache) : setTimeout(buildHighResCache, 0);
-    })
-    .catch(err => console.error('Map data error (high-res):', err));
+  // Skip the high-detail mesh on mobile-sized screens entirely: it's a ~7x
+  // larger download, its feature/mesh conversion is the most expensive
+  // single operation in the app (~80k points), and it gets rebuilt into a
+  // fresh offscreen bitmap on every settle — all real costs on hardware
+  // that's typically slower than desktop to begin with, for detail that's
+  // barely visible on a globe rendered at ~60vw/max 440px. Falling back to
+  // the low-res mesh permanently is safe: getActiveTopo() and drawGlobe()
+  // already treat topoFeaturesHigh as optional (`if (topoFeaturesHigh && …)`)
+  // since it normally loads in asynchronously anyway.
+  if (window.matchMedia('(max-width: 768px)').matches) {
+    console.log('[Perf] Mobile-sized viewport detected — skipping high-detail (50m) map mesh');
+  } else {
+    fetch('countries-50m.json')
+      .then(r => r.json())
+      .then(data => {
+        worldTopoHigh = data;
+        const buildHighResCache = () => {
+          topoFeaturesHigh = topojson.feature(worldTopoHigh, worldTopoHigh.objects.countries).features;
+          topoMeshHigh     = topojson.mesh(worldTopoHigh, worldTopoHigh.objects.countries, (a, b) => a !== b);
+        };
+        window.requestIdleCallback ? window.requestIdleCallback(buildHighResCache) : setTimeout(buildHighResCache, 0);
+      })
+      .catch(err => console.error('Map data error (high-res):', err));
+  }
 }
 
 // Auto-refresh data every hour
