@@ -1922,9 +1922,18 @@ function updateAllPanels() {
     fetchWikiImage(c).then(displayImage);
   }
 
+  const aEl = document.getElementById('ov-analogy');
   if (c.analogy) {
-    const aEl = document.getElementById('ov-analogy');
     aEl.innerHTML = `<div class="analogy-match">${escapeHtml(c.analogy.match)} <span class="analogy-pct">${c.analogy.pct}% match</span></div><div class="analogy-desc">${escapeHtml(c.analogy.desc)}</div>`;
+    aEl.parentElement.style.display = '';
+  } else {
+    // Without this, a crisis with no analogy silently kept showing
+    // whichever OTHER crisis's analogy was last rendered — aEl.innerHTML
+    // was only ever written inside the `if`, never cleared, so switching
+    // from a crisis with a match to one without left the previous match
+    // on screen, now misattributed to the wrong crisis.
+    aEl.innerHTML = '';
+    aEl.parentElement.style.display = 'none';
   }
 
   // ── Forecast ──
