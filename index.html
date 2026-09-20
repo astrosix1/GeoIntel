@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GeoIntel — Geopolitical Intelligence Platform</title>
+<meta name="description" content="Real-time geopolitical intelligence on an interactive 3D globe — active crisis tracking, source-reliability scoring, escalation trends, and AI-generated, cited intelligence briefings.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8C%90%3C/text%3E%3C/svg%3E">
+<meta property="og:title" content="GeoIntel — Geopolitical Intelligence Platform">
+<meta property="og:description" content="Real-time geopolitical intelligence on an interactive 3D globe — active crisis tracking, source-reliability scoring, escalation trends, and AI-generated, cited intelligence briefings.">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="GeoIntel — Geopolitical Intelligence Platform">
+<meta name="twitter:description" content="Real-time geopolitical intelligence on an interactive 3D globe — active crisis tracking, source-reliability scoring, escalation trends, and AI-generated, cited intelligence briefings.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -128,13 +136,13 @@
   <canvas id="canvas"></canvas>
   <canvas id="flatMapCanvas"></canvas>
   <div class="globe-controls">
-    <button class="gc-btn" id="resetBtn"  title="Reset view [↺]">↺</button>
-    <button class="gc-btn" id="arcBtn"    title="Relationships [R]">⟳</button>
-    <button class="gc-btn" id="heatBtn"   title="Power Heatmap [H]">◉</button>
-    <button class="gc-btn" id="cascBtn"   title="Cascade Sim">⚡</button>
-    <button class="gc-btn" id="tradeBtn"  title="Trade Routes">🚢</button>
-    <button class="gc-btn" id="flatBtn"   title="Flat Map [M]">🗺</button>
-    <button class="gc-btn" id="fullBtn"   title="Fullscreen [F]">⛶</button>
+    <button class="gc-btn" id="resetBtn"  title="Reset view [↺]" aria-label="Reset view">↺</button>
+    <button class="gc-btn" id="arcBtn"    title="Relationships [R]" aria-label="Toggle relationship arcs">⟳</button>
+    <button class="gc-btn" id="heatBtn"   title="Power Heatmap [H]" aria-label="Toggle power heatmap">◉</button>
+    <button class="gc-btn" id="cascBtn"   title="Cascade Sim" aria-label="Toggle cascade simulation">⚡</button>
+    <button class="gc-btn" id="tradeBtn"  title="Trade Routes" aria-label="Toggle trade routes">🚢</button>
+    <button class="gc-btn" id="flatBtn"   title="Flat Map [M]" aria-label="Toggle flat map view">🗺</button>
+    <button class="gc-btn" id="fullBtn"   title="Fullscreen [F]" aria-label="Toggle fullscreen">⛶</button>
   </div>
   <div class="country-tooltip" id="countryTooltip"></div>
   <div class="trade-tooltip"   id="tradeTooltip"></div>
@@ -354,16 +362,22 @@
 
     <!-- NETWORK -->
     <div class="pane-body tab-content" id="tab-network" role="tabpanel">
-      <div class="section-lbl">Actor Relationship Map</div>
-      <canvas id="netCanvas" height="180"></canvas>
-      <div class="rel-line-legend">
-        <div class="rel-line-item"><div class="rel-swatch" style="background:#ff3b3b"></div>Conflict / Opposition</div>
-        <div class="rel-line-item"><div class="rel-swatch" style="background:#ffd93d"></div>Tension / Competition</div>
-        <div class="rel-line-item"><div class="rel-swatch" style="background:#3dffaa"></div>Alliance / Support</div>
-        <div class="rel-line-item"><div class="rel-swatch" style="background:#4e9eff"></div>Economic Dependency</div>
-        <div class="rel-line-item"><div class="rel-swatch" style="background:#b94eff"></div>Proxy / Indirect</div>
+      <div class="empty" id="networkEmpty">
+        <div class="empty-icon">🕸️</div>
+        <div>Select a crisis to view<br>the actor relationship network</div>
       </div>
-      <div id="netDetails" class="section-lbl" style="margin-top:4px"></div>
+      <div id="networkContent" style="display:none;flex-direction:column;gap:4px">
+        <div class="section-lbl">Actor Relationship Map</div>
+        <canvas id="netCanvas" height="180"></canvas>
+        <div class="rel-line-legend">
+          <div class="rel-line-item"><div class="rel-swatch" style="background:#ff3b3b"></div>Conflict / Opposition</div>
+          <div class="rel-line-item"><div class="rel-swatch" style="background:#ffd93d"></div>Tension / Competition</div>
+          <div class="rel-line-item"><div class="rel-swatch" style="background:#3dffaa"></div>Alliance / Support</div>
+          <div class="rel-line-item"><div class="rel-swatch" style="background:#4e9eff"></div>Economic Dependency</div>
+          <div class="rel-line-item"><div class="rel-swatch" style="background:#b94eff"></div>Proxy / Indirect</div>
+        </div>
+        <div id="netDetails" class="section-lbl" style="margin-top:4px"></div>
+      </div>
     </div>
 
     <!-- DOMAINS -->

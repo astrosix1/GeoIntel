@@ -1777,6 +1777,27 @@ function drawHeatmapOverlay() {
 // ════════════════════════════════════════════════════════════
 
 function drawNetwork() {
+  const empty = document.getElementById('networkEmpty');
+  const content = document.getElementById('networkContent');
+
+  // Every other analytical tab (Source, Trend, Impact, Briefing) shows a
+  // clear "could not be loaded" state when its data is missing; this one
+  // used to just paint an unlabeled blank canvas — indistinguishable from
+  // broken. ACTORS is empty whenever the /api/actors fetch never succeeded.
+  if (!ACTORS || ACTORS.length === 0) {
+    content.style.display = 'none';
+    if (selected) {
+      showPanelUnavailable(empty, 'Actor relationship data<br>could not be loaded');
+    } else {
+      resetPanelEmpty(empty);
+    }
+    empty.style.display = 'flex';
+    return;
+  }
+  resetPanelEmpty(empty);
+  empty.style.display = 'none';
+  content.style.display = 'flex';
+
   const nc = document.getElementById('netCanvas');
   const nw = nc.clientWidth; nc.width = nw;
   const nh = parseInt(nc.getAttribute('height')) || 180; nc.height = nh;
@@ -3133,8 +3154,15 @@ async function loadRealData() {
       alertEl.id = 'backendUnavailableAlert';
       alertEl.setAttribute('role', 'alert');
       alertEl.setAttribute('aria-live', 'assertive');
-      alertEl.style.cssText = 'position:fixed;top:10px;right:10px;background:#ff3b3b33;border:1px solid #ff3b3b66;color:#ff8888;padding:10px 15px;border-radius:6px;z-index:1000;font-size:12px;max-width:300px;';
-      document.body.appendChild(alertEl);
+      // Anchored inside .globe-col (which is `position:relative`), not
+      // document.body — a viewport-fixed top-right banner sat directly on
+      // top of the crisis panel's own tab row, since .col-right also claims
+      // the top-right corner (absolutely, on desktop; in normal flow right
+      // below the globe, on mobile). .globe-controls already owns
+      // top-right of this container, so top-LEFT is the one corner that's
+      // clear of both the panel and the controls at every breakpoint.
+      alertEl.style.cssText = 'position:absolute;top:10px;left:10px;background:#ff3b3b33;border:1px solid #ff3b3b66;color:#ff8888;padding:10px 15px;border-radius:6px;z-index:50;font-size:12px;max-width:calc(100% - 20px);width:300px;';
+      document.querySelector('.globe-col').appendChild(alertEl);
     }
     const message = isLocalDev
       ? `Run <code style="background:#000;padding:2px 5px;border-radius:3px;">python app.py</code> from the backend/ directory to enable real data.`

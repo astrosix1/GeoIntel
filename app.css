@@ -1,5 +1,19 @@
 * { margin:0; padding:0; box-sizing:border-box; }
 
+/* Panel slides, spring-eased transforms, and pin fade-ins all run
+   unconditionally otherwise — nothing in this file previously checked for
+   reduced-motion. No JS depends on transition/animation-end events, so
+   collapsing durations to near-zero is safe: state changes still happen,
+   they just stop animating. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 :root {
   /* ── Typography ─────────────────────────────── */
   --font-sans: 'Inter', 'Segoe UI', -apple-system, system-ui, sans-serif;
@@ -554,14 +568,18 @@ body {
 }
 
 /* ── Section label ── */
+/* Used as the caption ("STAKEHOLDERS", "ANALYSIS", etc.) on nearly every
+   panel section, so its contrast matters more than most text in the app.
+   Previously colored via a background-clip:text gradient from --dim (3.6:1
+   against --bg) fading to ~40% alpha (~1.8:1) — a decorative fade is
+   fundamentally at odds with a label that needs to stay legible along its
+   whole length, and both ends failed the 4.5:1 WCAG AA floor for 10px
+   text regardless of the fade. --text2 (7.6:1) keeps these visually
+   secondary to body text while actually meeting contrast requirements. */
 .section-lbl {
   font-size:10px; font-weight:700; text-transform:uppercase;
-  letter-spacing:1.2px; color:var(--dim);
+  letter-spacing:1.2px; color:var(--text2);
   padding:4px 0;
-  background: linear-gradient(90deg, var(--dim) 0%, rgba(95,107,152,0.4) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
 }
 
 /* ── Bar ── */
@@ -822,7 +840,11 @@ input[type=range]::-moz-range-thumb:hover { width:14px; height:14px; box-shadow:
 .timeline-hint { font-size:9px; color:var(--dim); text-align:center; margin-top:3px; }
 .timeline-ticks { display:flex; justify-content:space-between; padding:0 2px; margin-top:4px; }
 .timeline-ticks span { font-size:8px; color:var(--dim); }
-.timeline-activity { display:flex; align-items:flex-end; gap:1px; height:28px; margin-top:4px; padding:0 2px; }
+/* border-bottom gives the bars an axis to sit on — without it, a bar whose
+   color happens to stack into saturated horizontal bands (a year with a
+   couple of dominant crisis domains) can read as a small flag or badge
+   floating in space rather than a chart tied to the year labels below it. */
+.timeline-activity { display:flex; align-items:flex-end; gap:1px; height:28px; margin-top:4px; padding:0 2px; border-bottom:1px solid var(--border); }
 .ta-wrap { flex:1; display:flex; flex-direction:column; align-items:center; height:100%; justify-content:flex-end; gap:1px; }
 .ta-delta { font-size:7px; font-weight:700; line-height:1; height:9px; }
 .ta-delta.pos { color:#3dffaa; }
@@ -954,21 +976,6 @@ input[type=range]::-moz-range-thumb:hover { width:14px; height:14px; box-shadow:
   .tab { padding:5px 8px; font-size:8px; }
   .pane-hdr h2 { font-size:10px; }
   .search-dropdown { position:fixed; top:auto; bottom:0; left:0; right:0; border-radius:14px 14px 0 0; max-height:60vh; }
-
-  /* Backend-unavailable banner (app.js injects it fixed at top:10px/right:10px
-     for desktop, where it sits clear of everything). On mobile the crisis
-     panel is normal document flow (.col-right above), so its header — title,
-     confidence badge, close button — scrolls up into that same top-right
-     corner and lands underneath the banner, which is on top (z-index 1000)
-     and opaque: the close button becomes unreachable and the banner's own
-     text overlaps the panel's. Moving the banner to the bottom on mobile
-     keeps it out of that shared region entirely. !important is required to
-     beat the inline style the JS sets it up with. */
-  #backendUnavailableAlert {
-    top:auto !important; bottom:8px !important;
-    left:8px !important; right:8px !important;
-    max-width:none !important;
-  }
 }
 
 /* ── Keyboard shortcut hint ── */
