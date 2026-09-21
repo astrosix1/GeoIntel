@@ -54,6 +54,16 @@ class Crisis(Base):
     date_start = Column(DateTime, default=datetime.utcnow)
     date_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    # Future-dated events (elections, referendums) are known in advance,
+    # unlike every other crisis type which is detected reactively from news
+    # after the fact. date_start stays the ingestion time (so the year-
+    # slider's exact-calendar-year filtering — see filterByDateRange() in
+    # app.js — still shows the pin today); date_scheduled is the real future
+    # date, used only for display. status distinguishes a scheduled event
+    # that hasn't happened yet from an active/resolved one.
+    date_scheduled = Column(DateTime, nullable=True)
+    status = Column(String(20), nullable=False, default='active', index=True)  # active | upcoming | resolved
+
     analysis = Column(Text)
     impact = Column(Text)
 
@@ -86,6 +96,8 @@ class Crisis(Base):
             'confidence': self.confidence,
             'location_confidence': self.location_confidence,
             'date': self.date_start.isoformat() if self.date_start else None,
+            'date_scheduled': self.date_scheduled.isoformat() if self.date_scheduled else None,
+            'status': self.status,
             'analysis': self.analysis,
             'impact': self.impact,
             'stakeholders': self.stakeholders.split(',') if self.stakeholders else [],

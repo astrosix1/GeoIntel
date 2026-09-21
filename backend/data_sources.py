@@ -24,8 +24,8 @@ ACLED_TYPE_MAP = {
     'Violence against civilians': 'conflict',
     'Battle': 'conflict',
     'Explosions/Remote violence': 'conflict',
-    'Protests': 'migration',
-    'Riots': 'conflict',
+    'Protests': 'civil_unrest',
+    'Riots': 'civil_unrest',
     'Strategic developments': 'military',
     'Armed clash': 'conflict',
     'Cyber attack': 'cyber',
@@ -731,11 +731,22 @@ class NewsBasedCrisisDetector:
         'ulaanbaatar': {'lat': 47.8864, 'lon': 106.9057, 'country': 'Mongolia'},
     }
 
-    # Keywords for crisis type detection
+    # Keywords for crisis type detection. Dict order matters — first match
+    # wins (see _extract_crisis_from_article) — so leadership_change and
+    # civil_unrest must come before conflict/military, since a coup or
+    # protest story often also contains generic "armed"/"military" words.
     CRISIS_KEYWORDS = {
+        'leadership_change': ['coup', 'ousted', 'overthrown', 'seized power', 'junta',
+                               'assassinated', 'resigns as president', 'unconstitutional',
+                               'succession crisis'],
+        'civil_unrest': ['protest', 'unrest', 'riot', 'demonstrators', 'uprising',
+                          'crackdown', 'mass arrests', 'general strike'],
         'conflict': ['war', 'combat', 'fighting', 'battle', 'attack', 'strike', 'bomb', 'military', 'armed', 'clash'],
         'military': ['military', 'deployment', 'exercise', 'buildup', 'troops', 'forces', 'defense'],
-        'diplomatic': ['diplomatic', 'crisis', 'tensions', 'talks', 'negotiations', 'standoff'],
+        'diplomatic': ['diplomatic', 'crisis', 'tensions', 'talks', 'negotiations', 'standoff',
+                        'peace deal', 'peace agreement', 'ceasefire signed', 'ceasefire agreed'],
+        'alliance': ['alliance', 'joins nato', 'treaty signed', 'accession',
+                      'mutual defense pact', 'normalizes relations'],
         'economic': ['economic', 'embargo', 'sanction', 'trade', 'crisis', 'collapse'],
         'resource': ['resource', 'oil', 'gas', 'commodity', 'supply', 'shortage'],
         'technology': ['technology', 'cyber', 'ai', 'chip', 'semiconductor'],
@@ -1109,6 +1120,66 @@ def init_relationships():
     except Exception as e:
         session.rollback()
         logger.error(f"Error initializing relationships: {e}")
+    finally:
+        session.close()
+
+
+_SCHEDULED_EVENTS_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), 'config', 'scheduled_events.json'
+)
+
+
+def init_scheduled_events():
+    """Populate curated upcoming elections/referendums (config/scheduled_events.json).
+
+    Unlike every other crisis type, these are known in advance rather than
+    detected from news, so they come from a hand-maintained file instead of
+    NewsBasedCrisisDetector. date_start is set to ingestion time (now) rather
+    than the real future date, matching every other crisis row — the
+    year-slider's filterByDateRange() in app.js matches by exact calendar
+    year against date_start, so a true future date would make the pin
+    invisible until that year arrives. date_scheduled carries the real date
+    for display; status='upcoming' distinguishes it until it's flipped to
+    'resolved' (e.g. via PATCH /api/crises/<id>) after it happens.
+    """
+    session = Session()
+
+    try:
+        with open(_SCHEDULED_EVENTS_PATH, 'r', encoding='utf-8') as f:
+            events_data = json.load(f).get('events', [])
+    except Exception as e:
+        logger.error(f"Could not load {_SCHEDULED_EVENTS_PATH}: {e}")
+        session.close()
+        return
+
+    try:
+        for event in events_data:
+            existing = session.query(Crisis).filter(Crisis.id == event['id']).first()
+            if existing:
+                continue
+
+            crisis = Crisis(
+                id=event['id'],
+                type=event['type'],
+                title=event['title'],
+                country=event['country'],
+                latitude=event['latitude'],
+                longitude=event['longitude'],
+                severity=event.get('severity', 50),
+                confidence=100,
+                date_start=datetime.utcnow(),
+                date_scheduled=datetime.fromisoformat(event['date_scheduled']),
+                status='upcoming',
+                analysis=event.get('analysis', ''),
+                source='CURATED',
+            )
+            session.add(crisis)
+
+        session.commit()
+        logger.info("Scheduled events initialized")
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Error initializing scheduled events: {e}")
     finally:
         session.close()
 

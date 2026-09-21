@@ -1,0 +1,38 @@
+{
+  "_comment": "Curated real upcoming elections/referendums, consumed by init_scheduled_events() in data_sources.py. Unlike every other crisis type these are known in advance, so they're hand-maintained here rather than detected from news text. `severity` is repurposed as 'stakes' — how geopolitically consequential the outcome is, not source reliability. Add new entries as real dates are confirmed; remove/flip status once an event has happened via PATCH /api/crises/<id>.",
+  "events": [
+    {
+      "id": "election-us-midterms-2026",
+      "type": "election",
+      "title": "US Midterm Elections",
+      "country": "United States",
+      "latitude": 38.9072,
+      "longitude": -77.0369,
+      "date_scheduled": "2026-11-03T00:00:00",
+      "severity": 80,
+      "analysis": "All 435 House seats and roughly a third of the Senate are up for election, alongside numerous governorships. The outcome determines which party controls Congress for the remainder of the presidential term, shaping the fate of pending legislation, judicial confirmations, and oversight of the executive branch."
+    },
+    {
+      "id": "election-brazil-general-2026",
+      "type": "election",
+      "title": "Brazilian General Election",
+      "country": "Brazil",
+      "latitude": -15.7975,
+      "longitude": -47.8919,
+      "date_scheduled": "2026-10-04T00:00:00",
+      "severity": 70,
+      "analysis": "Brazilians vote for president, National Congress, and state governments. A runoff between the top two presidential candidates, if required, is held on 2026-10-25. As Latin America's largest economy and a key Mercosur and BRICS member, the result will influence regional trade policy and Brazil's alignment on climate and foreign policy."
+    },
+    {
+      "id": "summit-g20-miami-2026",
+      "type": "summit",
+      "title": "G20 Miami Summit",
+      "country": "United States",
+      "latitude": 25.8195,
+      "longitude": -80.3553,
+      "date_scheduled": "2026-12-14T00:00:00",
+      "severity": 65,
+      "analysis": "The United States holds the 2026 G20 presidency and hosts the leaders' summit at Trump National Doral Miami on December 14-15. Agenda items typically include global economic coordination, trade, and financial stability; as with prior US-hosted summits, host-venue and format choices have themselves drawn scrutiny."
+    }
+  ]
+}
