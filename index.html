@@ -52,6 +52,7 @@
       <div class="tab active" role="tab" tabindex="0" aria-selected="true" data-left-tab="crises" style="padding:6px 11px;">Crises</div>
       <div class="tab" role="tab" tabindex="0" aria-selected="false" data-left-tab="domains" style="padding:6px 11px;">Domains</div>
       <div class="tab" role="tab" tabindex="0" aria-selected="false" data-left-tab="types" style="padding:6px 11px;">Types</div>
+      <div class="tab" role="tab" tabindex="0" aria-selected="false" data-left-tab="calendar" style="padding:6px 11px;">📅 Calendar</div>
       <div class="tab" role="tab" tabindex="0" aria-selected="false" data-left-tab="lookup" style="padding:6px 11px;">🔍 Lookup</div>
       <div class="tab" role="tab" tabindex="0" aria-selected="false" data-left-tab="watchlist" style="padding:6px 11px;">★ Watch</div>
     </div>
@@ -79,6 +80,14 @@
         <div class="section-lbl" style="margin-bottom:6px;">Crisis Types</div>
         <div class="domain-chips" id="typeChips"></div>
       </div>
+    </div>
+
+    <!-- Tab content for calendar -->
+    <div class="left-tab-content" role="tabpanel" data-left-tab="calendar" style="display:none;flex-direction:column;flex:1;min-height:0;">
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);">
+        <span id="calendarCount" style="font-size:9px;color:var(--dim);font-weight:600;"></span>
+      </div>
+      <div class="pane-body" id="calendarList" style="min-height:0;"></div>
     </div>
 
     <!-- Tab content for watchlist -->
@@ -140,12 +149,17 @@
     <button class="gc-btn" id="arcBtn"    title="Relationships [R]" aria-label="Toggle relationship arcs">⟳</button>
     <button class="gc-btn" id="heatBtn"   title="Power Heatmap [H]" aria-label="Toggle power heatmap">◉</button>
     <button class="gc-btn" id="cascBtn"   title="Cascade Sim" aria-label="Toggle cascade simulation">⚡</button>
-    <button class="gc-btn" id="tradeBtn"  title="Trade Routes" aria-label="Toggle trade routes">🚢</button>
+    <button class="gc-btn" id="routeColorBtn" title="Toggle Importance Coloring [C]" aria-label="Toggle route color mode">🎨</button>
+    <button class="gc-btn" id="tradeBtn"  title="Sea Trade Routes" aria-label="Toggle sea trade routes">🚢</button>
+    <button class="gc-btn" id="planeBtn"  title="Air Cargo Corridors" aria-label="Toggle air cargo corridors">✈️</button>
+    <button class="gc-btn" id="trainBtn"  title="Rail Freight Corridors" aria-label="Toggle rail freight corridors">🚂</button>
+    <button class="gc-btn" id="timelineBtn" title="Timeline [T]" aria-label="Toggle timeline panel">🕐</button>
     <button class="gc-btn" id="flatBtn"   title="Flat Map [M]" aria-label="Toggle flat map view">🗺</button>
     <button class="gc-btn" id="fullBtn"   title="Fullscreen [F]" aria-label="Toggle fullscreen">⛶</button>
   </div>
   <div class="country-tooltip" id="countryTooltip"></div>
   <div class="trade-tooltip"   id="tradeTooltip"></div>
+  <button id="idleModeBtn" class="gc-btn" title="Idle Mode [I]" aria-label="Toggle idle mode" style="position:fixed;bottom:16px;left:16px;z-index:500;">🌙</button>
   <!-- Relationship detail panel (shown when actor node clicked) -->
   <div id="relPanel" style="display:none;position:absolute;top:10px;left:50%;transform:translateX(-50%);background:rgba(10,14,26,0.94);backdrop-filter:blur(14px);border:1px solid rgba(0,212,255,0.25);border-radius:14px;padding:14px 16px;z-index:20;font-size:11px;width:340px;max-height:75vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,0.6);">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
@@ -170,7 +184,7 @@
       <div style="display:flex;align-items:center;gap:7px;"><span style="display:inline-block;width:22px;height:3px;background:#b94eff;border-radius:2px;box-shadow:0 0 5px #b94eff88;"></span><span style="color:#e8f4ff;">Proxy</span></div>
     </div>
   </div>
-  <div class="globe-bottom">
+  <div class="globe-bottom" id="timelinePanel" style="display:none;">
     <div class="timeline-header">
       <span class="timeline-year" id="yearLabel">2026</span>
       <span class="timeline-count" style="font-size:9px;color:var(--dim);margin:0 auto;"></span>
@@ -204,14 +218,9 @@
   <div class="pane" style="flex:1">
     <div class="tab-bar" id="tabBar" role="tablist" aria-label="Crisis analysis sections">
       <div class="tab active" role="tab" tabindex="0" aria-selected="true" data-tab="overview">Overview</div>
-      <div class="tab" role="tab" tabindex="0" aria-selected="false" data-tab="reliability">Source</div>
-      <div class="tab" role="tab" tabindex="0" aria-selected="false" data-tab="escalation">Trend</div>
-      <div class="tab" role="tab" tabindex="0" aria-selected="false" data-tab="economic">Impact</div>
       <div class="tab" role="tab" tabindex="0" aria-selected="false" data-tab="briefing">Brief</div>
+      <div class="tab" role="tab" tabindex="0" aria-selected="false" data-tab="history">History</div>
       <div class="tab" role="tab" tabindex="0" aria-selected="false" data-tab="forecast">Forecast</div>
-      <div class="tab" role="tab" tabindex="0" aria-selected="false" data-tab="network">Network</div>
-      <div class="tab" role="tab" tabindex="0" aria-selected="false" data-tab="domains">Domains</div>
-      <div class="tab" role="tab" tabindex="0" aria-selected="false" data-tab="cascade">Cascade</div>
       <div class="tab" role="tab" tabindex="0" aria-selected="false" data-tab="newsfeed">📰 News Feed</div>
     </div>
 
@@ -234,6 +243,7 @@
         </div>
         <div id="ov-title" style="font-size:15px;font-weight:700;color:#e8f4ff;line-height:1.4;margin-bottom:2px"></div>
         <div id="ov-date" style="font-size:10px;color:var(--dim);letter-spacing:0.3px"></div>
+        <div id="ov-scheduled-banner" style="display:none;font-size:11px;font-weight:600;color:#7c9fff;background:#7c9fff18;border:1px solid #7c9fff44;border-radius:6px;padding:4px 8px;margin-top:6px;"></div>
         <div>
           <div class="section-lbl">Severity</div>
           <div class="bar-row"><div class="bar-track" style="flex:1"><div class="bar-fill" id="ov-sev-bar"></div></div><span id="ov-sev-num" class="bar-label"></span></div>
@@ -255,78 +265,80 @@
           <div class="section-lbl">Historical Analogy</div>
           <div id="ov-analogy" class="analogy-card"></div>
         </div>
+
+        <!-- Source reliability, escalation trend, and economic impact used
+             to be three separate tabs; folded into Overview as one
+             "supporting metrics" cluster so a reader doesn't have to
+             click between them to get the full picture of one crisis. -->
+        <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:2px">
+          <div class="empty" id="reliabilityEmpty">
+            <div class="empty-icon">✓</div>
+            <div>Select a crisis to view<br>source verification status</div>
+          </div>
+          <div id="reliabilityContent" style="display:none;flex-direction:column;gap:8px">
+            <div>
+              <div class="section-lbl">Verification Status</div>
+              <div id="rel-status" style="font-size:11px;color:var(--green);font-weight:700"></div>
+            </div>
+            <div>
+              <div class="section-lbl">Reliability Score</div>
+              <div class="bar-row"><div class="bar-track" style="flex:1"><div class="bar-fill" id="rel-score-bar"></div></div><span id="rel-score-num" class="bar-label"></span></div>
+            </div>
+            <div>
+              <div class="section-lbl">Reporting Sources</div>
+              <div id="rel-sources" style="display:flex;flex-wrap:wrap;gap:4px"></div>
+            </div>
+          </div>
+        </div>
+
+        <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:2px">
+          <div class="empty" id="escalationEmpty">
+            <div class="empty-icon">📈</div>
+            <div>Select a crisis to view<br>escalation trajectory</div>
+          </div>
+          <div id="escalationContent" style="display:none;flex-direction:column;gap:6px">
+            <div>
+              <div class="section-lbl">Trend</div>
+              <div id="esc-trend" style="font-size:12px;font-weight:700;color:var(--accent)"></div>
+            </div>
+            <div id="esc-warning" style="display:none;background:#ff3b3b22;border:1px solid #ff3b3b66;border-radius:6px;padding:6px;color:#ff8888;font-size:10px;font-weight:700"></div>
+            <div>
+              <div class="section-lbl">Change (7d)</div>
+              <div id="esc-change" style="font-size:11px;color:var(--text2)"></div>
+            </div>
+            <div>
+              <div class="section-lbl">Velocity</div>
+              <div id="esc-velocity" style="font-size:11px;color:var(--text2)"></div>
+            </div>
+            <div>
+              <div class="section-lbl">History</div>
+              <canvas id="escalationChart" height="60" style="border:1.5px solid var(--border);border-radius:8px;margin-top:6px;background:rgba(0,212,255,.02);display:block;width:100%;"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:2px">
+          <div class="empty" id="economicEmpty">
+            <div class="empty-icon">💹</div>
+            <div>Select a crisis to view<br>economic impact analysis</div>
+          </div>
+          <div id="economicContent" style="display:none;flex-direction:column;gap:6px">
+            <div>
+              <div class="section-lbl">Impact Severity</div>
+              <div id="econ-severity" style="font-size:12px;font-weight:700"></div>
+            </div>
+            <div>
+              <div class="section-lbl">Affected Sectors</div>
+              <div id="econ-sectors" style="display:flex;flex-wrap:wrap;gap:4px"></div>
+            </div>
+            <div>
+              <div class="section-lbl">Market Impact</div>
+              <div id="econ-estimates" style="font-size:10px;color:var(--text2)"></div>
+            </div>
+          </div>
+        </div>
+
         <button class="export-btn" id="exportBtn" onclick="exportBriefing()">📋 Export Intelligence Briefing</button>
-      </div>
-    </div>
-
-    <!-- SOURCE RELIABILITY -->
-    <div class="pane-body tab-content" id="tab-reliability" role="tabpanel">
-      <div class="empty" id="reliabilityEmpty">
-        <div class="empty-icon">✓</div>
-        <div>Select a crisis to view<br>source verification status</div>
-      </div>
-      <div id="reliabilityContent" style="display:none;flex-direction:column;gap:8px">
-        <div>
-          <div class="section-lbl">Verification Status</div>
-          <div id="rel-status" style="font-size:11px;color:var(--green);font-weight:700"></div>
-        </div>
-        <div>
-          <div class="section-lbl">Reliability Score</div>
-          <div class="bar-row"><div class="bar-track" style="flex:1"><div class="bar-fill" id="rel-score-bar"></div></div><span id="rel-score-num" class="bar-label"></span></div>
-        </div>
-        <div>
-          <div class="section-lbl">Reporting Sources</div>
-          <div id="rel-sources" style="display:flex;flex-wrap:wrap;gap:4px"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ESCALATION TREND -->
-    <div class="pane-body tab-content" id="tab-escalation" role="tabpanel">
-      <div class="empty" id="escalationEmpty">
-        <div class="empty-icon">📈</div>
-        <div>Select a crisis to view<br>escalation trajectory</div>
-      </div>
-      <div id="escalationContent" style="display:none;flex-direction:column;gap:6px">
-        <div>
-          <div class="section-lbl">Trend</div>
-          <div id="esc-trend" style="font-size:12px;font-weight:700;color:var(--accent)"></div>
-        </div>
-        <div id="esc-warning" style="display:none;background:#ff3b3b22;border:1px solid #ff3b3b66;border-radius:6px;padding:6px;color:#ff8888;font-size:10px;font-weight:700"></div>
-        <div>
-          <div class="section-lbl">Change (7d)</div>
-          <div id="esc-change" style="font-size:11px;color:var(--text2)"></div>
-        </div>
-        <div>
-          <div class="section-lbl">Velocity</div>
-          <div id="esc-velocity" style="font-size:11px;color:var(--text2)"></div>
-        </div>
-        <div>
-          <div class="section-lbl">History</div>
-          <canvas id="escalationChart" height="60" style="border:1.5px solid var(--border);border-radius:8px;margin-top:6px;background:rgba(0,212,255,.02);display:block;width:100%;"></canvas>
-        </div>
-      </div>
-    </div>
-
-    <!-- ECONOMIC IMPACT -->
-    <div class="pane-body tab-content" id="tab-economic" role="tabpanel">
-      <div class="empty" id="economicEmpty">
-        <div class="empty-icon">💹</div>
-        <div>Select a crisis to view<br>economic impact analysis</div>
-      </div>
-      <div id="economicContent" style="display:none;flex-direction:column;gap:6px">
-        <div>
-          <div class="section-lbl">Impact Severity</div>
-          <div id="econ-severity" style="font-size:12px;font-weight:700"></div>
-        </div>
-        <div>
-          <div class="section-lbl">Affected Sectors</div>
-          <div id="econ-sectors" style="display:flex;flex-wrap:wrap;gap:4px"></div>
-        </div>
-        <div>
-          <div class="section-lbl">Market Impact</div>
-          <div id="econ-estimates" style="font-size:10px;color:var(--text2)"></div>
-        </div>
       </div>
     </div>
 
@@ -351,6 +363,23 @@
       </div>
     </div>
 
+    <!-- DEEP HISTORY -->
+    <div class="pane-body tab-content" id="tab-history" role="tabpanel">
+      <div class="empty" id="historyEmpty">
+        <div class="empty-icon">📜</div>
+        <div>Select a crisis to generate<br>deep historical context</div>
+      </div>
+      <div id="historyContent" style="display:none;flex-direction:column;gap:8px">
+        <div id="history-loading" style="display:none;color:var(--dim);font-size:11px;text-align:center">
+          <div style="margin:20px 0;display:flex;align-items:center;justify-content:center;gap:8px">
+            <span style="display:inline-block;width:8px;height:8px;background:var(--accent);border-radius:50%;animation:pulse 1.4s infinite"></span>
+            <span>Generating historical analysis...</span>
+          </div>
+        </div>
+        <div id="history-text" style="font-size:10px;color:var(--text);line-height:1.7;overflow-y:auto"></div>
+      </div>
+    </div>
+
     <!-- FORECAST -->
     <div class="pane-body tab-content" id="tab-forecast" role="tabpanel">
       <div class="empty" id="forecastEmpty">
@@ -358,52 +387,6 @@
         <div>Select a crisis to<br>view probabilistic forecasts</div>
       </div>
       <div id="forecastContent" style="display:none;flex-direction:column;gap:4px"></div>
-    </div>
-
-    <!-- NETWORK -->
-    <div class="pane-body tab-content" id="tab-network" role="tabpanel">
-      <div class="empty" id="networkEmpty">
-        <div class="empty-icon">🕸️</div>
-        <div>Select a crisis to view<br>the actor relationship network</div>
-      </div>
-      <div id="networkContent" style="display:none;flex-direction:column;gap:4px">
-        <div class="section-lbl">Actor Relationship Map</div>
-        <canvas id="netCanvas" height="180"></canvas>
-        <div class="rel-line-legend">
-          <div class="rel-line-item"><div class="rel-swatch" style="background:#ff3b3b"></div>Conflict / Opposition</div>
-          <div class="rel-line-item"><div class="rel-swatch" style="background:#ffd93d"></div>Tension / Competition</div>
-          <div class="rel-line-item"><div class="rel-swatch" style="background:#3dffaa"></div>Alliance / Support</div>
-          <div class="rel-line-item"><div class="rel-swatch" style="background:#4e9eff"></div>Economic Dependency</div>
-          <div class="rel-line-item"><div class="rel-swatch" style="background:#b94eff"></div>Proxy / Indirect</div>
-        </div>
-        <div id="netDetails" class="section-lbl" style="margin-top:4px"></div>
-      </div>
-    </div>
-
-    <!-- DOMAINS -->
-    <div class="pane-body tab-content" id="tab-domains" role="tabpanel">
-      <div class="empty" id="domainsEmpty">
-        <div class="empty-icon">🔬</div>
-        <div>Select a crisis to view<br>multi-domain impact analysis</div>
-      </div>
-      <div id="domainsContent" style="display:none;flex-direction:column;gap:2px"></div>
-    </div>
-
-    <!-- CASCADE -->
-    <div class="pane-body tab-content" id="tab-cascade" role="tabpanel">
-      <div id="cascadeIntro">
-        <div class="section-lbl" style="margin-bottom:6px">Scenario Builder</div>
-        <div style="font-size:10px;color:var(--text2);line-height:1.5;margin-bottom:8px">
-          Select a crisis and simulate escalation to see how regional instability cascades across neighboring states and global systems.
-        </div>
-        <div class="empty-icon" style="text-align:center;font-size:20px;margin:10px 0;opacity:.4">⚡</div>
-      </div>
-      <div class="scenario-btn" id="simBtn">⚡ Simulate Escalation</div>
-      <div id="cascadeResults" style="display:none;flex-direction:column;gap:4px;margin-top:6px"></div>
-      <div style="margin-top:6px">
-        <div class="section-lbl">Causality Chain</div>
-        <div class="causal-chain" id="causalChain"></div>
-      </div>
     </div>
 
     <!-- NEWS FEED (Diplomatic statements, announcements without specific location) -->
@@ -416,6 +399,36 @@
       <div class="empty" id="newsfeedEmpty" style="margin-top:20px">
         <div class="empty-icon">📰</div>
         <div style="font-size:10px">No diplomatic events<br>or announcements</div>
+      </div>
+    </div>
+
+    <!-- ROUTE INFO — shown instead of the tab bar/tab-content panes above
+         when a sea/air/rail route is clicked on the globe (see
+         setPanelMode()/selectRoute() in app.js). Not part of the tab
+         system: a route isn't a crisis, so it gets its own simple view
+         rather than forcing updateAllPanels() to branch on type. -->
+    <div class="pane-body" id="routeInfoPanel" style="display:none;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span id="ri-mode-badge" class="sev-badge"></span>
+        <span id="ri-risk-badge" class="conf-badge"></span>
+        <span id="ri-importance-badge" class="conf-badge"></span>
+      </div>
+      <div id="ri-title" style="font-size:15px;font-weight:700;color:#e8f4ff;line-height:1.4"></div>
+      <div>
+        <div class="section-lbl">Volume</div>
+        <div id="ri-volume" style="font-size:11px;color:var(--text2)"></div>
+      </div>
+      <div>
+        <div class="section-lbl">Why It Matters</div>
+        <div id="ri-importance" style="font-size:11px;color:var(--text2);line-height:1.7;white-space:pre-wrap"></div>
+      </div>
+      <div>
+        <div class="section-lbl">Primary Cargo / Traffic</div>
+        <div id="ri-cargo" style="font-size:11px;color:var(--text2);line-height:1.7"></div>
+      </div>
+      <div>
+        <div class="section-lbl">Ownership / Operator</div>
+        <div id="ri-ownership" style="font-size:11px;color:var(--text2);line-height:1.7"></div>
       </div>
     </div>
 

@@ -521,7 +521,6 @@ body {
   transition: background var(--ease-base), border-color var(--ease-base), transform var(--ease-fast);
   position: relative;
   min-width: 0;
-  overflow: hidden;
 }
 .evt-item:hover {
   background: rgba(0,212,255,0.07);
@@ -540,7 +539,7 @@ body {
   white-space: normal;
   overflow-wrap: break-word;
   word-break: break-word;
-  line-height: 1.45;
+  line-height: 1.5;
   letter-spacing: -0.01em;
 }
 .evt-sub {
@@ -640,85 +639,6 @@ body {
 .prob-track { flex:1; height:8px; background:rgba(255,255,255,.06); border-radius:4px; overflow:hidden; }
 .prob-fill { height:100%; border-radius:4px; transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
 .prob-pct { width:32px; text-align:right; font-size:11px; font-weight:700; }
-
-/* ── Domain impact row ── */
-.domain-row {
-  display:flex;
-  align-items:center;
-  gap:8px;
-  padding:10px 0;
-  border-bottom:1px solid var(--border);
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.domain-row:hover {
-  padding-left: 4px;
-  border-left: 3px solid var(--accent);
-}
-.domain-icon { width:24px; text-align:center; font-size:16px; }
-.domain-name { width:75px; font-size:11px; color:var(--text2); font-weight: 600; }
-.domain-bar-track { flex:1; height:6px; background:rgba(255,255,255,.08); border-radius:4px; overflow:hidden; }
-.domain-bar-fill { height:100%; border-radius:4px; transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
-.domain-score { width:28px; text-align:right; font-size:11px; font-weight:700; }
-
-/* ── Network canvas ── */
-#netCanvas {
-  width:100%;
-  display:block;
-  border-radius:8px;
-  background: linear-gradient(135deg, rgba(0,0,0,.4) 0%, rgba(0,212,255,.05) 100%);
-  border: 1px solid var(--border);
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
-#netCanvas:hover {
-  box-shadow: var(--shadow-sm);
-}
-
-/* ── Causality chain ── */
-.causal-chain {
-  display:flex;
-  flex-direction:column;
-  gap:6px;
-  padding:8px;
-  background:rgba(0,212,255,.02);
-  border-radius:8px;
-}
-.causal-step {
-  display:flex;
-  align-items:flex-start;
-  gap:8px;
-  padding:8px;
-  background:rgba(255,255,255,.03);
-  border-radius:6px;
-  border-left:3px solid transparent;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.causal-step:hover {
-  background:rgba(255,255,255,.05);
-  border-left-color:var(--accent);
-}
-.causal-num {
-  color:var(--accent);
-  font-weight:700;
-  font-size:11px;
-  min-width:20px;
-}
-.causal-txt { font-size:10px; color:var(--text2); line-height:1.4; }
-
-/* ── Scenario builder ── */
-.scenario-btn {
-  padding:6px 10px;
-  background:rgba(78,158,255,.12);
-  border:1px solid rgba(78,158,255,.3);
-  border-radius:6px;
-  color:var(--accent);
-  font-size:10px;
-  font-weight:700;
-  cursor:pointer;
-  text-align:center;
-  transition:all .15s;
-}
-.scenario-btn:hover { background:rgba(78,158,255,.22); }
-.scenario-btn.active { background:rgba(255,80,80,.2); border-color:rgba(255,80,80,.5); color:#ff8888; }
 
 /* ── Confidence badge ── */
 .conf-badge {
@@ -992,29 +912,6 @@ input[type=range]::-moz-range-thumb:hover { width:14px; height:14px; box-shadow:
   color:var(--dim); font-size:11px; text-align:center;
 }
 .watchlist-empty .wi { font-size:28px; }
-
-/* ── Relationship type ── */
-.rel-line-legend {
-  display:flex;
-  flex-direction:column;
-  gap:6px;
-  margin-top:8px;
-  padding:8px;
-  background:rgba(255,255,255,.02);
-  border-radius:8px;
-}
-.rel-line-item {
-  display:flex;
-  align-items:center;
-  gap:8px;
-  font-size:10px;
-  color:var(--text2);
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.rel-line-item:hover {
-  color:var(--text);
-}
-.rel-swatch { height:3px; width:24px; border-radius:2px; }
 
 /* ── Supplementary keyframes/animations (originally a second inline <style> block) ── */
 @keyframes slideIn {

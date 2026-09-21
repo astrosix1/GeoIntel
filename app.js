@@ -44,6 +44,11 @@ const TYPE_META = {
   trade_war:     { name:'Trade War',     color:'#ffe082' },
   bioweapon:     { name:'Bioweapon',     color:'#f48fb1' },
   orbital:       { name:'Orbital',       color:'#ce93d8' },
+  election:          { name:'Election',         color:'#7c9fff' },
+  referendum:        { name:'Referendum',        color:'#a78bfa' },
+  leadership_change: { name:'Leadership Change', color:'#ffb347' },
+  civil_unrest:      { name:'Civil Unrest',      color:'#ff5d8f' },
+  summit:            { name:'Summit',            color:'#5eead4' },
 };
 
 // Map crisis types to domains for filtering
@@ -63,6 +68,11 @@ function getDomainForType(type) {
     infrastructure: 'cyber',
     bioweapon:      'health',
     orbital:        'space',
+    election:          'political',
+    referendum:        'political',
+    leadership_change: 'political',
+    civil_unrest:      'political',
+    summit:            'political',
   };
   return typeToDomainsMap[type] || 'information';
 }
@@ -109,12 +119,15 @@ let RELATIONSHIPS = [
 let CRISES = [];
 
 // Global state
-let zoom = 1, rotX = 0.25, rotY = 0;
+const DEFAULT_ROTX = 0.25, DEFAULT_ROTY = 0, DEFAULT_ZOOM = 1;
+let zoom = DEFAULT_ZOOM, rotX = DEFAULT_ROTX, rotY = DEFAULT_ROTY;
 let selected = null;
 let drag = false, lastMX = 0, lastMY = 0;
 let mx = 0, my = 0;
 let currentYear = 2026, playDir = 1, playing = false;
-let showTrade = false;
+let showTrade = false; // sea routes
+let showAir   = false; // air cargo corridors
+let showRail  = false; // rail freight corridors
 let highlightedCountry = null; // { name, feature }
 let countryFilter = null;      // country name string — when set, pins + list filter to this country
 
@@ -145,34 +158,191 @@ const ISO_NAMES = {
   862:'Venezuela',704:'Vietnam',887:'Yemen',894:'Zambia',716:'Zimbabwe',
 };
 
-// Major global trade routes [label, lat1, lon1, lat2, lon2, volume(1-3)]
+// Trade/transit routes across three modes — sea, air, rail. Each route is
+// one object: { id, label, mode, waypoints: [[lat,lon], ...], vol (1-3),
+// importance, cargo, ownership }. `waypoints` replaces a flat [lat1,lon1,
+// lat2,lon2] pair because a single great-circle chord is only geographically
+// sound between two points a vehicle could plausibly travel the straight
+// line between — true for most air routes, false for most sea routes, and
+// false for essentially all rail routes.
+//
+// Every SEA route's waypoint chain was verified by sampling ~40 points per
+// segment (matching drawArcPath's own SLERP interpolation) and running each
+// sample through a real point-in-polygon test against the actual 50m
+// coastline mesh (topoFeaturesHigh) — not just eyeballing whether a traced
+// lat/lon "looked" oceanic, which is exactly what let several of these ship
+// past land-crossings through review earlier: a direct Suez–Rotterdam chord
+// cuts across the Balkans, Rotterdam–Cape Town's cuts across Tunisia/Libya,
+// Houston–Rotterdam's cuts across the entire continental US, LA–Panama's
+// cuts across mainland Mexico, and Shanghai–Cape Town's cuts across
+// Vietnam/Laos/Thailand/Myanmar and then Madagascar. Every sea route below
+// is now a chain of real waypoints (Malacca Strait, Bab el-Mandeb, the
+// Strait of Gibraltar, the Dover Strait, the Windward Passage, etc.) that
+// passed that check with zero interior land hits (endpoints are port
+// cities and are expected to be "on land").
 const TRADE_ROUTES = [
   // Trans-Pacific
-  ['Shanghai–LA',    31.2, 121.5,  33.7,-118.2, 3],
-  ['Tokyo–LA',       35.7, 139.7,  33.7,-118.2, 2],
-  ['Singapore–LA',    1.4, 103.8,  33.7,-118.2, 2],
-  // Asia–Europe (via Suez)
-  ['Shanghai–Rotterdam', 31.2,121.5, 51.9,  4.5, 3],
-  ['Singapore–Rotterdam', 1.4,103.8, 51.9,  4.5, 3],
-  ['Mumbai–Suez',     19.1, 72.9,  30.0, 32.5, 2],
-  ['Suez–Rotterdam',  30.0, 32.5,  51.9,  4.5, 3],
+  { id:'shanghai-la', label:'Shanghai–LA', mode:'sea', vol:3, importanceScore:96,
+    waypoints:[[31.2,121.5],[28.0,135.0],[33.7,-118.2]],
+    importance:'The single busiest containerized trade lane in the world, linking China’s largest port to the US’s largest container gateway complex (LA/Long Beach).',
+    cargo:'Manufactured consumer goods, electronics, furniture, and apparel moving from Chinese factories to US retail.',
+    ownership:'No single owner — international waters (high seas under UNCLOS).' },
+  { id:'tokyo-la', label:'Tokyo–LA', mode:'sea', vol:2, importanceScore:68,
+    waypoints:[[35.7,139.7],[33.7,-118.2]],
+    importance:'Backbone of Japan–US goods trade and a key artery for the just-in-time auto-parts supply chain.',
+    cargo:'Automobiles, auto parts, and industrial machinery.',
+    ownership:'No single owner — international waters.' },
+  { id:'singapore-la', label:'Singapore–LA', mode:'sea', vol:2, importanceScore:62,
+    waypoints:[[1.4,103.8],[33.7,-118.2]],
+    importance:'Connects Southeast Asia’s largest transshipment hub directly to the US West Coast.',
+    cargo:'Electronics, refined petroleum products, and transshipped regional manufactures.',
+    ownership:'No single owner — international waters.' },
+  // Asia–Europe corridor (Malacca → Indian Ocean → Bab el-Mandeb → Suez)
+  { id:'shanghai-singapore', label:'Shanghai–Singapore', mode:'sea', vol:3, importanceScore:92,
+    waypoints:[[31.2,121.5],[26.0,124.0],[10.0,114.0],[1.4,103.8]],
+    importance:'The South China Sea leg of nearly all Asia-to-Europe and Asia-to-Middle East containerized trade, funneling into the Strait of Malacca.',
+    cargo:'Containerized manufactured goods bound for Europe and the Middle East via the Malacca Strait.',
+    ownership:'No single owner — international waters.' },
+  { id:'mumbai-suez', label:'Mumbai–Suez', mode:'sea', vol:2, importanceScore:78,
+    waypoints:[[19.1,72.9],[12.0,48.0],[12.5,43.55],[20.0,38.0],[30.0,32.5]],
+    importance:'The Indian Ocean/Red Sea corridor carrying roughly 12% of global trade volume toward the Suez Canal; the Bab el-Mandeb leg has been repeatedly disrupted by Houthi attacks on shipping since late 2023.',
+    cargo:'Containerized goods, crude oil and refined products, and South Asian textiles and pharmaceuticals bound for Europe.',
+    ownership:'No single owner along most of the route; Bab el-Mandeb is bordered by Yemen and Djibouti/Eritrea but remains international waters.' },
+  { id:'suez-rotterdam', label:'Suez–Rotterdam', mode:'sea', vol:3, importanceScore:90,
+    waypoints:[[30.0,32.5],[31.5,32.3],[33.5,28.0],[36.0,15.0],[38.0,8.0],[35.9,-6.0],[36.0,-11.0],[46.0,-10.0],[49.8,-4.0],[50.3,-0.5],[51.0,1.5],[51.5,2.8],[51.9,4.5]],
+    importance:'The Mediterranean/North Sea final leg of the Asia–Europe corridor, arriving at Europe’s largest port.',
+    cargo:'Containerized consumer goods, chemicals, and refined petroleum products.',
+    ownership:'The Suez Canal segment is owned and operated by the Egyptian Suez Canal Authority (SCA); the remainder is international waters.' },
   // Indian Ocean
-  ['Dubai–Mumbai',    25.2, 55.3,  19.1, 72.9, 2],
-  ['Singapore–Mumbai', 1.4,103.8,  19.1, 72.9, 2],
+  { id:'dubai-mumbai', label:'Dubai–Mumbai', mode:'sea', vol:2, importanceScore:55,
+    waypoints:[[25.2,55.3],[19.1,72.9]],
+    importance:'A short but heavily trafficked Gulf-to-South Asia feeder lane; Dubai’s Jebel Ali is the Gulf’s dominant transshipment hub.',
+    cargo:'Refined petroleum products, foodstuffs, and re-exported manufactured goods.',
+    ownership:'No single owner — international waters.' },
+  { id:'singapore-mumbai', label:'Singapore–Mumbai', mode:'sea', vol:2, importanceScore:60,
+    waypoints:[[1.4,103.8],[2.0,102.0],[3.5,100.2],[5.5,97.5],[6.0,95.0],[7.0,92.0],[5.0,80.0],[10.0,74.0],[19.1,72.9]],
+    importance:'Connects Southeast Asian transshipment volume to India’s largest port complex.',
+    cargo:'Containerized manufactures, electronics, and chemicals.',
+    ownership:'No single owner — international waters.' },
   // North Atlantic
-  ['NY–Rotterdam',    40.7,-74.0,  51.9,  4.5, 3],
-  ['Houston–Rotterdam',29.8,-95.4, 51.9,  4.5, 2],
-  // Cape Route (Africa)
-  ['Shanghai–Cape Town',31.2,121.5,-33.9, 18.4, 1],
-  ['Rotterdam–Cape Town',51.9,4.5, -33.9, 18.4, 1],
+  { id:'ny-rotterdam', label:'NY–Rotterdam', mode:'sea', vol:3, importanceScore:88,
+    waypoints:[[40.7,-74.0],[42.0,-50.0],[47.0,-15.0],[49.8,-4.0],[50.3,-0.5],[51.0,1.5],[51.5,2.8],[51.9,4.5]],
+    importance:'The primary container corridor of the transatlantic trade, the world’s second-largest bilateral trade relationship.',
+    cargo:'Machinery, pharmaceuticals, chemicals, automobiles, and agricultural products.',
+    ownership:'No single owner — international waters.' },
+  { id:'houston-rotterdam', label:'Houston–Rotterdam', mode:'sea', vol:2, importanceScore:70,
+    waypoints:[[29.8,-95.4],[25.0,-88.0],[24.0,-82.0],[24.0,-80.0],[35.0,-70.0],[47.0,-15.0],[49.8,-4.0],[50.3,-0.5],[51.0,1.5],[51.5,2.8],[51.9,4.5]],
+    importance:'A key energy and petrochemical corridor linking the US Gulf Coast refining/export complex to European markets.',
+    cargo:'Crude oil, LNG, refined petroleum products, and petrochemicals/plastics.',
+    ownership:'No single owner — international waters.' },
+  // Cape Route (Africa) — Shanghai–Cape Town reuses the same Malacca-Strait
+  // transit as Shanghai–Singapore/Singapore–Mumbai, then passes south of
+  // Sri Lanka and south of Madagascar; Rotterdam–Cape Town stays in the
+  // Atlantic well clear of the West African coast the whole way.
+  { id:'shanghai-capetown', label:'Shanghai–Cape Town', mode:'sea', vol:1, importanceScore:50,
+    waypoints:[[31.2,121.5],[26.0,124.0],[10.0,114.0],[1.4,103.8],[2.0,102.0],[3.5,100.2],[5.5,97.5],[6.0,95.0],[7.0,92.0],[0.0,80.0],[-30.0,45.0],[-33.9,18.4]],
+    importance:'An alternative to the Suez route around the Cape of Good Hope, used increasingly since 2023 to avoid Red Sea attacks despite adding roughly 10 days of transit.',
+    cargo:'Containerized goods rerouted from the Suez corridor; South African minerals on return legs.',
+    ownership:'No single owner — international waters.' },
+  { id:'rotterdam-capetown', label:'Rotterdam–Cape Town', mode:'sea', vol:1, importanceScore:45,
+    waypoints:[[51.9,4.5],[51.5,2.8],[51.0,1.5],[50.3,-0.5],[47.0,-8.0],[36.0,-12.0],[21.0,-21.0],[0.0,-15.0],[-25.0,3.0],[-33.9,18.4]],
+    importance:'European leg of the Cape route, and a direct link to South Africa’s import/export economy.',
+    cargo:'Manufactured imports to South Africa; export legs carry coal, iron ore, and precious metals.',
+    ownership:'No single owner — international waters.' },
   // Americas
-  ['NY–Panama',       40.7,-74.0,   9.0,-79.5, 2],
-  ['LA–Panama',       33.7,-118.2,  9.0,-79.5, 2],
+  { id:'ny-panama', label:'NY–Panama', mode:'sea', vol:2, importanceScore:65,
+    waypoints:[[40.7,-74.0],[20.0,-74.0],[9.0,-79.5]], // via the Windward Passage, east of Cuba
+    importance:'US East Coast access to the Panama Canal, the shortcut between the Atlantic and Pacific.',
+    cargo:'Containerized goods and bulk grain awaiting canal transit.',
+    ownership:'No single owner along the sea route; the Panama Canal itself is owned and operated by the Panama Canal Authority (ACP), a Panamanian government agency, since the US handed over full control in 1999.' },
+  { id:'la-panama', label:'LA–Panama', mode:'sea', vol:2, importanceScore:63,
+    waypoints:[[33.7,-118.2],[20.0,-115.0],[10.0,-90.0],[6.5,-81.0],[6.0,-80.0],[9.0,-79.5]],
+    importance:'US West Coast feeder into the Panama Canal, an alternative to overland rail for Asia-to-US-East-Coast cargo.',
+    cargo:'Containerized Asian imports transshipping toward the US Gulf and East Coasts.',
+    ownership:'No single owner along the sea route; the Panama Canal itself is owned and operated by the Panama Canal Authority (ACP).' },
   // Key straits (short markers)
-  ['Strait of Malacca', 1.4,103.8,  5.5, 95.3, 3],
-  ['Bab el-Mandeb',  12.5, 43.5,  11.5, 43.5, 2],
-  ['Strait of Hormuz',26.5, 56.5,  24.5, 58.5, 3],
+  { id:'strait-of-malacca', label:'Strait of Malacca', mode:'sea', vol:3, importanceScore:99,
+    waypoints:[[1.4,103.8],[2.0,102.0],[3.5,100.2],[5.5,97.5],[5.5,95.3]],
+    importance:'The world’s busiest and most critical shipping chokepoint by volume — roughly a quarter of all seaborne trade, including most of China’s oil imports, passes through here.',
+    cargo:'Crude oil (especially to China, Japan, and South Korea), containerized goods, and LNG.',
+    ownership:'No single owner; littoral states Indonesia, Malaysia, and Singapore jointly patrol and manage traffic under the Malacca Strait Patrol, but the strait remains international waters.' },
+  { id:'bab-el-mandeb', label:'Bab el-Mandeb', mode:'sea', vol:2, importanceScore:82,
+    waypoints:[[12.5,43.5],[11.5,43.5]],
+    importance:'Gateway between the Red Sea/Suez Canal and the Indian Ocean; a Houthi missile and drone campaign against shipping here since late 2023 has forced many carriers onto the longer Cape of Good Hope route.',
+    cargo:'Containerized Asia–Europe trade, crude oil, and LNG.',
+    ownership:'No single owner — bordered by Yemen to the east and Djibouti/Eritrea to the west; international waters.' },
+  { id:'strait-of-hormuz', label:'Strait of Hormuz', mode:'sea', vol:3, importanceScore:97,
+    waypoints:[[26.5,56.5],[24.5,58.5]],
+    importance:'The world’s most important oil chokepoint — roughly one-fifth of global oil consumption transits here; Iran has repeatedly threatened to close it during periods of tension with the US and West.',
+    cargo:'Crude oil and LNG, overwhelmingly.',
+    ownership:'No single owner — bordered by Iran to the north and Oman to the south; international waters.' },
 ];
+
+// Air cargo corridors. Aircraft aren't blocked by land the way ships are,
+// so most of these are simple 2-point great-circle hops between hub
+// airports — except Hong Kong–Dubai–Frankfurt, deliberately bent through
+// Dubai rather than a direct arc, because most Western/Asian carriers have
+// avoided Russian airspace since 2022 and now route south through Gulf
+// hubs instead of the shorter polar/Siberian great circle — a real,
+// current geopolitical cost reflected directly in the flown path.
+const AIR_ROUTES = [
+  { id:'hk-anc-memphis', label:'Hong Kong–Anchorage–Memphis', mode:'air', vol:3, importanceScore:88,
+    waypoints:[[22.3,113.9],[61.2,-149.9],[35.0,-90.0]],
+    importance:'Backbone of express and e-commerce air freight between Asia and North America; Anchorage’s position makes it the great-circle refueling waypoint for nearly all trans-Pacific cargo flights, and Memphis is FedEx’s global superhub.',
+    cargo:'High-value express parcels, electronics, e-commerce goods, and pharmaceuticals.',
+    ownership:'No single owner — international and US sovereign airspace; Anchorage airport is operated by the State of Alaska, Memphis hub privately operated by FedEx.' },
+  { id:'shanghai-la-air', label:'Shanghai–LA (Air)', mode:'air', vol:3, importanceScore:85,
+    waypoints:[[31.2,121.5],[33.9,-118.4]],
+    importance:'The dominant Asia–US air cargo lane for time-sensitive e-commerce, driven heavily by cross-border parcel volume from Chinese platforms.',
+    cargo:'E-commerce parcels, electronics, and express apparel shipments.',
+    ownership:'No single owner — international and US sovereign airspace; LAX operated by Los Angeles World Airports.' },
+  { id:'incheon-anc-chicago', label:'Incheon–Anchorage–Chicago', mode:'air', vol:2, importanceScore:60,
+    waypoints:[[37.5,126.4],[61.2,-149.9],[41.98,-87.9]],
+    importance:'Korea’s main air-cargo gateway to the US Midwest, again routed via the Anchorage refueling hub.',
+    cargo:'Semiconductors, electronics components, and automotive parts.',
+    ownership:'No single owner — international and US sovereign airspace.' },
+  { id:'hk-dubai-frankfurt', label:'Hong Kong–Dubai–Frankfurt', mode:'air', vol:3, importanceScore:84,
+    waypoints:[[22.3,113.9],[25.25,55.36],[50.03,8.57]],
+    importance:'The main Asia–Europe air cargo corridor. Historically flown closer to a direct great circle over Russia/Central Asia, but since Russia closed its airspace to most Western carriers in 2022, traffic has shifted south via Gulf hubs like Dubai — adding hours of flight time as a direct, visible cost of the closure.',
+    cargo:'Electronics, pharmaceuticals, and high-value manufactured goods.',
+    ownership:'No single owner — sovereign airspace of each country overflown; hub operators are Dubai Airports and Fraport AG (Frankfurt).' },
+  { id:'dubai-london', label:'Dubai–London', mode:'air', vol:2, importanceScore:66,
+    waypoints:[[25.25,55.36],[51.47,-0.45]],
+    importance:'Connects the Gulf’s largest cargo and passenger hub to Europe’s busiest airport by international freight tonnage.',
+    cargo:'Express freight, pharmaceuticals, and high-value or perishable goods such as fresh produce and flowers.',
+    ownership:'No single owner — sovereign airspace of countries overflown; Heathrow is operated by Heathrow Airport Holdings.' },
+];
+
+// Rail freight corridors. Unlike sea routes, these are *supposed* to run
+// overland through Central Asia and Russia — rail is fully constrained to
+// physical track, so the same Kazakhstan/Russia corridor that was wrong
+// for a ship (see the comment on TRADE_ROUTES above) is exactly correct
+// here. Do not "fix" these to avoid land the way the sea routes were fixed.
+const RAIL_ROUTES = [
+  { id:'cn-europe-northern', label:'China–Europe Railway Express (Northern Corridor)', mode:'rail', vol:3, importanceScore:80,
+    waypoints:[[34.3,108.9],[44.2,80.4],[51.2,71.4],[55.75,37.6],[53.9,27.6],[52.2,21.0],[51.4,6.8]],
+    importance:'The flagship "Belt and Road" rail corridor, cutting China–Europe transit time to roughly 15-18 days versus 35-45 days by sea; over 15,000 trains ran in 2023 alone.',
+    cargo:'Electronics, machinery, and automobiles eastbound-return; European autos, food products, and machinery westbound-return from Europe.',
+    ownership:'Jointly operated across the state railways of China (China Railway), Kazakhstan (KTZ), Russia (RZD), Belarus (BCh), and Poland (PKP), coordinated under the China Railway Express brand.' },
+  { id:'middle-corridor', label:'Middle Corridor (Trans-Caspian)', mode:'rail', vol:2, importanceScore:62,
+    waypoints:[[44.2,80.4],[43.65,51.2],[40.4,49.9],[41.7,44.8],[41.0,28.9]],
+    importance:'The sanctions-era alternative to the Russia-transiting Northern Corridor, crossing the Caspian Sea by ferry between Kazakhstan and Azerbaijan; volumes have surged since 2022 as shippers avoid Russian territory, though ferry capacity remains a bottleneck.',
+    cargo:'Containerized goods, grain, and minerals rerouted off the Northern Corridor.',
+    ownership:'Coordinated by a multilateral Middle Corridor consortium of the state railways and port authorities of Kazakhstan, Azerbaijan, Georgia, and Turkey, with no single national operator.' },
+  { id:'trans-siberian', label:'Trans-Siberian Railway', mode:'rail', vol:2, importanceScore:48,
+    waypoints:[[43.1,131.9],[56.0,92.9],[55.75,37.6]],
+    importance:'The historic backbone of Russian domestic and Pacific-to-European freight, and (before 2022) a transit option for Asia–Europe container traffic — now used almost exclusively for Russian domestic and regional trade given Western sanctions and avoidance.',
+    cargo:'Coal, timber, oil and gas products, and containerized domestic freight.',
+    ownership:'Owned and operated by Russian Railways (RZD), a Russian state-owned company.' },
+  { id:'na-intermodal', label:'North American Intermodal (LA–Chicago–NY)', mode:'rail', vol:3, importanceScore:82,
+    waypoints:[[33.7,-118.2],[41.85,-87.65],[40.7,-74.0]],
+    importance:'The rail backbone that moves trans-Pacific container traffic inland from West Coast ports to the US interior and East Coast, avoiding a much longer all-water Panama Canal route.',
+    cargo:'Containerized imports from Asia — electronics, apparel, consumer goods; eastbound-return also carries US agricultural exports back toward West Coast ports.',
+    ownership:'Operated by privately owned US Class I railroads — primarily BNSF and Union Pacific from the coast to Chicago, then CSX and Norfolk Southern onward to the East Coast.' },
+];
+
+const ALL_ROUTES = [...TRADE_ROUTES, ...AIR_ROUTES, ...RAIL_ROUTES];
+const ROUTES_BY_ID = new Map(ALL_ROUTES.map(r => [r.id, r]));
 
 // Infinite scroll state
 let crisisDisplayLimit = 90;  // Show all available crises by default
@@ -494,7 +664,6 @@ let showArcs  = false;
 let showHeat  = false;
 let showCasc  = false;
 let flatMap   = false;
-let cascadeActive = false;
 
 // Severity filter (0 = all, 80 = critical only)
 let minSeverityFilter = 0;
@@ -561,15 +730,23 @@ function CY() { return canvas.clientHeight / 2; }
 // per frame (or not at all while idle), so this turns 2 trig calls per
 // point into a single float comparison for all but the first point.
 let _rotXCache = NaN, _cosRotX = 1, _sinRotX = 0;
-function project(lat, lon) {
+// Raw view-space unit vector for a lat/lon, before the screen-projection
+// step — shared by project() and the sun/day-night overlay in drawGlobe(),
+// so both agree exactly on where a given lat/lon currently sits relative
+// to the camera.
+function latLonToViewVec(lat, lon) {
   if (rotX !== _rotXCache) { _cosRotX = Math.cos(rotX); _sinRotX = Math.sin(rotX); _rotXCache = rotX; }
-  const phi  = lat * Math.PI / 180;
-  const lam  = lon * Math.PI / 180;
-  const cp   = Math.cos(phi);
-  const x    = cp  * Math.sin(lam + rotY);
-  const y    = Math.sin(phi) * _cosRotX - cp * Math.cos(lam + rotY) * _sinRotX;
-  const z    = Math.sin(phi) * _sinRotX + cp * Math.cos(lam + rotY) * _cosRotX;
-  const r    = R();
+  const phi = lat * Math.PI / 180;
+  const lam = lon * Math.PI / 180;
+  const cp  = Math.cos(phi);
+  const x   = cp * Math.sin(lam + rotY);
+  const y   = Math.sin(phi) * _cosRotX - cp * Math.cos(lam + rotY) * _sinRotX;
+  const z   = Math.sin(phi) * _sinRotX + cp * Math.cos(lam + rotY) * _cosRotX;
+  return { x, y, z };
+}
+function project(lat, lon) {
+  const { x, y, z } = latLonToViewVec(lat, lon);
+  const r = R();
   return { sx: CX() + r * x, sy: CY() - r * y, z };
 }
 
@@ -631,20 +808,30 @@ function geoDistKm(la1, lo1, la2, lo2) {
   return 2 * EARTH_RADIUS_KM * Math.asin(Math.min(1, Math.sqrt(a)));
 }
 
-// For each trade route, compute a risk level (0–3) based on nearby active crises
-function routeRiskLevel(lat1, lon1, lat2, lon2) {
+// For each route, compute a risk level (0–3) based on nearby active crises
+function routeRiskLevel(waypoints) {
   // Sample along the *actual* great-circle path — the same SLERP used to
-  // draw the arc (see drawArc/latLonToVec/slerpVec below) — rather than
+  // draw the arc (see drawArcPath/latLonToVec/slerpVec below) — rather than
   // naive lat/lon linear interpolation. That mattered a lot here: every
-  // trans-Pacific route in TRADE_ROUTES (Shanghai-LA, Tokyo-LA,
-  // Singapore-LA) crosses the antimeridian, where linearly "averaging"
-  // longitude lands nowhere near the real path — e.g. Shanghai (121.5°E)
-  // and LA (-118.2°) average to ~1.65°E, near Africa, while the real
-  // route crosses the Pacific near 180°. Risk was being checked against
-  // the wrong hemisphere entirely for those routes.
-  const v1 = latLonToVec(lat1, lon1);
-  const v2 = latLonToVec(lat2, lon2);
-  const samples = [0, 0.25, 0.5, 0.75, 1].map(t => vecToLatLon(slerpVec(v1, v2, t)));
+  // trans-Pacific route (Shanghai-LA, Tokyo-LA, Singapore-LA) crosses the
+  // antimeridian, where linearly "averaging" longitude lands nowhere near
+  // the real path — e.g. Shanghai (121.5°E) and LA (-118.2°) average to
+  // ~1.65°E, near Africa, while the real route crosses the Pacific near
+  // 180°. Risk was being checked against the wrong hemisphere entirely for
+  // those routes.
+  //
+  // Generalized to a waypoints array (not just 2 endpoints) so long
+  // multi-hop routes — rail corridors especially — get checked against
+  // crises along their whole path, not just their two far-apart ends. Each
+  // interior segment's t=0 sample is skipped since it's identical to the
+  // previous segment's t=1.
+  const samples = [];
+  for (let seg = 0; seg < waypoints.length - 1; seg++) {
+    const v1 = latLonToVec(waypoints[seg][0], waypoints[seg][1]);
+    const v2 = latLonToVec(waypoints[seg + 1][0], waypoints[seg + 1][1]);
+    const ts = seg === 0 ? [0, 0.25, 0.5, 0.75, 1] : [0.25, 0.5, 0.75, 1];
+    for (const t of ts) samples.push(vecToLatLon(slerpVec(v1, v2, t)));
+  }
   let maxSev = 0;
   let nearby = 0;
   for (const c of CRISES) {
@@ -665,23 +852,67 @@ function routeRiskLevel(lat1, lon1, lat2, lon2) {
 const ROUTE_RISK_COLORS = ['#3dffaa', '#ffd93d', '#ff8833', '#ff3b3b'];
 const ROUTE_RISK_LABELS = ['Clear', 'Caution', 'Elevated', 'Critical'];
 
-// Stores screen-space midpoints for hover detection, updated each draw
+// Route color can show either dynamic "risk" (nearby-crisis-driven,
+// ROUTE_RISK_COLORS above) or static "importance" (how vital the route is
+// to global trade, independent of current events) — a toggle button swaps
+// which one the globe/panel/tooltip all key off of. A straight RGB lerp
+// (not an HSL hue rotation) is used so the importance gradient's midtones
+// don't visually collide with the risk gradient's yellow/orange midtones.
+let routeColorMode = 'risk'; // 'risk' | 'importance'
+const IMPORTANCE_COLOR_LOW  = [61, 255, 170];  // matches ROUTE_RISK_COLORS[0], #3dffaa
+const IMPORTANCE_COLOR_HIGH = [255, 59, 59];   // matches ROUTE_RISK_COLORS[3], #ff3b3b
+function importanceColor(score) {
+  const t = Math.max(0, Math.min(100, score ?? 50)) / 100;
+  const lerp = (i) => Math.round(IMPORTANCE_COLOR_LOW[i] + (IMPORTANCE_COLOR_HIGH[i] - IMPORTANCE_COLOR_LOW[i]) * t);
+  const toHex = (n) => n.toString(16).padStart(2, '0');
+  return `#${toHex(lerp(0))}${toHex(lerp(1))}${toHex(lerp(2))}`; // hex, matching ROUTE_RISK_COLORS' format so '+alpha' suffixes work
+}
+
+// Visual differentiation between the three route modes — risk-based color
+// stays meaningful for all three (so it isn't spent on distinguishing
+// mode), dash pattern is what tells sea/air/rail apart when layers overlap.
+// Sea and rail get a thicker, glowing "highlight" treatment rather than a
+// thin line: their waypoint-to-waypoint segments are individually shorter
+// than a typical single-hop flight, so each segment's great-circle
+// curvature is subtler — a thin or dotted line makes that curve easy to
+// miss entirely, while a bold glowing stroke makes it unmistakable. Air
+// stays a thin dashed line, matching how flight paths are usually drawn.
+const MODE_STYLE = {
+  sea:  { dash: [],     widthMul: 2.0, glow: true  },
+  air:  { dash: [6, 4], widthMul: 1.0, glow: false },
+  rail: { dash: [2, 3], widthMul: 2.0, glow: true  },
+};
+
+// Stores screen-space hit-points for hover/click detection, updated each draw
 let tradeRouteScreenPts = [];
 
-// Draw all active trade routes, color-coded by disruption risk
-function drawTradeRoutes() {
+// Draw whichever route layers are currently toggled on, color-coded by
+// disruption risk and styled by mode (see MODE_STYLE).
+function drawAllRoutes() {
   tradeRouteScreenPts = [];
-  TRADE_ROUTES.forEach(([label, lat1, lon1, lat2, lon2, vol], idx) => {
-    const risk  = routeRiskLevel(lat1, lon1, lat2, lon2);
-    const color = ROUTE_RISK_COLORS[risk];
-    const alpha = 0.3 + vol * 0.1 + (risk > 0 ? 0.15 : 0);
-    const width = 0.7 + vol * 0.4 + (risk * 0.3);
-    drawArc(lat1, lon1, lat2, lon2, color, width, alpha);
+  if (showTrade) drawRouteSet(TRADE_ROUTES);
+  if (showAir)   drawRouteSet(AIR_ROUTES);
+  if (showRail)  drawRouteSet(RAIL_ROUTES);
+}
 
-    // Store midpoint screen coords for hover detection
-    const midLat = (lat1 + lat2) / 2, midLon = (lon1 + lon2) / 2;
-    const mp = project(midLat, midLon);
-    if (mp.z > 0) tradeRouteScreenPts.push({ idx, label, vol, risk, sx: mp.sx, sy: mp.sy });
+function drawRouteSet(routes) {
+  routes.forEach(route => {
+    const risk  = routeRiskLevel(route.waypoints);
+    const color = routeColorMode === 'importance'
+      ? importanceColor(route.importanceScore ?? route.vol * 30)
+      : ROUTE_RISK_COLORS[risk];
+    const style = MODE_STYLE[route.mode];
+    const alpha = Math.min(1, 0.3 + route.vol * 0.1 + (risk > 0 ? 0.15 : 0) + (style.glow ? 0.1 : 0));
+    const width = (0.7 + route.vol * 0.4 + (risk * 0.3)) * style.widthMul;
+    drawArcPath(route.waypoints, color, width, alpha, style.dash, style.glow);
+
+    // Hit-point for hover/click detection: the route's actual middle
+    // waypoint (a real point on the path) rather than a linear midpoint of
+    // its endpoints, which for a bent multi-hop route can land nowhere
+    // near the drawn line.
+    const mid = route.waypoints[Math.floor(route.waypoints.length / 2)];
+    const mp = project(mid[0], mid[1]);
+    if (mp.z > 0) tradeRouteScreenPts.push({ id: route.id, mode: route.mode, label: route.label, vol: route.vol, risk, importanceScore: route.importanceScore, sx: mp.sx, sy: mp.sy });
   });
 }
 
@@ -703,6 +934,18 @@ function drawGeoMesh(geom, targetCtx = ctx) {
     }
     if (started) targetCtx.stroke();
   });
+}
+
+// Approximate subsolar point (the lat/lon where the sun is directly
+// overhead) for real-time day/night shading. ~1° accuracy — plenty for a
+// visual effect, no equation-of-time correction needed.
+function getSubsolarPoint(date = new Date()) {
+  const start = Date.UTC(date.getUTCFullYear(), 0, 1);
+  const dayOfYear = Math.floor((date.getTime() - start) / 86400000);
+  const declination = -23.44 * Math.cos((2 * Math.PI / 365) * (dayOfYear + 10));
+  const utcHours = date.getUTCHours() + date.getUTCMinutes() / 60;
+  const subsolarLon = -(utcHours - 12) * 15;
+  return { lat: declination, lon: subsolarLon };
 }
 
 // Convert lat/lon to 3D unit vector
@@ -751,6 +994,41 @@ function drawArc(lat1, lon1, lat2, lon2, color, width = 1.2, alpha = 0.5) {
     else ctx.lineTo(p.sx, p.sy);
   }
   if (started) ctx.stroke();
+  ctx.restore();
+}
+
+// Same great-circle drawing as drawArc(), generalized to a path of 2+
+// waypoints instead of exactly 2 — draws one continuous stroke across all
+// consecutive segments, with an optional dash pattern and glow (see
+// MODE_STYLE) for telling route modes apart when multiple layers overlap.
+// drawArc() itself is left untouched since relationship arcs and
+// cascade-sim arcs still use it directly and only ever need 2 points.
+function drawArcPath(waypoints, color, width = 1.2, alpha = 0.5, dash = [], glow = false) {
+  const steps = 60;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.setLineDash(dash);
+  if (glow) {
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 10;
+  }
+
+  let started = false;
+  for (let seg = 0; seg < waypoints.length - 1; seg++) {
+    const v1 = latLonToVec(waypoints[seg][0], waypoints[seg][1]);
+    const v2 = latLonToVec(waypoints[seg + 1][0], waypoints[seg + 1][1]);
+    for (let i = 0; i <= steps; i++) {
+      const [la, lo] = vecToLatLon(slerpVec(v1, v2, i / steps));
+      const p = project(la, lo);
+      if (p.z < 0) { if (started) { ctx.stroke(); started = false; } continue; }
+      if (!started) { ctx.beginPath(); ctx.moveTo(p.sx, p.sy); started = true; }
+      else ctx.lineTo(p.sx, p.sy);
+    }
+  }
+  if (started) ctx.stroke();
+  ctx.setLineDash([]); // reset so later ctx.stroke() calls this frame aren't dashed
   ctx.restore();
 }
 
@@ -879,8 +1157,8 @@ function drawFlatMap() {
   const pool = CRISES.filter(c => {
     if (minSeverityFilter > 0 && (c.severity || 0) < minSeverityFilter) return false;
     if (countryFilter && c.country !== countryFilter) return false;
-    if (!activeTypes.has(c.type)) return false;
-    if (activeDomains.size > 0 && !activeDomains.has(getDomainForType(c.type))) return false;
+    if (activeType !== 'all' && c.type !== activeType) return false;
+    if (activeDomain !== 'all' && getDomainForType(c.type) !== activeDomain) return false;
     const d = new Date(c.date_start || c.date);
     return !isNaN(d) && d.getFullYear() <= currentYear;
   });
@@ -1335,8 +1613,33 @@ function drawGlobe() {
     }
   }
 
-  // Trade routes
-  if (showTrade) drawTradeRoutes();
+  // Day/night terminator — darkens the hemisphere currently facing away
+  // from the sun, computed from the real subsolar point so it tracks
+  // real-world UTC time. A single linear gradient across the sun's own
+  // screen-space axis (cheap, no per-pixel work) rather than a hard-edged
+  // split, so the transition band reads as a soft terminator. Drawn before
+  // routes/pins so their risk/importance/severity colors stay fully
+  // legible on the night side.
+  {
+    const sun = getSubsolarPoint();
+    const sv = latLonToViewVec(sun.lat, sun.lon);
+    const sunMag = Math.hypot(sv.x, sv.y);
+    if (sunMag > 0.05) {
+      const nightGrad = ctx.createLinearGradient(cx + r * sv.x, cy - r * sv.y, cx - r * sv.x, cy + r * sv.y);
+      nightGrad.addColorStop(0,    'rgba(5,8,20,0)');
+      nightGrad.addColorStop(0.5,  'rgba(5,8,20,0)');
+      nightGrad.addColorStop(0.62, 'rgba(5,8,20,0.35)');
+      nightGrad.addColorStop(1,    'rgba(5,8,20,0.55)');
+      ctx.save();
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip();
+      ctx.fillStyle = nightGrad;
+      ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+      ctx.restore();
+    }
+  }
+
+  // Trade/transit routes (sea/air/rail — each gated on its own toggle inside)
+  if (showTrade || showAir || showRail) drawAllRoutes();
 
   // Relationship arcs
   if (showArcs) {
@@ -1494,8 +1797,8 @@ function drawPins() {
 
   // ── Type / domain / location-confidence / severity filter ────────────────────
   pool = pool.filter(c =>
-    activeTypes.has(c.type) &&
-    (activeDomains.size === 0 || activeDomains.has(getDomainForType(c.type))) &&
+    (activeType === 'all' || c.type === activeType) &&
+    (activeDomain === 'all' || getDomainForType(c.type) === activeDomain) &&
     (c.location_confidence ?? 60) >= 60 &&
     (!countryFilter || c.country === countryFilter) &&
     (minSeverityFilter === 0 || (c.severity || 0) >= minSeverityFilter)
@@ -1661,17 +1964,36 @@ function drawPins() {
     const baseR     = Math.max(5, Math.min(11, 7 + (zoom - 1) * 1.2));
     const r2        = isHovered || isActive ? baseR + 3 : baseR;
 
+    const isUpcoming = c.status === 'upcoming';
+
     ctx.save();
     ctx.globalAlpha = fadeOpacity;
     ctx.shadowColor = col;
     ctx.shadowBlur  = isActive ? 22 : isHovered ? 14 : 8;
-    ctx.fillStyle   = col;
-    ctx.beginPath(); ctx.arc(sx, sy, r2, 0, Math.PI * 2); ctx.fill();
-    ctx.shadowBlur  = 0;
 
-    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-    ctx.lineWidth   = 1.5;
-    ctx.stroke();
+    if (isUpcoming) {
+      // Scheduled-but-not-yet-happened events (elections, referendums) read
+      // as "known in advance" rather than "detected" — a dashed outline
+      // ring with a small solid centre dot, instead of the full glow-filled
+      // circle used for reactive crises.
+      ctx.fillStyle = col;
+      ctx.beginPath(); ctx.arc(sx, sy, r2 * 0.35, 0, Math.PI * 2); ctx.fill();
+      ctx.shadowBlur  = 0;
+
+      ctx.strokeStyle = col;
+      ctx.lineWidth   = 1.5;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.arc(sx, sy, r2, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+    } else {
+      ctx.fillStyle   = col;
+      ctx.beginPath(); ctx.arc(sx, sy, r2, 0, Math.PI * 2); ctx.fill();
+      ctx.shadowBlur  = 0;
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.lineWidth   = 1.5;
+      ctx.stroke();
+    }
 
     const pr = r2 + 4 + Math.sin(pulse) * 3;
     ctx.strokeStyle = col + '66';
@@ -1720,8 +2042,8 @@ function drawHeatmapOverlay() {
 
   // Gather visible, filtered crises — same location filter as drawPins()
   const filteredCrises = filterByDateRange(CRISES, currentYear).filter(c => {
-    return activeTypes.has(c.type) &&
-      (activeDomains.size === 0 || activeDomains.has(getDomainForType(c.type))) &&
+    return (activeType === 'all' || c.type === activeType) &&
+      (activeDomain === 'all' || getDomainForType(c.type) === activeDomain) &&
       (c.location_confidence ?? 70) >= 75;
   });
 
@@ -1773,97 +2095,79 @@ function drawHeatmapOverlay() {
 }
 
 // ════════════════════════════════════════════════════════════
-// NETWORK GRAPH
-// ════════════════════════════════════════════════════════════
-
-function drawNetwork() {
-  const empty = document.getElementById('networkEmpty');
-  const content = document.getElementById('networkContent');
-
-  // Every other analytical tab (Source, Trend, Impact, Briefing) shows a
-  // clear "could not be loaded" state when its data is missing; this one
-  // used to just paint an unlabeled blank canvas — indistinguishable from
-  // broken. ACTORS is empty whenever the /api/actors fetch never succeeded.
-  if (!ACTORS || ACTORS.length === 0) {
-    content.style.display = 'none';
-    if (selected) {
-      showPanelUnavailable(empty, 'Actor relationship data<br>could not be loaded');
-    } else {
-      resetPanelEmpty(empty);
-    }
-    empty.style.display = 'flex';
-    return;
-  }
-  resetPanelEmpty(empty);
-  empty.style.display = 'none';
-  content.style.display = 'flex';
-
-  const nc = document.getElementById('netCanvas');
-  const nw = nc.clientWidth; nc.width = nw;
-  const nh = parseInt(nc.getAttribute('height')) || 180; nc.height = nh;
-  const nx2 = nc.getContext('2d');
-
-  nx2.fillStyle = '#0a0d1a';
-  nx2.fillRect(0, 0, nw, nh);
-
-  const actorPos = {};
-  const count = ACTORS.length;
-  const cx = nw / 2, cy = nh / 2;
-  const rx = nw * 0.4, ry = nh * 0.4;
-
-  ACTORS.forEach((a, i) => {
-    const angle = (i / count) * Math.PI * 2 - Math.PI / 2;
-    actorPos[a.id] = {
-      x: cx + rx * Math.cos(angle),
-      y: cy + ry * Math.sin(angle),
-    };
-  });
-
-  const relColors = { conflict:'#ff3b3b', alliance:'#3dffaa', tension:'#ffd93d', economic:'#4e9eff', proxy:'#b94eff' };
-
-  // Edges
-  RELATIONSHIPS.forEach(rel => {
-    const pa = actorPos[rel.a], pb = actorPos[rel.b];
-    if (!pa || !pb) return;
-    nx2.strokeStyle = (relColors[rel.type] || '#888') + '88';
-    nx2.lineWidth = 1;
-    nx2.beginPath();
-    nx2.moveTo(pa.x, pa.y);
-    // Bezier through center
-    nx2.quadraticCurveTo(cx, cy, pb.x, pb.y);
-    nx2.stroke();
-  });
-
-  // Nodes
-  ACTORS.forEach(a => {
-    const pos = actorPos[a.id];
-    const isSelected = selected?.stakeholders?.includes(a.id);
-
-    nx2.fillStyle = a.color + (isSelected ? 'ff' : '99');
-    nx2.shadowColor = a.color;
-    nx2.shadowBlur = isSelected ? 10 : 4;
-    nx2.beginPath();
-    nx2.arc(pos.x, pos.y, isSelected ? 7 : 5, 0, Math.PI * 2);
-    nx2.fill();
-    nx2.shadowBlur = 0;
-
-    nx2.fillStyle = isSelected ? '#fff' : '#8899bb';
-    nx2.font = `bold ${isSelected ? 9 : 8}px Segoe UI`;
-    nx2.textAlign = 'center';
-    nx2.fillText(a.name, pos.x, pos.y - 10);
-  });
-}
-
-// ════════════════════════════════════════════════════════════
 // UI: SELECTION & PANELS
 // ════════════════════════════════════════════════════════════
 
 function selectCrisis(crisis) {
+  setPanelMode('crisis');
   selected = crisis;
   document.getElementById('colRight').classList.add('open');
   updateAllPanels();
   updateEventsList();
-  drawNetwork();
+}
+
+// Route selection — parallel to selectCrisis() but for a sea/air/rail route
+// clicked on the globe. Kept fully separate from selectCrisis/
+// updateAllPanels rather than branching those on type: `selected` and
+// updateAllPanels() assume a Crisis shape (severity, stakeholders, domains,
+// …) throughout, so a route gets its own state and its own panel content
+// instead. The two share the same #colRight container/open-close mechanics
+// and swap which content is visible via setPanelMode() — selecting one
+// replaces the other, matching how selecting a different crisis already
+// replaces whatever crisis was previously shown.
+let selectedRoute = null;
+
+function setPanelMode(mode) { // 'crisis' | 'route'
+  const tabBar = document.getElementById('tabBar');
+  if (tabBar) tabBar.style.display = mode === 'crisis' ? 'flex' : 'none';
+  // Clearing the inline style (rather than setting 'flex') lets the
+  // existing .tab-content/.tab-content.active CSS rules resume deciding
+  // which single tab is visible, exactly as they do today.
+  document.querySelectorAll('.tab-content').forEach(el => {
+    el.style.display = mode === 'crisis' ? '' : 'none';
+  });
+  const routePanel = document.getElementById('routeInfoPanel');
+  if (routePanel) routePanel.style.display = mode === 'route' ? 'flex' : 'none';
+}
+
+function selectRoute(route) {
+  if (!route) return;
+  setPanelMode('route');
+  selectedRoute = route;
+  document.getElementById('colRight').classList.add('open');
+  updateRoutePanel(route);
+}
+
+function updateRoutePanel(route) {
+  const risk = routeRiskLevel(route.waypoints);
+  const riskColor = ROUTE_RISK_COLORS[risk];
+
+  const modeBadge = document.getElementById('ri-mode-badge');
+  const modeMeta = { sea: ['🚢 Sea', '#4e9eff'], air: ['✈️ Air', '#b94eff'], rail: ['🚂 Rail', '#ff8833'] }[route.mode] || [route.mode, '#888'];
+  modeBadge.textContent = modeMeta[0];
+  modeBadge.style.background = modeMeta[1] + '33';
+  modeBadge.style.color = modeMeta[1];
+  modeBadge.style.border = `1px solid ${modeMeta[1]}55`;
+
+  const riskBadge = document.getElementById('ri-risk-badge');
+  riskBadge.textContent = `${ROUTE_RISK_LABELS[risk]} risk`;
+  riskBadge.style.background = riskColor + '18';
+  riskBadge.style.borderColor = riskColor + '44';
+  riskBadge.style.color = riskColor;
+
+  const importanceBadge = document.getElementById('ri-importance-badge');
+  const importanceScore = route.importanceScore ?? route.vol * 30;
+  const importanceCol = importanceColor(importanceScore);
+  importanceBadge.textContent = `${importanceScore}/100 importance`;
+  importanceBadge.style.background = importanceCol + '18';
+  importanceBadge.style.borderColor = importanceCol + '44';
+  importanceBadge.style.color = importanceCol;
+
+  document.getElementById('ri-title').textContent = route.label;
+  document.getElementById('ri-volume').textContent = TRADE_VOL_LABEL[route.vol] || '—';
+  document.getElementById('ri-importance').textContent = route.importance || 'No data available.';
+  document.getElementById('ri-cargo').textContent = route.cargo || 'No data available.';
+  document.getElementById('ri-ownership').textContent = route.ownership || 'No data available.';
 }
 
 function updateAllPanels() {
@@ -1894,6 +2198,17 @@ function updateAllPanels() {
   const bBtn = document.getElementById('ov-bookmark-btn');
   if (bBtn) bBtn.classList.toggle('on', bookmarks.has(c.id));
   document.getElementById('ov-date').textContent  = c.date;
+
+  const schedBanner = document.getElementById('ov-scheduled-banner');
+  if (schedBanner) {
+    if (c.status === 'upcoming' && c.date_scheduled) {
+      const schedDate = new Date(c.date_scheduled);
+      schedBanner.textContent = `Scheduled: ${isNaN(schedDate) ? c.date_scheduled : schedDate.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}`;
+      schedBanner.style.display = 'block';
+    } else {
+      schedBanner.style.display = 'none';
+    }
+  }
 
   const sevColor = c.severity > 80 ? '#ff3b3b' : c.severity > 60 ? '#ff8833' : '#ffd93d';
   document.getElementById('ov-sev-bar').style.width = c.severity + '%';
@@ -1983,71 +2298,64 @@ function updateAllPanels() {
       </div>
     </div>
   `).join('');
-
-  // ── Domains ──
-  document.getElementById('domainsEmpty').style.display = 'none';
-  const dc = document.getElementById('domainsContent');
-  dc.style.display = 'flex';
-  dc.innerHTML = Object.entries(c.domains || {}).map(([key, val]) => {
-    const d = DOMAINS[key];
-    const domColor = val > 75 ? '#ff3b3b' : val > 50 ? '#ff8833' : '#ffd93d';
-    return `
-      <div class="domain-row">
-        <span class="domain-icon">${d.icon}</span>
-        <span class="domain-name">${d.name}</span>
-        <div class="domain-bar-track"><div class="domain-bar-fill" style="width:${val}%;background:${domColor}"></div></div>
-        <span class="domain-score" style="color:${domColor}">${val}</span>
-      </div>
-    `;
-  }).join('');
-
-  // ── Cascade ──
-  const cc = document.getElementById('causalChain');
-  cc.innerHTML = (c.causal || []).map((step, i) => `
-    <div class="causal-step">
-      <span class="causal-num">${i + 1}</span>
-      <span class="causal-txt">${escapeHtml(step)}</span>
-    </div>
-  `).join('');
 }
 
 // ════════════════════════════════════════════════════════════
 // UI: FILTERS
 // ════════════════════════════════════════════════════════════
 
-let activeDomains = new Set(Object.keys(DOMAINS));
-let activeTypes   = new Set(Object.keys(TYPE_META));
+let activeDomain = 'all';
+let activeType   = 'all';
+
+function selectDomain(key) {
+  activeDomain = key;
+  document.querySelectorAll('#domainChips .chip').forEach(c => c.classList.toggle('on', c.dataset.key === key));
+  updateEventsList();
+}
+function selectType(key) {
+  activeType = key;
+  document.querySelectorAll('#typeChips .chip').forEach(c => c.classList.toggle('on', c.dataset.key === key));
+  updateEventsList();
+}
 
 function buildChips() {
   const dc = document.getElementById('domainChips');
+  const allDomainChip = document.createElement('div');
+  allDomainChip.className = 'chip on';
+  allDomainChip.dataset.key = 'all';
+  allDomainChip.textContent = 'All';
+  allDomainChip.addEventListener('click', () => selectDomain('all'));
+  dc.appendChild(allDomainChip);
+
   Object.entries(DOMAINS).forEach(([key, d]) => {
     const chip = document.createElement('div');
-    chip.className = 'chip on';
+    chip.className = 'chip';
+    chip.dataset.key = key;
     chip.style.color = d.color;
     chip.style.borderColor = d.color + '66';
     chip.style.background  = d.color + '18';
     chip.innerHTML = `${d.icon} ${d.name}`;
-    chip.addEventListener('click', () => {
-      activeDomains.has(key) ? activeDomains.delete(key) : activeDomains.add(key);
-      chip.classList.toggle('on');
-      updateEventsList();
-    });
+    chip.addEventListener('click', () => selectDomain(key));
     dc.appendChild(chip);
   });
 
   const tc = document.getElementById('typeChips');
+  const allTypeChip = document.createElement('div');
+  allTypeChip.className = 'chip on';
+  allTypeChip.dataset.key = 'all';
+  allTypeChip.textContent = 'All';
+  allTypeChip.addEventListener('click', () => selectType('all'));
+  tc.appendChild(allTypeChip);
+
   Object.entries(TYPE_META).forEach(([key, t]) => {
     const chip = document.createElement('div');
-    chip.className = 'chip on';
+    chip.className = 'chip';
+    chip.dataset.key = key;
     chip.style.color = t.color;
     chip.style.borderColor = t.color + '66';
     chip.style.background  = t.color + '18';
     chip.textContent = t.name;
-    chip.addEventListener('click', () => {
-      activeTypes.has(key) ? activeTypes.delete(key) : activeTypes.add(key);
-      chip.classList.toggle('on');
-      updateEventsList();
-    });
+    chip.addEventListener('click', () => selectType(key));
     tc.appendChild(chip);
   });
 }
@@ -2062,8 +2370,8 @@ function updateEventsList() {
 
   const filtered = crisisesInYear
     .filter(c => {
-      const typeMatch = activeTypes.has(c.type);
-      const domainMatch = activeDomains.size === 0 || activeDomains.has(getDomainForType(c.type));
+      const typeMatch = activeType === 'all' || c.type === activeType;
+      const domainMatch = activeDomain === 'all' || getDomainForType(c.type) === activeDomain;
       const countryMatch = !countryFilter || c.country === countryFilter;
       return typeMatch && domainMatch && countryMatch;
     })
@@ -2189,12 +2497,17 @@ document.querySelectorAll('.tab[data-tab]').forEach(tab => {
     tab.setAttribute('aria-selected', 'true');
     document.getElementById('tab-' + id).classList.add('active');
 
-    // Update panels when switching tabs
-    if (id === 'network') drawNetwork();
-    if (id === 'reliability' && selected) updateReliabilityPanel(selected.reliability);
-    if (id === 'escalation' && selected) updateEscalationPanel(selected.escalation);
-    if (id === 'economic' && selected) updateEconomicPanel(selected.economic);
+    // Update panels when switching tabs. Overview holds two canvases
+    // (severity sparkline, escalation-trend chart) — if a different tab
+    // was active when a *new* crisis got selected, they drew into a
+    // hidden (0-width) canvas and came out blank. Re-run their draw now
+    // that this tab is actually visible.
+    if (id === 'overview' && selected) {
+      updateAllPanels();
+      if (selected.escalation) updateEscalationPanel(selected.escalation);
+    }
     if (id === 'briefing' && selected) updateBriefingPanel(selected.briefing);
+    if (id === 'history' && selected) updateHistoryPanel(selected.history);
   });
 });
 
@@ -2216,6 +2529,7 @@ document.querySelectorAll('.tab[data-left-tab]').forEach(tab => {
       content.classList.add('active');
     }
     if (id === 'watchlist') updateWatchlist();
+    if (id === 'calendar') renderCalendar();
   });
 });
 
@@ -2335,8 +2649,8 @@ document.addEventListener('mousemove', e => {
   }
   canvas.style.cursor = drag ? 'grabbing' : 'grab';
 
-  // Trade route hover tooltip
-  if (showTrade && tradeRouteScreenPts.length > 0) {
+  // Route hover tooltip (sea/air/rail — whichever layers are toggled on)
+  if ((showTrade || showAir || showRail) && tradeRouteScreenPts.length > 0) {
     const tip = document.getElementById('tradeTooltip');
     let closest = null, closestD = Infinity;
     for (const pt of tradeRouteScreenPts) {
@@ -2344,15 +2658,21 @@ document.addEventListener('mousemove', e => {
       if (d < closestD) { closestD = d; closest = pt; }
     }
     if (closest && closestD < 40) {
-      const route = TRADE_ROUTES[closest.idx];
-      const riskColor = ROUTE_RISK_COLORS[closest.risk];
-      const riskLabel = ROUTE_RISK_LABELS[closest.risk];
-      // Find nearby threatening crises
-      const [, lat1, lon1, lat2, lon2] = route;
+      const route = ROUTES_BY_ID.get(closest.id);
+      const modeIcon = { sea: '🚢', air: '✈️', rail: '🚂' }[closest.mode] || '';
+      const importanceScore = closest.importanceScore ?? closest.vol * 30;
+      const statColor = routeColorMode === 'importance' ? importanceColor(importanceScore) : ROUTE_RISK_COLORS[closest.risk];
+      const statLabel = routeColorMode === 'importance' ? `${importanceScore}/100 importance` : `${ROUTE_RISK_LABELS[closest.risk]}`;
       // Same great-circle sampling as routeRiskLevel() — see its comment
-      // for why naive lat/lon-linear midpoints are wrong for these routes.
-      const rv1 = latLonToVec(lat1, lon1), rv2 = latLonToVec(lat2, lon2);
-      const routeSamples = [0, 0.5, 1].map(t => vecToLatLon(slerpVec(rv1, rv2, t)));
+      // for why naive lat/lon-linear midpoints are wrong, generalized here
+      // the same way to sample along the whole waypoint chain, not just
+      // two far-apart endpoints.
+      const routeSamples = [];
+      for (let seg = 0; seg < route.waypoints.length - 1; seg++) {
+        const rv1 = latLonToVec(route.waypoints[seg][0], route.waypoints[seg][1]);
+        const rv2 = latLonToVec(route.waypoints[seg + 1][0], route.waypoints[seg + 1][1]);
+        [0, 0.5, 1].forEach(t => routeSamples.push(vecToLatLon(slerpVec(rv1, rv2, t))));
+      }
       const threats = CRISES
         .filter(c => routeSamples.some(([sl,so]) => geoDistKm(c.lat||0, c.lon||0, sl, so) < 1650))  // ~15° at the equator
         .sort((a, b) => b.severity - a.severity)
@@ -2361,14 +2681,15 @@ document.addEventListener('mousemove', e => {
         ? threats.map(c => `<div style="color:${c.severity>80?'#ff3b3b':c.severity>60?'#ff8833':'#ffd93d'};margin-top:3px">⚠ ${escapeHtml(c.title)} (${escapeHtml(c.country)})</div>`).join('')
         : '<div style="color:var(--dim);margin-top:3px">No active threats nearby</div>';
       tip.innerHTML = `
-        <div style="font-weight:700;color:#ffd93d;margin-bottom:4px">${closest.label}</div>
+        <div style="font-weight:700;color:#ffd93d;margin-bottom:4px">${modeIcon} ${closest.label}</div>
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
-          <span style="color:${riskColor};font-weight:700">${riskLabel}</span>
+          <span style="color:${statColor};font-weight:700">${statLabel}</span>
           <span style="color:var(--dim)">·</span>
           <span style="color:var(--dim)">${TRADE_VOL_LABEL[closest.vol]}</span>
         </div>
         <div style="font-size:9px;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin-top:4px">Nearby threats</div>
         ${threatHtml}
+        <div style="font-size:9px;color:var(--dim);margin-top:6px">Click for full route details</div>
       `;
       // Position near cursor, keep within viewport
       const gx = e.clientX - rect.left, gy = e.clientY - rect.top;
@@ -2439,7 +2760,7 @@ canvas.addEventListener('click', e => {
 
   // Use the stored screen positions from the last frame's drawPins()
   for (const crisis of CRISES) {
-    if (!activeTypes.has(crisis.type)) continue;
+    if (activeType !== 'all' && crisis.type !== activeType) continue;
     const p = project(crisis.lat, crisis.lon);
     if (p.z > 0.04) {
       // Check distance to the stored screen position (which includes offset)
@@ -2449,6 +2770,20 @@ canvas.addEventListener('click', e => {
         selectCrisis(crisis);
         return;
       }
+    }
+  }
+
+  // Check route clicks (sea/air/rail — whichever layers are toggled on),
+  // same 40px threshold and nearest-point search the hover tooltip uses.
+  if (showTrade || showAir || showRail) {
+    let closest = null, closestD = Infinity;
+    for (const pt of tradeRouteScreenPts) {
+      const d = Math.hypot(emx - pt.sx, emy - pt.sy);
+      if (d < closestD) { closestD = d; closest = pt; }
+    }
+    if (closest && closestD < 40) {
+      selectRoute(ROUTES_BY_ID.get(closest.id));
+      return;
     }
   }
 
@@ -2498,7 +2833,31 @@ canvas.addEventListener('click', e => {
   }
 });
 
-document.getElementById('resetBtn').addEventListener('click', () => { rotX = 0.25; rotY = 0; zoom = 1; });
+document.getElementById('resetBtn').addEventListener('click', () => { rotX = DEFAULT_ROTX; rotY = DEFAULT_ROTY; zoom = DEFAULT_ZOOM; });
+
+// Idle mode: hides all HUD, resets the globe to its default view, and
+// auto-rotates indefinitely — a "screensaver" state. The button itself
+// lives outside every hidden container (position:fixed on its own) so it
+// stays visible and clickable both to enter and to exit idle mode.
+let idleMode = false;
+const IDLE_HIDE_SELECTORS = ['#colLeft', '.globe-controls', '#timelinePanel', '#arcLegend', '#relPanel', '#breakingAlert', '#countryTooltip', '#tradeTooltip'];
+document.getElementById('idleModeBtn').addEventListener('click', function() {
+  idleMode = !idleMode;
+  this.classList.toggle('active', idleMode);
+  if (idleMode) {
+    IDLE_HIDE_SELECTORS.forEach(sel => {
+      const el = document.querySelector(sel);
+      if (el) { el.dataset._prevDisplay = el.style.display; el.style.display = 'none'; }
+    });
+    document.getElementById('colRight').classList.remove('open');
+    rotX = DEFAULT_ROTX; rotY = DEFAULT_ROTY; zoom = DEFAULT_ZOOM;
+  } else {
+    IDLE_HIDE_SELECTORS.forEach(sel => {
+      const el = document.querySelector(sel);
+      if (el) el.style.display = el.dataset._prevDisplay || '';
+    });
+  }
+});
 document.getElementById('arcBtn').addEventListener('click', function() {
   showArcs = !showArcs;
   this.classList.toggle('active', showArcs);
@@ -2508,13 +2867,51 @@ document.getElementById('heatBtn').addEventListener('click', function() {
   showHeat = !showHeat;
   this.classList.toggle('active', showHeat);
 });
-document.getElementById('cascBtn').addEventListener('click', function() {
+document.getElementById('cascBtn').addEventListener('click', async function() {
+  if (!selected) return;
   showCasc = !showCasc;
   this.classList.toggle('active', showCasc);
+  // Cascade arcs (drawn in the globe loop — see `if (showCasc && selected)`
+  // above) need selected.cascade, which used to be fetched by the now-
+  // removed Cascade tab's "Simulate Escalation" button. Fetch it here on
+  // first activation instead, so this toggle still works standalone; once
+  // fetched it's cached on the crisis object like every other lazy-loaded
+  // field, so re-toggling doesn't refetch.
+  if (showCasc && !selected.cascade) {
+    try {
+      const API_BASE = window.GEOINTEL_API_BASE ||
+        (window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : '/api');
+      const response = await fetch(`${API_BASE}/crises/${selected.id}/cascade?depth=2&threshold=40`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      selected.cascade = await response.json();
+    } catch (error) {
+      console.error('Cascade simulation error:', error);
+      showCasc = false;
+      this.classList.remove('active');
+    }
+  }
+});
+document.getElementById('routeColorBtn').addEventListener('click', function() {
+  routeColorMode = routeColorMode === 'risk' ? 'importance' : 'risk';
+  this.classList.toggle('active', routeColorMode === 'importance');
 });
 document.getElementById('tradeBtn').addEventListener('click', function() {
   showTrade = !showTrade;
   this.classList.toggle('active', showTrade);
+});
+document.getElementById('planeBtn').addEventListener('click', function() {
+  showAir = !showAir;
+  this.classList.toggle('active', showAir);
+});
+const timelinePanel = document.getElementById('timelinePanel');
+document.getElementById('timelineBtn').addEventListener('click', function() {
+  const showing = timelinePanel.style.display === 'none';
+  timelinePanel.style.display = showing ? '' : 'none';
+  this.classList.toggle('active', showing);
+});
+document.getElementById('trainBtn').addEventListener('click', function() {
+  showRail = !showRail;
+  this.classList.toggle('active', showRail);
 });
 
 // Flat map toggle
@@ -2701,6 +3098,78 @@ function updateWatchlist() {
   });
 }
 
+// Calendar: a chronological agenda of "vital events" with a known date —
+// upcoming ones (elections, referendums, summits: status='upcoming' with a
+// real date_scheduled) grouped above past/recorded ones (everything else,
+// by date/date_start). Independent of the Domains/Types chip filters, same
+// as the Watchlist tab — this is a browse view, not a re-filtered subset.
+function renderCalendar() {
+  const list = document.getElementById('calendarList');
+  const countEl = document.getElementById('calendarCount');
+  if (!list) return;
+  list.innerHTML = '';
+
+  const upcoming = CRISES.filter(c => c.status === 'upcoming' && c.date_scheduled)
+    .sort((a, b) => new Date(a.date_scheduled) - new Date(b.date_scheduled));
+  const past = CRISES.filter(c => c.status !== 'upcoming' && (c.date || c.date_start))
+    .sort((a, b) => new Date(b.date || b.date_start) - new Date(a.date || a.date_start));
+
+  if (countEl) countEl.textContent = `${upcoming.length} upcoming`;
+
+  if (upcoming.length === 0 && past.length === 0) {
+    list.innerHTML = '<div class="watchlist-empty"><div class="wi">📅</div><div>No dated events yet</div></div>';
+    return;
+  }
+
+  const rowDate = (c, dateField) => new Date(dateField === 'date_scheduled' ? c.date_scheduled : (c.date || c.date_start));
+
+  const renderRow = (c, dateField) => {
+    const tm = TYPE_META[c.type] || {};
+    const d = rowDate(c, dateField);
+    const el = document.createElement('div');
+    el.className = 'evt-item' + (c.id === selected?.id ? ' sel' : '');
+    el.innerHTML = `
+      <div style="flex:1;min-width:0;">
+        <div class="evt-name">${escapeHtml(c.title)}</div>
+        <div class="evt-sub">
+          <span style="color:${tm.color || '#888'}">${tm.name || ''}</span>
+          · ${escapeHtml(c.country)} · ${isNaN(d) ? '' : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+        </div>
+      </div>
+    `;
+    el.addEventListener('click', () => selectCrisis(c));
+    return el;
+  };
+
+  const renderGroup = (heading, items, dateField) => {
+    if (!items.length) return;
+    const groupHdr = document.createElement('div');
+    groupHdr.className = 'section-lbl';
+    groupHdr.style.cssText = 'margin:8px 0 4px;padding:0 10px;';
+    groupHdr.textContent = heading;
+    list.appendChild(groupHdr);
+
+    let lastMonthKey = null;
+    items.forEach(c => {
+      const d = rowDate(c, dateField);
+      if (!isNaN(d)) {
+        const monthKey = `${d.getFullYear()}-${d.getMonth()}`;
+        if (monthKey !== lastMonthKey) {
+          const hdr = document.createElement('div');
+          hdr.style.cssText = 'font-size:9px;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;padding:6px 10px 2px;';
+          hdr.textContent = d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+          list.appendChild(hdr);
+          lastMonthKey = monthKey;
+        }
+      }
+      list.appendChild(renderRow(c, dateField));
+    });
+  };
+
+  renderGroup('Upcoming', upcoming, 'date_scheduled');
+  renderGroup('Past', past, 'date');
+}
+
 document.getElementById('clearWatchlist').addEventListener('click', () => {
   bookmarks.clear();
   localStorage.setItem('geointel_bookmarks', JSON.stringify([]));
@@ -2720,6 +3189,9 @@ document.addEventListener('keydown', e => {
     case 'f': toggleFullscreen(); break;
     case 'h': document.getElementById('heatBtn').click(); break;
     case 'r': document.getElementById('arcBtn').click(); break;
+    case 'c': document.getElementById('routeColorBtn').click(); break;
+    case 't': document.getElementById('timelineBtn').click(); break;
+    case 'i': document.getElementById('idleModeBtn').click(); break;
     case 'm': document.getElementById('flatBtn').click(); break;
     case '/':
       e.preventDefault();
@@ -2729,95 +3201,6 @@ document.addEventListener('keydown', e => {
       document.getElementById('panelClose').click();
       document.getElementById('searchInput').blur();
       break;
-  }
-});
-
-document.getElementById('simBtn').addEventListener('click', async function() {
-  if (!selected) { this.textContent = '⚠️ Select a crisis first'; return; }
-
-  cascadeActive = !cascadeActive;
-  showCasc = cascadeActive;
-  document.getElementById('cascBtn').classList.toggle('active', cascadeActive);
-  this.classList.toggle('active', cascadeActive);
-
-  const res = document.getElementById('cascadeResults');
-
-  if (cascadeActive) {
-    this.textContent = '⏳ Simulating…';
-    this.disabled = true;
-    res.style.display = 'flex';
-    res.innerHTML = '<div style="padding:12px;color:var(--text3);font-size:12px;text-align:center">Running cascade analysis…</div>';
-
-    try {
-      // Use API_BASE from frontend-api.js (handles localhost vs production)
-      const API_BASE = window.GEOINTEL_API_BASE ||
-        (window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : '/api');
-      const response = await fetch(`${API_BASE}/crises/${selected.id}/cascade?depth=2&threshold=40`);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-      const d = await response.json();
-      selected.cascade = d;
-
-      // ── Probability colour helper ─────────────────────
-      const probColor = p => p >= 0.7 ? '#ff4d4d' : p >= 0.45 ? '#ffb347' : p >= 0.25 ? '#ffd93d' : '#3dffaa';
-      const probBar   = p => `<div style="height:3px;border-radius:2px;background:rgba(255,255,255,0.08);margin-top:4px">
-          <div style="height:3px;border-radius:2px;width:${(p*100).toFixed(0)}%;background:${probColor(p)};transition:width .6s ease"></div></div>`;
-
-      if (d.steps && d.steps.length > 0) {
-        const overallProb = d.total_cascade_probability;
-        const summaryHtml = `
-          <div style="background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.15);border-radius:8px;padding:10px 12px;margin-bottom:10px">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-              <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text3)">Cascade Forecast</span>
-              <span style="font-size:11px;font-weight:700;color:${probColor(overallProb)}">${(overallProb*100).toFixed(0)}% overall risk</span>
-            </div>
-            <div style="display:flex;gap:14px;font-size:11px;color:var(--text2)">
-              <span>⚡ ${d.total_steps} propagation hop${d.total_steps !== 1 ? 's' : ''}</span>
-              <span>⏱ ${d.estimated_timeline}</span>
-            </div>
-            ${probBar(overallProb)}
-          </div>`;
-
-        const stepsHtml = d.steps.map((step, i) => {
-          const names = escapeHtml((step.affected_actor_names || step.actors || []).join(', '));
-          const p = step.probability;
-          const color = probColor(p);
-          return `
-            <div style="padding:9px 11px;background:rgba(255,255,255,0.025);border-left:2px solid ${color}40;border-radius:6px;animation:slideInUp .25s ${i*0.08}s both">
-              <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">
-                <span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:${color};background:${color}18;padding:2px 6px;border-radius:3px">Hop ${step.hop}</span>
-                <span style="font-size:11px;font-weight:600;color:var(--text)">${names}</span>
-              </div>
-              <div style="font-size:10.5px;color:var(--text2);line-height:1.4">${escapeHtml(step.mechanism)}</div>
-              <div style="display:flex;align-items:center;gap:10px;margin-top:4px;font-size:10px;color:var(--text3)">
-                <span style="color:${color};font-weight:600">${(p*100).toFixed(0)}% probability</span>
-                <span>+${step.escalation_increase} severity</span>
-              </div>
-              ${probBar(p)}
-            </div>`;
-        }).join('');
-
-        res.innerHTML = summaryHtml + stepsHtml;
-      } else {
-        res.innerHTML = `<div style="padding:14px 12px;text-align:center;color:var(--text3);font-size:12px">
-          <div style="font-size:22px;margin-bottom:6px">🟢</div>
-          No significant cascade escalation predicted for this crisis at current threshold.
-        </div>`;
-      }
-
-      this.textContent = '⏹ Stop Simulation';
-      this.disabled = false;
-    } catch (error) {
-      console.error('Cascade simulation error:', error);
-      this.textContent = '⚡ Simulate Escalation';
-      this.disabled = false;
-      res.innerHTML = `<div style="padding:12px;color:#ff8888;font-size:11px">⚠️ ${escapeHtml(error.message)}</div>`;
-      cascadeActive = false;
-      document.getElementById('cascBtn').classList.remove('active');
-    }
-  } else {
-    res.style.display = 'none';
-    this.textContent = '⚡ Simulate Escalation';
   }
 });
 
@@ -3039,9 +3422,11 @@ document.getElementById('panelClose').addEventListener('click', () => {
 // ANIMATION LOOP
 // ════════════════════════════════════════════════════════════
 
+const IDLE_ROTATE_SPEED = 0.0012; // rad/frame, slow continuous drift while idle mode is active
 function loop() {
   decayStaleDragVelocity();
   applyInertia();
+  if (idleMode && !drag) rotY += IDLE_ROTATE_SPEED;
   drawGlobe();
   requestAnimationFrame(loop);
 }
@@ -3110,6 +3495,8 @@ async function loadRealData() {
         cascade: [],
         causal: [],
         analogy: null,
+        status: c.status || 'active',
+        date_scheduled: c.date_scheduled || null,
       }));
       CRISES = filterRecentEvents(transformedCrises, 720);
       setTimeout(applyDeepLink, 50);
@@ -3281,6 +3668,7 @@ function prefillAlertRegion(country) {
 }
 async function loadEconomicData(id) { try { const r = await fetch(`${(window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : '/api')}/crises/${id}/economic`); return r.ok ? await r.json() : null; } catch (e) { return null; } }
 async function loadBriefing(id) { try { const r = await fetch(`${(window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : '/api')}/crises/${id}/briefing`); return r.ok ? await r.json() : null; } catch (e) { return null; } }
+async function loadDeepHistory(id) { try { const r = await fetch(`${(window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : '/api')}/crises/${id}/history`); return r.ok ? await r.json() : null; } catch (e) { return null; } }
 
 // Fallback: Fetch a representative image from Wikipedia if briefing didn't include one
 async function fetchWikiImage(crisis) {
@@ -3643,9 +4031,33 @@ function updateBriefingPanel(br) {
   renderMarkdown(textEl, br.briefing);
 }
 
+function updateHistoryPanel(hist) {
+  const c = document.getElementById('historyContent'), e = document.getElementById('historyEmpty');
+  const loadingEl = document.getElementById('history-loading');
+  const textEl    = document.getElementById('history-text');
+
+  if (!hist) {
+    c.style.display = 'none';
+    loadingEl.style.display = 'none'; textEl.style.display = 'none';
+    if (selected) {
+      showPanelUnavailable(e, 'Deep historical analysis unavailable for this crisis<br>(check ANTHROPIC_API_KEY on the backend, or try again shortly)');
+    } else {
+      resetPanelEmpty(e);
+      e.style.display = 'flex';
+    }
+    return;
+  }
+  resetPanelEmpty(e);
+  e.style.display = 'none'; c.style.display = 'flex';
+  loadingEl.style.display = 'none'; textEl.style.display = 'block';
+
+  renderMarkdown(textEl, hist.history);
+}
+
 // Enhanced selectCrisis with all new data
 const originalSelectCrisis = selectCrisis;
 selectCrisis = async function(crisis) {
+  setPanelMode('crisis');
   selected = crisis;
   window._selectedCrisis = crisis; // For alert subscription pre-fill
   prefillAlertRegion(crisis.country);
@@ -3659,6 +4071,7 @@ selectCrisis = async function(crisis) {
   // before anything past the overview panel populated. Firing them
   // concurrently drops that to roughly the slowest single request.
   if (!crisis.briefing) document.getElementById('briefing-loading').style.display = 'block';
+  if (!crisis.history) document.getElementById('history-loading').style.display = 'block';
 
   await Promise.all([
     (async () => {
@@ -3681,6 +4094,14 @@ selectCrisis = async function(crisis) {
     (async () => { if (!crisis.escalation) crisis.escalation = await loadEscalationData(crisis.id); })(),
     (async () => { if (!crisis.economic) crisis.economic = await loadEconomicData(crisis.id); })(),
     (async () => { if (!crisis.briefing) crisis.briefing = await loadBriefing(crisis.id); })(),
+    (async () => {
+      if (!crisis.history) crisis.history = await loadDeepHistory(crisis.id);
+      // Feed the historical-analogy match into the Overview card's existing
+      // field, before updateAllPanels() runs below — that panel already
+      // correctly shows/hides #ov-analogy based on crisis.analogy being
+      // truthy or not, so this just needs to supply the real value.
+      if (crisis.history && crisis.history.analogy) crisis.analogy = crisis.history.analogy;
+    })(),
   ]);
 
   updateAllPanels();
@@ -3688,8 +4109,8 @@ selectCrisis = async function(crisis) {
   updateEscalationPanel(crisis.escalation);
   updateEconomicPanel(crisis.economic);
   updateBriefingPanel(crisis.briefing);
+  updateHistoryPanel(crisis.history);
   updateEventsList();
-  drawNetwork();
 };
 
 // ════════════════════════════════════════════════════════════
@@ -3715,7 +4136,6 @@ async function initApp() {
 
   updateEventsList();
   buildNewsFeed();
-  drawNetwork();
   updateTimelineActivity();
   updateAlertBadge();
   updateWatchlist();
@@ -3772,7 +4192,6 @@ setInterval(async () => {
   await loadRealData();
   updateEventsList();
   buildNewsFeed();
-  drawNetwork();
 }, 3600000); // 1 hour in milliseconds
 
 // Admin users who bypass subscription check
