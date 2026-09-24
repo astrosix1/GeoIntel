@@ -663,9 +663,16 @@ let flatMap   = false;
 // Severity filter (0 = all, 80 = critical only)
 let minSeverityFilter = 0;
 
-// Bookmarks persisted in localStorage — always coerce IDs to numbers
+// Bookmarks persisted in localStorage, keyed by the crisis's real string id
+// (e.g. "sample_kyiv") — this used to coerce every id to Number(), which
+// collapses any non-numeric string to NaN. Since Set membership treats NaN
+// as equal to itself, bookmarking ANY one crisis silently marked EVERY
+// crisis as bookmarked. `.filter(id => typeof id === 'string')` drops any
+// leftover `null` entries from that old bug (JSON.stringify(NaN) → "null"),
+// so existing corrupted localStorage state self-heals on next load instead
+// of showing a phantom entry forever.
 const bookmarks = new Set(
-  (JSON.parse(localStorage.getItem('geointel_bookmarks') || '[]')).map(Number)
+  (JSON.parse(localStorage.getItem('geointel_bookmarks') || '[]')).filter(id => typeof id === 'string')
 );
 
 // Canvas setup
@@ -2205,15 +2212,15 @@ function buildChips() {
   });
 }
 
-function updateEventsList() {
-  const q    = document.getElementById('searchInput').value.toLowerCase();
-  const list = document.getElementById('eventsList');
-  list.innerHTML = '';
-
-  // Get crises for the current year
+// Shared by updateEventsList() (the sidebar list) and the Export control
+// (app.js's exportCrisisData) so the on-screen count and an exported file
+// are provably describing the same set — this used to be duplicated inline
+// inside updateEventsList() only.
+function getFilteredCrises() {
+  const q = document.getElementById('searchInput').value.toLowerCase();
   const crisisesInYear = filterByDateRange(CRISES, currentYear);
 
-  const filtered = crisisesInYear
+  return crisisesInYear
     .filter(c => {
       // Dated events (elections, referendums, summits — 'upcoming' before
       // they happen, 'resolved' once they have) live in the Calendar tab
@@ -2226,6 +2233,13 @@ function updateEventsList() {
       return typeMatch && domainMatch && countryMatch;
     })
     .filter(c => c.title.toLowerCase().includes(q) || c.country.toLowerCase().includes(q));
+}
+
+function updateEventsList() {
+  const list = document.getElementById('eventsList');
+  list.innerHTML = '';
+
+  const filtered = getFilteredCrises();
 
   document.getElementById('crisisCount').textContent = `${filtered.length} active`;
   updateAlertBadge();
@@ -2246,7 +2260,7 @@ function updateEventsList() {
         · ${escapeHtml(crisis.country)}
       </div>
       </div>
-      <button class="bookmark-btn ${bookmarks.has(Number(crisis.id)) ? 'on' : ''}" data-bid="${crisis.id}" title="Bookmark">★</button>
+      <button class="bookmark-btn ${bookmarks.has(crisis.id) ? 'on' : ''}" data-bid="${crisis.id}" title="Bookmark">★</button>
     `;
     el.querySelector('.bookmark-btn').addEventListener('click', e => {
       e.stopPropagation();
@@ -2797,17 +2811,38 @@ document.getElementById('alertBadge').addEventListener('click', () => {
   updateEventsList(); drawGlobe();
 });
 
-// Share — deep link
+// Share — deep link. Shared by the copy-link button and the social-share
+// button below, so both always build the exact same URL.
+function buildShareUrl(crisis) {
+  const url = new URL(window.location.href);
+  url.searchParams.set('crisis', crisis.id);
+  return url.toString();
+}
+
 document.getElementById('shareBtn').addEventListener('click', () => {
   if (!selected) return;
-  const url = new URL(window.location.href);
-  url.searchParams.set('crisis', selected.id);
-  navigator.clipboard.writeText(url.toString()).then(() => {
+  navigator.clipboard.writeText(buildShareUrl(selected)).then(() => {
     const btn = document.getElementById('shareBtn');
     btn.textContent = '✓';
     btn.style.color = '#3dffaa';
     setTimeout(() => { btn.textContent = '🔗'; btn.style.color = 'var(--accent)'; }, 1800);
   });
+});
+
+// Social share — the Web Share API gives a native share sheet (all
+// installed apps) where supported, mainly mobile browsers; everywhere else,
+// fall back to a pre-filled X/Twitter share-intent link in a new tab.
+document.getElementById('shareSocialBtn').addEventListener('click', () => {
+  if (!selected) return;
+  const url = buildShareUrl(selected);
+  const text = `${selected.title} — via GeoIntel`;
+
+  if (navigator.share) {
+    navigator.share({ title: selected.title, text, url }).catch(() => {});
+    return;
+  }
+  const intentUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`;
+  window.open(intentUrl, '_blank', 'noopener,noreferrer');
 });
 
 // Toast notification
@@ -2828,7 +2863,10 @@ function showToast(html, duration = 4500) {
 // If it's historical (outside window), fetch it from the backend and open as a
 // "Shared Briefing" — so every share link works regardless of when the event occurred.
 async function applyDeepLink() {
-  const id = parseInt(new URLSearchParams(window.location.search).get('crisis'));
+  // Crisis.id is always a real string (e.g. "sample_kyiv", "acled_12345") —
+  // parseInt() used to run on it here, which returns NaN for every real id,
+  // silently no-opping this entire function for every possible share link.
+  const id = new URLSearchParams(window.location.search).get('crisis');
   if (!id) return;
 
   // Fast path: crisis is already in the current window
@@ -2879,7 +2917,7 @@ async function applyDeepLink() {
 
 // Bookmarks
 function toggleBookmark(crisis) {
-  const id = Number(crisis.id);
+  const id = crisis.id;
   if (bookmarks.has(id)) {
     bookmarks.delete(id);
   } else {
@@ -2895,7 +2933,7 @@ function updateWatchlist() {
   const countEl = document.getElementById('watchlistCount');
   if (!list) return;
   list.innerHTML = '';
-  const saved = CRISES.filter(c => bookmarks.has(Number(c.id)));
+  const saved = CRISES.filter(c => bookmarks.has(c.id));
   if (countEl) countEl.textContent = `${saved.length} saved`;
   if (saved.length === 0) {
     list.innerHTML = '<div class="watchlist-empty"><div class="wi">★</div><div>Star crises to add them<br>to your watchlist</div></div>';
@@ -4232,6 +4270,55 @@ function flyToLatLon(lat, lon) {
 
   document.addEventListener('click', e => {
     if (!input.contains(e.target) && !dropdown.contains(e.target)) closeDropdown();
+  });
+})();
+
+// ════════════════════════════════════════════════════════════
+// EXPORT: BULK CRISIS DATA (CSV/JSON)
+// ════════════════════════════════════════════════════════════
+
+// Downloads the SAME set getFilteredCrises() shows on screen — the current
+// type/domain/country filters are translated into the export endpoint's
+// query params (min_severity and search text aren't sent server-side since
+// this list doesn't apply them either; see getFilteredCrises()). Domain
+// doesn't exist as a stored column, so an active domain filter is expressed
+// as the comma-separated list of crisis types that belong to it (the
+// backend's `type` param accepts a list — see GET /api/crises/export).
+function exportCrisisData(format) {
+  const options = { format };
+  if (activeDomain !== 'all') {
+    options.type = Object.keys(TYPE_META).filter(t => getDomainForType(t) === activeDomain).join(',');
+  } else if (activeType !== 'all') {
+    options.type = activeType;
+  }
+  if (countryFilter) options.country = countryFilter;
+
+  const url = GeoIntelAPI.getExportUrl(options);
+  const a = document.createElement('a');
+  a.href = url;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+(() => {
+  const btn = document.getElementById('exportDataBtn');
+  const dropdown = document.getElementById('exportDataDropdown');
+  if (!btn || !dropdown) return;
+
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+  });
+  dropdown.querySelectorAll('[data-export-format]').forEach(item => {
+    item.addEventListener('click', () => {
+      exportCrisisData(item.dataset.exportFormat);
+      dropdown.style.display = 'none';
+    });
+  });
+  document.addEventListener('click', e => {
+    if (!dropdown.contains(e.target) && e.target !== btn) dropdown.style.display = 'none';
   });
 })();
 

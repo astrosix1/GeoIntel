@@ -29,6 +29,22 @@ class GeoIntelAPI {
   }
 
   /**
+   * Build the URL for the bulk crisis export endpoint (CSV/JSON download of
+   * whatever filters are passed) — public and rate-limited (see backend's
+   * GET /api/crises/export), not fetched here since the caller triggers a
+   * browser download from the URL directly rather than reading the body.
+   */
+  static getExportUrl(options = {}) {
+    const params = new URLSearchParams();
+    params.append('format', options.format || 'csv');
+    if (options.type) params.append('type', options.type);
+    if (options.min_severity) params.append('min_severity', options.min_severity);
+    if (options.country) params.append('country', options.country);
+    if (options.status) params.append('status', options.status);
+    return `${API_BASE}/crises/export?${params}`;
+  }
+
+  /**
    * Fetch detailed info on specific crisis
    */
   static async getCrisisDetail(crisisId) {

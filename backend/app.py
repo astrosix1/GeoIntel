@@ -2177,53 +2177,126 @@ def get_stats():
 
 @app.route('/api/crises/export', methods=['GET'])
 @limiter.limit("10 per minute")
-def export_crises_csv():
-    """Export all crises as CSV. Optional query params: ?format=csv or ?status=active"""
+def export_crises():
+    """
+    Bulk export of crisis data for journalists/researchers doing their own
+    analysis, in CSV (default) or JSON. Reads only data that's already
+    public via GET /api/crises — this used to require an admin key, which
+    made it unreachable for this tool's actual audience despite exposing
+    nothing that wasn't already public elsewhere; the existing rate limit
+    above is real, sufficient abuse protection for a read-only endpoint.
+
+    Query params: format=csv|json (default csv), status=active|inactive,
+    type=<crisis type>, min_severity=<int>, country=<exact country name> —
+    mirroring the frontend's own filter model (activeType/minSeverityFilter/
+    countryFilter in app.js) so an exported file can match what's on screen.
+    """
     try:
-        if not _check_admin_key():
-            return jsonify({'error': 'Unauthorized'}), 401
+        export_format = request.args.get('format', 'csv').lower()
+        if export_format not in ('csv', 'json'):
+            return jsonify({'error': "format must be 'csv' or 'json'"}), 400
 
         status_filter = request.args.get('status', '').lower()
+        type_filter = request.args.get('type', '')
+        country_filter = request.args.get('country', '')
+        min_severity = request.args.get('min_severity', type=int)
+
         session = Session()
 
-        # Query crises with optional status filter
         query = session.query(Crisis)
         if status_filter == 'active':
             query = query.filter(Crisis.is_active == True)
         elif status_filter == 'inactive':
             query = query.filter(Crisis.is_active == False)
+        if type_filter:
+            # Comma-separated list supported so the frontend's "domain"
+            # filter (which maps to several crisis types, e.g. military ->
+            # conflict/military/proxy) can be expressed here even though
+            # domain itself isn't a stored column.
+            types = [t.strip() for t in type_filter.split(',') if t.strip()]
+            query = query.filter(Crisis.type.in_(types))
+        if country_filter:
+            query = query.filter(Crisis.country == country_filter)
+        if min_severity is not None:
+            query = query.filter(Crisis.severity >= min_severity)
 
         crises = query.order_by(Crisis.date_start.desc()).all()
-
-        # Create CSV in memory
-        output = StringIO()
-        writer = csv.writer(output)
-        writer.writerow(['ID', 'Title', 'Country', 'Severity', 'Status', 'Start Date', 'Last Updated', 'Analysis'])
-
-        for crisis in crises:
-            writer.writerow([
-                crisis.id,
-                crisis.title or '',
-                crisis.country or '',
-                crisis.severity or 0,
-                'Active' if crisis.is_active else 'Inactive',
-                crisis.date_start.isoformat() if crisis.date_start else '',
-                crisis.date_updated.isoformat() if crisis.date_updated else '',
-                crisis.analysis or ''
-            ])
-
+        crisis_ids = [c.id for c in crises]
         session.close()
 
-        # Return as downloadable CSV file
+        # Real reliability data (unique-source-count x per-outlet trust
+        # table), the same computation the frontend's #panelBadges uses —
+        # reused here via the existing batched helper rather than
+        # reimplemented, and enriching what was previously an 8-column
+        # id/title/severity-only export with real Phase 1/2 trust signals.
+        reliability_by_id = calculate_source_reliability_batch(crisis_ids)
+
+        records = []
+        for crisis in crises:
+            reliability = reliability_by_id.get(crisis.id, {})
+            records.append({
+                'id': crisis.id,
+                'title': crisis.title or '',
+                'country': crisis.country or '',
+                'type': crisis.type or '',
+                'severity': crisis.severity or 0,
+                'confidence': crisis.confidence,
+                'status': 'Active' if crisis.is_active else 'Inactive',
+                'is_verified': crisis.is_verified,
+                'date_start': crisis.date_start.isoformat() if crisis.date_start else '',
+                'date_updated': crisis.date_updated.isoformat() if crisis.date_updated else '',
+                'analysis': crisis.analysis or '',
+                'stakeholders': crisis.stakeholders.split(',') if crisis.stakeholders else [],
+                'reliability': reliability.get('reliability', 'unknown'),
+                'reliability_score': reliability.get('score'),
+                'source_count': reliability.get('source_count', 0),
+                'domains': {
+                    'military': crisis.military_score,
+                    'economic': crisis.economic_score,
+                    'political': crisis.political_score,
+                    'environment': crisis.environment_score,
+                    'technology': crisis.technology_score,
+                    'information': crisis.information_score,
+                },
+            })
+
+        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+
+        if export_format == 'json':
+            response = make_response(jsonify({'count': len(records), 'crises': records}))
+            response.headers['Content-Disposition'] = f'attachment; filename=crises_export_{timestamp}.json'
+            logger.info(f"JSON export of {len(records)} crises completed")
+            return response
+
+        # CSV: flatten stakeholders/domains into plain columns
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow([
+            'ID', 'Title', 'Country', 'Type', 'Severity', 'Confidence', 'Status',
+            'Verified', 'Start Date', 'Last Updated', 'Reliability', 'Reliability Score',
+            'Source Count', 'Stakeholders', 'Military', 'Economic', 'Political',
+            'Environment', 'Technology', 'Information', 'Analysis',
+        ])
+        for r in records:
+            d = r['domains']
+            writer.writerow([
+                r['id'], r['title'], r['country'], r['type'], r['severity'], r['confidence'],
+                r['status'], r['is_verified'], r['date_start'], r['date_updated'],
+                r['reliability'], r['reliability_score'], r['source_count'],
+                ';'.join(r['stakeholders']),
+                d['military'], d['economic'], d['political'], d['environment'],
+                d['technology'], d['information'], r['analysis'],
+            ])
+
         response = make_response(output.getvalue())
-        response.headers['Content-Disposition'] = f'attachment; filename=crises_export_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.csv'
+        response.headers['Content-Disposition'] = f'attachment; filename=crises_export_{timestamp}.csv'
         response.headers['Content-Type'] = 'text/csv'
 
-        logger.info(f"CSV export of {len(crises)} crises completed")
+        logger.info(f"CSV export of {len(records)} crises completed")
         return response
 
     except Exception as e:
-        logger.error(f"Error exporting crises to CSV: {e}")
+        logger.error(f"Error exporting crises: {e}")
         return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
 
 

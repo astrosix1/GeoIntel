@@ -23,9 +23,13 @@ def test_admin_sync_requires_auth(client):
     assert resp.status_code == 401
 
 
-def test_crises_export_requires_auth(client):
+def test_crises_export_is_public(client):
+    # GET /api/crises/export used to require the admin key even though it
+    # only re-shapes data already public via GET /api/crises — that made it
+    # unreachable for the journalists/researchers it's actually meant for
+    # (Phase 4). It's public now, protected only by the existing rate limit.
     resp = client.get('/api/crises/export')
-    assert resp.status_code == 401
+    assert resp.status_code == 200
 
 
 def test_admin_stats_accepts_correct_key(client, monkeypatch):

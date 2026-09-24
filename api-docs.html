@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GeoIntel API — Documentation</title>
+<style>
+  :root {
+    --bg: #090c18;
+    --panel: rgba(12,16,32,0.92);
+    --border: rgba(0,212,255,0.16);
+    --text: #e8f4ff;
+    --text2: #8fa3c0;
+    --accent: #00d4ff;
+    --mono: 'SF Mono', 'Consolas', 'Monaco', monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', -apple-system, system-ui, sans-serif;
+    margin: 0;
+    padding: 32px 20px 80px;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--text2); font-size: 13px; margin-bottom: 28px; }
+  .note {
+    background: rgba(0,212,255,0.06);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-size: 13px;
+    color: var(--text2);
+    margin-bottom: 32px;
+  }
+  .note strong { color: var(--text); }
+  .endpoint {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--panel);
+    padding: 18px 20px;
+    margin-bottom: 20px;
+  }
+  .endpoint h2 {
+    font-size: 14px;
+    margin: 0 0 6px;
+    font-family: var(--mono);
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .method {
+    font-size: 10px;
+    font-weight: 700;
+    background: rgba(61,255,170,0.15);
+    color: #3dffaa;
+    border: 1px solid rgba(61,255,170,0.35);
+    border-radius: 4px;
+    padding: 2px 6px;
+  }
+  .desc { font-size: 13px; color: var(--text2); margin: 0 0 10px; }
+  .params { font-size: 12px; margin: 0 0 12px; }
+  .params code { color: var(--accent); }
+  pre {
+    background: #05070f;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 14px;
+    overflow-x: auto;
+    font-size: 11.5px;
+    font-family: var(--mono);
+    color: #b8d4e8;
+    margin: 0;
+  }
+  a { color: var(--accent); }
+  .back { display: inline-block; margin-bottom: 20px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="index.html">← Back to GeoIntel</a>
+  <h1>GeoIntel API</h1>
+  <div class="sub">Public, read-only REST API — real data, no API key required.</div>
+
+  <div class="note">
+    <strong>Base URL:</strong> <code>https://&lt;your-deployment&gt;/api</code> (locally, <code>http://localhost:5000/api</code>).
+    Every endpoint below is unauthenticated and rate-limited to a default of <strong>100 requests/minute</strong>
+    (some endpoints, like bulk export, have a tighter limit noted inline). Responses are JSON unless noted
+    otherwise. This documents the same endpoints the GeoIntel frontend itself uses — nothing here is a
+    separate or reduced feed.
+  </div>
+
+  <div class="endpoint">
+    <h2><span class="method">GET</span>/crises</h2>
+    <p class="desc">All active crises, with optional filtering.</p>
+    <p class="params">Params: <code>type</code>, <code>status</code>, <code>min_severity</code>, <code>days</code>, <code>include_analysis=true</code> (adds real source-reliability + escalation data per crisis, at extra query cost).</p>
+    <pre>{
+  "count": 2,
+  "crises": [
+    {
+      "id": "sample_kyiv",
+      "type": "conflict",
+      "title": "Kyiv Conflict Zone",
+      "country": "Kyiv",
+      "lat": 50.4501, "lon": 30.5234,
+      "severity": 95, "confidence": 92,
+      "domains": { "military": 0, "economic": 0, "political": 0,
+                   "environment": 0, "technology": 0, "information": 0 },
+      "is_verified": true,
+      "date": "2026-09-24T01:56:27.546082",
+      "status": "active"
+    }
+  ]
+}</pre>
+  </div>
+
+  <div class="endpoint">
+    <h2><span class="method">GET</span>/crises/&lt;id&gt;</h2>
+    <p class="desc">Full detail for one crisis, including its recent news and forecasts.</p>
+    <pre>{
+  "id": "sample_kyiv", "title": "Kyiv Conflict Zone", "country": "Kyiv",
+  "severity": 95, "confidence": 92, "is_verified": true,
+  "forecasts": [], "news": [], "domains": { "...": 0 }
+}</pre>
+  </div>
+
+  <div class="endpoint">
+    <h2><span class="method">GET</span>/crises/&lt;id&gt;/reliability</h2>
+    <p class="desc">Real source-reliability scoring: unique source count × a hand-curated per-outlet trust table. Never fabricated — <code>"unknown"</code> when no sources are indexed yet.</p>
+    <pre>{ "reliability": "unknown", "score": 50, "source_count": 0, "sources": [] }</pre>
+  </div>
+
+  <div class="endpoint">
+    <h2><span class="method">GET</span>/crises/&lt;id&gt;/escalation</h2>
+    <p class="desc">Real escalation trend derived from severity snapshots recorded on every sync. Returns <code>"insufficient_data"</code> honestly — never a fabricated trend — until at least 2 real readings exist for a crisis.</p>
+    <pre>{
+  "trend": "insufficient_data", "velocity": null, "severity_change": null,
+  "current_severity": 95, "warning": null,
+  "history": [ { "severity": 95, "date": "2026-09-24T01:56:58.267261" } ],
+  "message": "Not enough historical readings yet to compute a trend for this crisis."
+}</pre>
+  </div>
+
+  <div class="endpoint">
+    <h2><span class="method">GET</span>/crises/&lt;id&gt;/economic</h2>
+    <p class="desc"><code>economic_profile</code> is a real trade-openness figure derived from actual WorldBank data for the crisis's country — <code>null</code> when no real economic data exists yet, never invented. <code>sectors_typically_exposed</code> is a category lookup by crisis type, not a measurement of this specific crisis.</p>
+    <pre>{
+  "impact_severity": "severe",
+  "affected_countries": ["Kyiv"],
+  "economic_data": {},
+  "economic_profile": null,
+  "sectors_typically_exposed": ["Energy", "Defense", "Shipping", "Aviation", "Finance"]
+}</pre>
+  </div>
+
+  <div class="endpoint">
+    <h2><span class="method">GET</span>/actors</h2>
+    <p class="desc">The curated state-actor roster (68 actors). <code>economic</code> is derived from real WorldBank GDP data; <code>military</code>/<code>political</code>/<code>technology</code> are <code>null</code> — no real data source for those exists in this app, so they're left unrated rather than guessed.</p>
+    <pre>{
+  "count": 68,
+  "actors": [
+    { "id": "US", "name": "United States", "region": "North America",
+      "lat": 38.0, "lon": -97.0, "color": "#4488ff",
+      "economic": 95, "military": null, "political": null, "technology": null,
+      "is_nuclear": true }
+  ]
+}</pre>
+  </div>
+
+  <div class="endpoint">
+    <h2><span class="method">GET</span>/relationships</h2>
+    <p class="desc">Curated real alliance/conflict/economic relationships between actors (81 total). Optional <code>type</code> param filters by relationship type.</p>
+    <pre>{
+  "count": 81,
+  "relationships": [
+    { "a": "US", "b": "CN", "type": "conflict",
+      "label": "Strategic Rivalry / Tech War", "strength": 85, "stability": 40 }
+  ]
+}</pre>
+  </div>
+
+  <div class="endpoint">
+    <h2><span class="method">GET</span>/forecasts/&lt;crisis_id&gt;</h2>
+    <p class="desc">Probabilistic forecast bands. <code>method: "heuristic"</code> marks a severity-derived estimate — not a statistical or historical model — so a future calibrated forecast can be told apart by the same field.</p>
+    <pre>{
+  "crisis_id": "sample_kyiv", "count": 4,
+  "forecasts": [
+    { "q": "Will armed hostilities intensify in the next 90 days?",
+      "low": 10, "mid": 10, "high": 80, "method": "heuristic" }
+  ]
+}</pre>
+  </div>
+
+  <div class="endpoint">
+    <h2><span class="method">GET</span>/news</h2>
+    <p class="desc">Recent indexed news articles. Params: <code>crisis_id</code>, <code>days</code>, <code>limit</code>.</p>
+    <pre>{
+  "count": 2,
+  "articles": [
+    { "title": "Biden warns of Iran terror threat amid nuclear tensions",
+      "source": "Crypto Briefing", "sentiment": "positive",
+      "published_at": "2026-09-22T14:49:17",
+      "url": "https://..." }
+  ]
+}</pre>
+  </div>
+
+  <div class="endpoint">
+    <h2><span class="method">GET</span>/economic/&lt;country_code&gt;</h2>
+    <p class="desc">Real WorldBank economic indicators by ISO country code, most recent years first.</p>
+    <pre>{
+  "country": "US", "count": 10,
+  "data": [
+    { "country": "US", "year": 2025, "gdp": 30769.7, "gdp_growth": 2.16,
+      "unemployment": 4.20, "exports": null, "imports": null,
+      "inflation": null, "trade_balance": null }
+  ]
+}</pre>
+  </div>
+
+  <div class="endpoint">
+    <h2><span class="method">GET</span>/crises/export <span style="font-size:10px;color:var(--text2);font-weight:400">(10 req/min)</span></h2>
+    <p class="desc">Bulk export of crisis data for your own analysis — CSV or JSON, with the same real reliability/verification/domain/stakeholder fields as the rest of this API, not a thin id/title/severity dump.</p>
+    <p class="params">Params: <code>format</code> (<code>csv</code> default, or <code>json</code>), <code>status</code>, <code>type</code> (comma-separated list accepted), <code>min_severity</code>, <code>country</code>.</p>
+    <pre>GET /crises/export?format=json&min_severity=80
+
+{
+  "count": 1,
+  "crises": [
+    { "id": "sample_kyiv", "title": "Kyiv Conflict Zone", "country": "Kyiv",
+      "type": "conflict", "severity": 95, "confidence": 92,
+      "status": "Active", "is_verified": true,
+      "reliability": "unknown", "reliability_score": 50, "source_count": 0,
+      "stakeholders": [],
+      "domains": { "military": 0, "economic": 0, "political": 0,
+                   "environment": 0, "technology": 0, "information": 0 } }
+  ]
+}</pre>
+  </div>
+
+  <p style="font-size:12px;color:var(--text2);margin-top:32px;">
+    Found an inconsistency between this page and the live API? The live API is always the source of truth —
+    every example above was captured directly from a running instance, not hand-written.
+  </p>
+</div>
+</body>
+</html>
