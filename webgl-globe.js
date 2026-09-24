@@ -107,10 +107,14 @@ function init(canvasEl) {
   // Intensities are much larger than pre-r155 Three.js code would use —
   // this Three.js version's lights use physically-based units, where
   // "1" reads as near-black; these values were tuned empirically against
-  // the actual rendered output, not guessed.
-  state.light = new THREE.DirectionalLight(0xffffff, 18);
+  // the actual rendered output, not guessed. Raised again (18->26, 6->11)
+  // after user feedback that the night side read as too dark — raising
+  // BOTH rather than just ambient keeps the day/night contrast strong
+  // (a brighter sun alongside a brighter night) instead of flattening the
+  // whole sphere into one uniform brightness.
+  state.light = new THREE.DirectionalLight(0xffffff, 26);
   state.scene.add(state.light);
-  state.ambient = new THREE.AmbientLight(0x33455a, 6);
+  state.ambient = new THREE.AmbientLight(0x33455a, 11);
   state.scene.add(state.ambient);
 
   state.ready = true;

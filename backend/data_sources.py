@@ -24,6 +24,19 @@ ACLED_OAUTH_URL = "https://acleddata.com/oauth/token"
 ACLED_BASE = "https://acleddata.com/api/acled/read"
 NEWSAPI_BASE = "https://newsapi.org/v2"
 WORLDBANK_BASE = "https://api.worldbank.org/v2"
+NOMINATIM_BASE = "https://nominatim.openstreetmap.org/search"
+
+# Optional: same AI-primary/static-fallback pattern app.py's anthropic_client
+# already uses for briefings/history — here it drives real incident-level
+# geocoding (see NominatimGeocoder / _extract_incident_location) instead of
+# text generation. A separate client instance because this module has no
+# dependency on app.py today and geocoding needs to keep working even if
+# app.py's own client init ever changes.
+try:
+    from anthropic import Anthropic
+    _geocode_ai_client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY', ''))
+except Exception:
+    _geocode_ai_client = None
 
 # In-memory cache for the ACLED OAuth token, shared across calls within
 # this process — access_token is valid 24h, refresh_token 14 days, so
@@ -584,6 +597,113 @@ class NewsAPIConnector:
             return None
 
 
+class NominatimGeocoder:
+    """
+    Thin client for OpenStreetMap's free Nominatim geocoding API — resolves
+    an arbitrary place name (a landmark, a national capital, an ad-hoc
+    incident location) to real coordinates, no API key required. This is
+    what makes precise pins possible for things the curated LOCATION_MAP
+    below was never going to cover (the UN, the White House, a specific
+    neighborhood a missile was heard over) without hand-maintaining an
+    ever-growing landmark table.
+
+    Nominatim's usage policy caps free use at 1 request/second and requires
+    a real, descriptive User-Agent identifying the calling application —
+    both enforced here, the same courtesy fetch_wikipedia_bilateral() (see
+    app.py) already extends to Wikipedia's API.
+    """
+    _last_request_at = 0.0
+    _cache = {}  # place name -> {'lat', 'lon', 'country'} or None, in-process
+
+    @staticmethod
+    def geocode(place_name):
+        """Real (lat, lon, country) for `place_name`, or None if Nominatim
+        has nothing for it or the request fails. Cached in-process by exact
+        place name — the same landmark (the UN, the Kremlin) recurs across
+        many articles over time, and repeating the network call for an
+        identical string would just burn the shared rate limit."""
+        if not place_name:
+            return None
+        key = place_name.strip().lower()
+        if key in NominatimGeocoder._cache:
+            return NominatimGeocoder._cache[key]
+
+        import time
+        elapsed = time.monotonic() - NominatimGeocoder._last_request_at
+        if elapsed < 1.0:
+            time.sleep(1.0 - elapsed)
+        NominatimGeocoder._last_request_at = time.monotonic()
+
+        result = None
+        try:
+            response = requests.get(
+                NOMINATIM_BASE,
+                # accept-language=en: Nominatim otherwise replies in the
+                # location's local language by default (e.g. country
+                # "Россия" for Russia) — every other country name in this
+                # app (the Actor roster, LOCATION_MAP) is English, and
+                # analyze_cascade()'s initial-actor lookup matches
+                # Crisis.country against Actor.name by exact string, so a
+                # non-English country name here would silently never match.
+                params={'q': place_name, 'format': 'json', 'addressdetails': 1, 'limit': 1, 'accept-language': 'en'},
+                headers={'User-Agent': 'GeoIntel/1.0 (geopolitical intelligence platform)'},
+                timeout=10,
+            )
+            response.raise_for_status()
+            data = response.json()
+            if data:
+                match = data[0]
+                result = {
+                    'lat': float(match['lat']),
+                    'lon': float(match['lon']),
+                    'country': (match.get('address') or {}).get('country'),
+                }
+        except Exception as e:
+            logger.warning(f"Nominatim geocode failed for '{place_name}': {e}")
+
+        NominatimGeocoder._cache[key] = result
+        return result
+
+
+def _extract_incident_location(text):
+    """
+    Ask Claude for the single most specific real-world location (a
+    building, landmark, city, or region) genuinely associated with the
+    EVENT this article describes — not just any place named in passing.
+    Returns a location name string, or None when no ANTHROPIC_API_KEY is
+    configured, the model finds no clear location, or anything goes wrong.
+    None here always means "fall back to LOCATION_MAP city-matching below"
+    — never a guessed location.
+    """
+    if not _geocode_ai_client or not _geocode_ai_client.api_key:
+        return None
+    try:
+        message = _geocode_ai_client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=40,
+            messages=[{
+                "role": "user",
+                "content": (
+                    "What is the single most specific real-world location "
+                    "(a building, landmark, city, or region) genuinely "
+                    "associated with the main event in this news text — not "
+                    "just any place mentioned in passing? Reply with ONLY "
+                    "the location name (e.g. \"United Nations Headquarters, "
+                    "New York\" or \"the Kremlin, Moscow\"), or reply with "
+                    "exactly NONE if there is no clear location.\n\n"
+                    f"Text: {text[:1000]}"
+                ),
+            }],
+        )
+        answer = message.content[0].text.strip()
+        if not answer or answer.upper() == 'NONE':
+            return None
+        return answer
+    except Exception as e:
+        logger.warning(f"AI location extraction failed: {e}")
+        return None
+
+
 class NewsBasedCrisisDetector:
     """Extract real crises from news articles"""
 
@@ -1020,42 +1140,15 @@ class NewsBasedCrisisDetector:
             description_for_location = NewsBasedCrisisDetector.DATELINE_RE.sub('', description, count=1)
             text_lower = (title + ' ' + description_for_location).lower()
 
-            # Extract location — only match explicit city names in the
-            # article text. Search the TITLE first: a city named in the
-            # headline is almost always the article's actual subject,
-            # whereas the DESCRIPTION often opens with a wire-service
-            # dateline naming the reporting bureau's city, unrelated to the
-            # story (e.g. a "LIMA (Reuters) -" prefix on a story about
-            # Africa) — matching that blindly used to mis-geocode articles
-            # to the wrong country. Only fall back to the full title+
-            # description text if the title alone names no known city.
-            location = None
-            lat, lon = None, None
-            country = None
-
-            matched_city = (
-                NewsBasedCrisisDetector._find_earliest_city(title.lower())
-                or NewsBasedCrisisDetector._find_earliest_city(text_lower)
-            )
-            if matched_city:
-                coords = NewsBasedCrisisDetector.LOCATION_MAP[matched_city]
-                location = matched_city.title()
-                lat = coords['lat']
-                lon = coords['lon']
-                country = coords['country']
-
-            # Skip article if no specific city found — we only plot verified locations
-            if not location:
-                return None
-
-            # Determine crisis type — and REQUIRE at least one crisis-
-            # relevant keyword to actually be present. This used to default
-            # to 'conflict' when nothing matched, which meant the only real
-            # gate on "is this a crisis" was having a recognized city name
-            # — any article mentioning a mapped city (a filmmaker survey, a
-            # ballet review, a generic country news roundup) got accepted
-            # as a "crisis" regardless of topic. Now an article with none
-            # of these keywords is skipped instead of defaulting to conflict.
+            # Topic-relevance check runs FIRST, before any geocoding — an
+            # off-topic article shouldn't spend an LLM call or a Nominatim
+            # request just to be discarded a moment later anyway. REQUIRE at
+            # least one crisis-relevant keyword to actually be present; this
+            # used to default to 'conflict' when nothing matched, which meant
+            # the only real gate on "is this a crisis" was having a
+            # recognized city name — any article mentioning a mapped city (a
+            # filmmaker survey, a ballet review) got accepted regardless of
+            # topic.
             crisis_type = None
             for ctype, keywords in NewsBasedCrisisDetector.CRISIS_KEYWORDS.items():
                 if any(kw in text_lower for kw in keywords):
@@ -1063,6 +1156,64 @@ class NewsBasedCrisisDetector:
                     break
 
             if crisis_type is None:
+                return None
+
+            # Geocoding: try a real, incident-level location first — AI
+            # extraction of the specific place genuinely tied to this
+            # event (a landmark, a capital, an ad-hoc reported location),
+            # geocoded via Nominatim — since that generalizes to anything
+            # (the UN, the White House, a neighborhood a missile was heard
+            # over) the curated LOCATION_MAP below was never going to cover.
+            # Falls back to the curated city-name match whenever the AI
+            # path finds nothing (including when ANTHROPIC_API_KEY isn't
+            # configured) or Nominatim has no result — never worse than the
+            # old behavior, meaningfully better whenever a key is set.
+            location = None
+            lat, lon = None, None
+            country = None
+            location_confidence = 82
+
+            extracted_place = _extract_incident_location(title + '. ' + description_for_location)
+            if extracted_place:
+                geocoded = NominatimGeocoder.geocode(extracted_place)
+                # Crisis.country is a required field — only accept this
+                # result if Nominatim actually returned one, otherwise fall
+                # through to the city-match path below rather than crash
+                # (or silently drop the crisis) on a null country.
+                if geocoded and geocoded.get('country'):
+                    location = extracted_place
+                    lat = geocoded['lat']
+                    lon = geocoded['lon']
+                    country = geocoded['country']
+                    # Higher confidence than a bare city match — this is a
+                    # specific, AI-identified real-world location, not just
+                    # "some city was named somewhere in the text."
+                    location_confidence = 90
+
+            if not location:
+                # Search the TITLE first: a city named in the headline is
+                # almost always the article's actual subject, whereas the
+                # DESCRIPTION often opens with a wire-service dateline
+                # naming the reporting bureau's city, unrelated to the
+                # story (e.g. a "LIMA (Reuters) -" prefix on a story about
+                # Africa) — matching that blindly used to mis-geocode
+                # articles to the wrong country. Only fall back to the full
+                # title+description text if the title alone names no known
+                # city.
+                matched_city = (
+                    NewsBasedCrisisDetector._find_earliest_city(title.lower())
+                    or NewsBasedCrisisDetector._find_earliest_city(text_lower)
+                )
+                if matched_city:
+                    coords = NewsBasedCrisisDetector.LOCATION_MAP[matched_city]
+                    location = matched_city.title()
+                    lat = coords['lat']
+                    lon = coords['lon']
+                    country = coords['country']
+                    location_confidence = 82
+
+            # Skip article if no specific location found — we only plot verified locations
+            if not location:
                 return None
 
             # Calculate severity based on keywords
@@ -1095,7 +1246,7 @@ class NewsBasedCrisisDetector:
                 'longitude': lon,     # exact city lon
                 'severity': min(100, severity),
                 'confidence': 75,
-                'location_confidence': 82,  # High confidence - city was explicitly mentioned in article
+                'location_confidence': location_confidence,  # 90 for AI+Nominatim, 82 for curated city match
                 'date_start': datetime.fromisoformat(published.replace('Z', '+00:00')) if published else datetime.utcnow(),
                 'analysis': description[:500] if description else title,
                 'impact': f"Reported by {source}",
