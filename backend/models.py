@@ -1,7 +1,7 @@
 """
 Database models for GeoIntel platform
 """
-from sqlalchemy import create_engine, Column, String, Float, Integer, DateTime, Text, Boolean
+from sqlalchemy import create_engine, Column, String, Float, Integer, DateTime, Text, Boolean, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -114,6 +114,23 @@ class Crisis(Base):
         }
 
 
+class CrisisSnapshot(Base):
+    """A point-in-time severity reading for a crisis, recorded on every
+    scheduled sync (see DataAggregator.snapshot_severity_history). This is
+    the real time-series analyze_escalation() needs — Crisis.severity only
+    ever stores the current value, with no history of its own."""
+    __tablename__ = 'crisis_snapshots'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    crisis_id = Column(String(50), nullable=False, index=True)
+    severity = Column(Integer, nullable=False)
+    recorded_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    __table_args__ = (
+        Index('ix_crisis_snapshots_crisis_recorded', 'crisis_id', 'recorded_at'),
+    )
+
+
 class Forecast(Base):
     """Probabilistic forecasts for crisis outcomes"""
     __tablename__ = 'forecasts'
@@ -143,6 +160,7 @@ class Forecast(Base):
             'mid': self.prob_possible,
             'high': self.prob_likely,
             'confidence': self.confidence,
+            'method': self.method,
         }
 
 
@@ -154,15 +172,29 @@ class Actor(Base):
     name = Column(String(100), nullable=False)
     category = Column(String(50))  # STATE, NGO, MILITIA, CORPORATION
 
+    # Real world-region grouping (North America, Europe, East Asia, South
+    # Asia, Southeast Asia, Middle East, North Africa, Sub-Saharan Africa,
+    # Latin America, Eastern Europe / Eurasia), set per-actor in
+    # init_actors(). Used by analyze_cascade()'s affected_regions — this
+    # used to always be an empty list because no such column existed at all.
+    region = Column(String(50))
+
     latitude = Column(Float)  # Capital/HQ location
     longitude = Column(Float)
 
     color = Column(String(7))  # Hex color for visualization
 
-    military_power = Column(Integer, default=50)  # 0-100
-    economic_power = Column(Integer, default=50)
-    political_influence = Column(Integer, default=50)
-    technological_capability = Column(Integer, default=50)
+    # No `default=` on any of these: a missing value should read as
+    # "not rated" (None), never a silently fabricated number. economic_power
+    # is derived from real WorldBank GDP data by
+    # DataAggregator.sync_actor_power_stats (data_sources.py) whenever GDP
+    # data exists for the actor's country; military_power/political_influence/
+    # technological_capability have no real data source anywhere in this app
+    # and stay None until one is wired in.
+    military_power = Column(Integer)  # 0-100
+    economic_power = Column(Integer)
+    political_influence = Column(Integer)
+    technological_capability = Column(Integer)
 
     population = Column(Integer)
     gdp = Column(Float)  # In billions USD
@@ -176,6 +208,7 @@ class Actor(Base):
         return {
             'id': self.id,
             'name': self.name,
+            'region': self.region,
             'lat': self.latitude,
             'lon': self.longitude,
             'color': self.color,
@@ -277,7 +310,10 @@ class EconomicData(Base):
             'gdp': self.gdp,
             'gdp_growth': self.gdp_growth,
             'exports': self.exports,
+            'imports': self.imports,
             'inflation': self.inflation,
+            'unemployment': self.unemployment,
+            'trade_balance': self.trade_balance,
             'year': self.year,
         }
 

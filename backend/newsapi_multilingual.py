@@ -84,14 +84,18 @@ class MultilingualNewsConnector:
     """Fetch news in multiple languages to expand geographic coverage."""
 
     def __init__(self):
-        self.api_key = os.getenv('NEWS_API_KEY', '')
+        # Same env var as data_sources.py's NewsAPIConnector/
+        # NewsBasedCrisisDetector — this used to read NEWS_API_KEY, a
+        # different name, so setting NEWSAPI_KEY alone left this
+        # multilingual sync silently disabled even with a real key configured.
+        self.api_key = os.getenv('NEWSAPI_KEY', '')
         self.detector = NewsBasedCrisisDetector()
         self.base_url = 'https://newsapi.org/v2/everything'
 
     def fetch_articles(self, language_config: dict, days: int = 3) -> list:
         """Fetch articles for one language config."""
         if not self.api_key:
-            logger.warning('NEWS_API_KEY not set — skipping multilingual fetch')
+            logger.warning('NEWSAPI_KEY not set — skipping multilingual fetch')
             return []
 
         from_date = (datetime.utcnow() - timedelta(days=days)).strftime('%Y-%m-%dT%H:%M:%SZ')

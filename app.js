@@ -125,6 +125,8 @@ let selected = null;
 let drag = false, lastMX = 0, lastMY = 0;
 let mx = 0, my = 0;
 let currentYear = 2026, playDir = 1, playing = false;
+let lastSunUpdateAt = 0; // throttles the expensive getSubsolarPoint() call — see drawGlobe()
+let cachedSubsolar = null; // last getSubsolarPoint() result; re-rotated into view space every frame
 let showTrade = false; // sea routes
 let showAir   = false; // air cargo corridors
 let showRail  = false; // rail freight corridors
@@ -652,13 +654,6 @@ function getRandomCityCoords(country) {
   return cities[Math.floor(Math.random() * cities.length)];
 }
 
-// Alerts
-const ALERTS = [
-  { text: '🔴 CRITICAL: Iran-US Military Tensions', color: '#ff3b3b' },
-  { text: '🟡 WARNING: Taiwan Strait Activity', color: '#ffd93d' },
-  { text: '🟠 ALERT: Middle East Instability', color: '#ff8833' },
-];
-
 // Layer toggles
 let showArcs  = false;
 let showHeat  = false;
@@ -754,17 +749,46 @@ function project(lat, lon) {
 // context but can be an offscreen one — see the high-detail land cache in
 // drawGlobe(), which renders the (expensive, ~80k-point) 50m mesh into a
 // cached bitmap rather than replaying this every frame.
-function geoRing(ring, fill, targetCtx = ctx) {
+// `batch`: when true, don't paint per-ring — just add this ring's visible
+// run(s) as subpath(s) of the caller's already-open path (via moveTo,
+// which starts a new subpath without discarding earlier ones — no
+// beginPath() needed between runs). The caller does ONE beginPath() before
+// the whole batch and ONE fill()/stroke() after. This matters a lot at
+// high-detail-mesh scale: painting ~241 countries (each with, on average,
+// several rings/back-face-split runs) via a separate fill() per run was
+// measured at ~210ms; canvas fill()/stroke() calls carry real fixed
+// overhead beyond the geometry itself, so batching hundreds of them into
+// one call is a large win, not just a constant-factor one. Non-batch
+// behavior (the default) is unchanged — every existing caller still gets
+// its own independent, immediately-painted path.
+// `projectFn` defaults to the rotating-globe project() but can be swapped
+// for a flat equirectangular mapping (see bakeEquirectTexture) to reuse
+// this same fill/stroke logic for baking the WebGL sphere's texture
+// instead of drawing onto the rotating 2D canvas.
+function geoRing(ring, fill, targetCtx = ctx, batch = false, projectFn = project) {
   let started = false;
+  let prevLon = null;
   for (let i = 0; i < ring.length; i++) {
     const [lo, la] = ring[i];
-    const p = project(la, lo);
+    // A >180° raw-longitude jump between consecutive ring vertices means
+    // this edge crosses the antimeridian — break the subpath instead of
+    // connecting it with a lineTo, or a flat/equirect projectFn (see
+    // bakeEquirectTexture) draws a rogue edge spanning nearly the whole
+    // canvas width (this is how Antarctica's coastline, which circles all
+    // longitudes, produced a hole in its own fill and glitched the pole
+    // row it happened to land near).
+    if (prevLon !== null && Math.abs(lo - prevLon) > 180) {
+      if (started && !batch) { fill ? targetCtx.fill() : targetCtx.stroke(); }
+      started = false;
+    }
+    prevLon = lo;
+    const p = projectFn(la, lo);
     // Frustum culling: skip back-facing coordinates (z < -0.1)
-    if (p.z < -0.1) { if (started) { fill ? targetCtx.fill() : targetCtx.stroke(); started = false; } continue; }
-    if (!started) { targetCtx.beginPath(); targetCtx.moveTo(p.sx, p.sy); started = true; }
+    if (p.z < -0.1) { if (started && !batch) { fill ? targetCtx.fill() : targetCtx.stroke(); } started = false; continue; }
+    if (!started) { if (!batch) targetCtx.beginPath(); targetCtx.moveTo(p.sx, p.sy); started = true; }
     else targetCtx.lineTo(p.sx, p.sy);
   }
-  if (started) { fill ? targetCtx.fill() : targetCtx.stroke(); }
+  if (started && !batch) { fill ? targetCtx.fill() : targetCtx.stroke(); }
 }
 
 // Hit-test: is screen point (x,y) inside the projected polygon of a TopoJSON feature?
@@ -868,6 +892,28 @@ function importanceColor(score) {
   return `#${toHex(lerp(0))}${toHex(lerp(1))}${toHex(lerp(2))}`; // hex, matching ROUTE_RISK_COLORS' format so '+alpha' suffixes work
 }
 
+// 4-stop blue→green→yellow→red heat-map ramp. Unlike importanceColor()
+// (2-stop, returns a hex string for CSS use), this writes raw RGB values
+// into a reused output array — it runs once per pixel in
+// drawCrisisHeatmap()'s colorize pass, so no string formatting or
+// allocation in the hot path.
+const HEAT_RAMP = [
+  [30,  60,  220],   // 0.00 cool blue — low/no density
+  [40,  200, 120],   // 0.33 green
+  [230, 210, 40],    // 0.66 yellow
+  [230, 40,  40],    // 1.00 red — peak density
+];
+function heatRampColor(t, out) {
+  t = Math.max(0, Math.min(1, t));
+  const scaled = t * (HEAT_RAMP.length - 1);
+  const i0 = Math.min(HEAT_RAMP.length - 2, Math.floor(scaled));
+  const localT = scaled - i0;
+  const c0 = HEAT_RAMP[i0], c1 = HEAT_RAMP[i0 + 1];
+  out[0] = c0[0] + (c1[0] - c0[0]) * localT;
+  out[1] = c0[1] + (c1[1] - c0[1]) * localT;
+  out[2] = c0[2] + (c1[2] - c0[2]) * localT;
+}
+
 // Visual differentiation between the three route modes — risk-based color
 // stays meaningful for all three (so it isn't spent on distinguishing
 // mode), dash pattern is what tells sea/air/rail apart when layers overlap.
@@ -916,23 +962,31 @@ function drawRouteSet(routes) {
   });
 }
 
-function drawGeoFeature(geom, fill, targetCtx = ctx) {
+function drawGeoFeature(geom, fill, targetCtx = ctx, batch = false, projectFn = project) {
   if (!geom) return;
-  if (geom.type === 'Polygon')      geom.coordinates.forEach(r => geoRing(r, fill, targetCtx));
-  else if (geom.type === 'MultiPolygon') geom.coordinates.forEach(p => p.forEach(r => geoRing(r, fill, targetCtx)));
+  if (geom.type === 'Polygon')      geom.coordinates.forEach(r => geoRing(r, fill, targetCtx, batch, projectFn));
+  else if (geom.type === 'MultiPolygon') geom.coordinates.forEach(p => p.forEach(r => geoRing(r, fill, targetCtx, batch, projectFn)));
 }
 
-function drawGeoMesh(geom, targetCtx = ctx) {
+// See geoRing's comment for what `batch` and `projectFn` mean and why they exist.
+function drawGeoMesh(geom, targetCtx = ctx, batch = false, projectFn = project) {
   if (!geom || geom.type !== 'MultiLineString') return;
   geom.coordinates.forEach(line => {
     let started = false;
+    let prevLon = null;
     for (const [lo, la] of line) {
-      const p = project(la, lo);
-      if (p.z < 0) { if (started) { targetCtx.stroke(); started = false; } continue; }
-      if (!started) { targetCtx.beginPath(); targetCtx.moveTo(p.sx, p.sy); started = true; }
+      // See geoRing's matching comment — same antimeridian-crossing break.
+      if (prevLon !== null && Math.abs(lo - prevLon) > 180) {
+        if (started && !batch) { targetCtx.stroke(); }
+        started = false;
+      }
+      prevLon = lo;
+      const p = projectFn(la, lo);
+      if (p.z < 0) { if (started && !batch) { targetCtx.stroke(); } started = false; continue; }
+      if (!started) { if (!batch) targetCtx.beginPath(); targetCtx.moveTo(p.sx, p.sy); started = true; }
       else targetCtx.lineTo(p.sx, p.sy);
     }
-    if (started) targetCtx.stroke();
+    if (started && !batch) targetCtx.stroke();
   });
 }
 
@@ -1038,18 +1092,14 @@ let pulse = 0;
 // Canvas size optimization - track previous dimensions to avoid redundant resizing
 let lastCanvasWidth = 0, lastCanvasHeight = 0;
 
-// ── Adaptive level-of-detail for the world map ──────────────────────────────
-// countries-50m.json (~80k boundary points) looks dramatically better than
-// the old 110m file, but re-projecting every point every frame at that
-// resolution is too expensive to do continuously while the globe is
-// spinning or being dragged. So: keep the light 110m mesh as the "moving"
-// mesh (used while there's been recent rotation/pan/zoom input) and swap to
-// the full 50m mesh once things have been still for SETTLE_DELAY_MS — the
-// user gets full detail on the still frame they're actually looking at,
-// without the heavier mesh ever needing to be re-projected while in motion.
-// (10m — ~477k points — was tried first, but the one-time redraw on settle
-// measured ~4.9s, a hard freeze; 50m measures ~0.7s, which is far more
-// tolerable for a one-time-per-settle cost.)
+// ── World map data (low/high detail) ────────────────────────────────────
+// The 3D globe's land/border/terrain rendering moved to WebGL (see
+// webgl-globe.js and bakeEquirectTexture() below) — it bakes a texture
+// once from whichever of these has loaded, rather than re-projecting
+// points every frame, so the low/high split and isSettled()/markMotion()
+// below no longer matter for THAT. They're kept because drawFlatMap()'s
+// 2D flat-map mode (a separate, unrelated view — see flatProject()) still
+// uses the same live/settled mesh-swap pattern for its own performance.
 let worldTopoLow = null, worldTopoHigh = null;
 let topoFeaturesLow = null, topoMeshLow = null;
 let topoFeaturesHigh = null, topoMeshHigh = null;
@@ -1242,10 +1292,10 @@ flatCanvas.addEventListener('touchmove', e => {
 // ── Terrain relief shading ───────────────────────────────────────────────
 // Real elevation data (NASA-derived grayscale equirectangular bump map),
 // loaded once and kept as raw pixel data so sampling it per-globe-pixel is
-// just an array index, not a draw call. Only ever applied inside the
-// high-detail cached bitmap (see applyTerrainShading below) — like the
-// 50m country mesh, per-pixel raycasting the whole globe disc is too
-// expensive to redo every frame, so it only runs once per settle.
+// just an array index, not a draw call. Applied once into the WebGL
+// sphere's baked texture (see bakeEquirectTexture / sampleElevationBilinear
+// below) rather than per-frame — baking it in means the per-pixel relief
+// pass only ever runs when the texture is (re)built, not every frame.
 let elevationPixels = null, elevationW = 0, elevationH = 0;
 (function loadElevationTexture() {
   const img = new Image();
@@ -1262,25 +1312,6 @@ let elevationPixels = null, elevationW = 0, elevationH = 0;
   img.onerror = () => console.warn('Terrain elevation texture failed to load — globe will render without relief shading.');
   img.src = 'earth-elevation.jpg';
 })();
-
-// Inverse of project(): given a point on the unit sphere in screen-facing
-// coordinates (nx, ny, nz — z toward the viewer), recover [lat, lon] in
-// degrees. Used to sample the equirectangular elevation texture per pixel.
-// Derived by inverting project()'s rotation order: project() first builds
-// the standard spherical vector (cos(phi)cos(u), cos(phi)sin(u), sin(phi))
-// with u = lon + rotY, then rotates the (z, that-x) pair by rotX to get
-// (y, z); this undoes both steps in reverse.
-function unprojectToLatLon(nx, ny, nz, cosRotX, sinRotX) {
-  const s = ny * cosRotX + nz * sinRotX;       // sin(phi)
-  const a = -ny * sinRotX + nz * cosRotX;      // cos(phi) * cos(u)
-  const phi = Math.asin(Math.max(-1, Math.min(1, s)));
-  const u = Math.atan2(nx, a);
-  const lam = u - rotY;
-  const lat = phi * 180 / Math.PI;
-  let lon = lam * 180 / Math.PI;
-  lon = ((lon + 180) % 360 + 360) % 360 - 180; // normalize to [-180, 180]
-  return [lat, lon];
-}
 
 // Bilinear-sample the elevation texture at (lon, lat) instead of a nearest-
 // neighbor lookup — at typical globe-zoom levels each source texel covers
@@ -1305,249 +1336,111 @@ function sampleElevationBilinear(lon, lat) {
   return top + (bottom - top) * ty;
 }
 
-// Darkens valleys / lightens peaks on the already-filled land pixels of an
-// offscreen bitmap, by inverse-projecting each land pixel back to lat/lon
-// and sampling the elevation texture there. Only touches pixels the land
-// fill already made opaque (alpha > 0) — ocean and space are left alone,
-// so the existing ocean gradient (drawn separately, underneath) shows
-// through unaffected.
-function applyTerrainShading(offCtx, cx, cy, r) {
-  if (!elevationPixels) return; // texture still loading — skip gracefully
-  const w = offCtx.canvas.width, h = offCtx.canvas.height;
-  const minX = Math.max(0, Math.floor(cx - r)), maxX = Math.min(w, Math.ceil(cx + r));
-  const minY = Math.max(0, Math.floor(cy - r)), maxY = Math.min(h, Math.ceil(cy + r));
-  if (maxX <= minX || maxY <= minY) return;
+// NOTE: heatmap mode (showHeat) and highlighted-country glow used to be
+// handled here (recoloring the land fill / drawing a glow) when this was
+// rendered per-frame onto the rotating canvas. Now that the sphere is a
+// GPU-rendered, one-time-baked texture (see bakeEquirectTexture below),
+// showHeat now drives drawCrisisHeatmap() (Canvas2D overlay, not the
+// WebGL texture — see its own comment), a crisis-density view rather
+// than the old per-actor power glow. Two things remain deliberate,
+// documented gaps rather than
+// oversights: (1) showHeat's old land-recolor (#1a4a2e vs the baked
+// texture's current land color — a barely perceptible difference) would
+// require re-baking the WebGL texture on every toggle for negligible
+// visual gain; (2) highlighted-country glow isn't wired back in at all.
+// Both toggle buttons still work without erroring. The old logic (land
+// recolor, highlighted-country outline) is preserved in git history.
 
-  const imgData = offCtx.getImageData(minX, minY, maxX - minX, maxY - minY);
-  const px = imgData.data;
-  const boxW = maxX - minX;
-  const cosRotX = Math.cos(rotX), sinRotX = Math.sin(rotX);
-  const rSq = r * r;
+// ════════════════════════════════════════════════════════════
+// WEBGL GLOBE INTEGRATION — bakes land/borders/terrain into a flat
+// equirectangular texture (once, not per frame) for the GPU sphere in
+// webgl-globe.js to display. See the plan file for the full architecture.
+// ════════════════════════════════════════════════════════════
 
-  for (let py = minY; py < maxY; py++) {
-    const ddy = py - cy;
-    for (let pxi = minX; pxi < maxX; pxi++) {
-      const idx = ((py - minY) * boxW + (pxi - minX)) * 4;
-      if (px[idx + 3] === 0) continue; // not land
-      const ddx = pxi - cx;
-      const distSq = ddx * ddx + ddy * ddy;
-      if (distSq > rSq) continue;
-      const nx = ddx / r, ny = -ddy / r;
-      const nzSq = 1 - nx * nx - ny * ny;
-      if (nzSq < 0) continue;
-      const nz = Math.sqrt(nzSq);
-
-      const [lat, lon] = unprojectToLatLon(nx, ny, nz, cosRotX, sinRotX);
-      const elev = sampleElevationBilinear(lon, lat);
-
-      // Shade around a neutral midpoint so typical lowland terrain stays
-      // close to the original land color, high peaks brighten it, and
-      // ocean-floor-depth-style low values darken it.
-      const factor = 1 + (elev - 55) / 255 * 0.85;
-      px[idx]     = Math.min(255, Math.max(0, px[idx]     * factor));
-      px[idx + 1] = Math.min(255, Math.max(0, px[idx + 1] * factor));
-      px[idx + 2] = Math.min(255, Math.max(0, px[idx + 2] * factor));
-    }
-  }
-  offCtx.putImageData(imgData, minX, minY);
+// Pure, static equirect mapping — NOT flatProject() (which is the
+// interactive flat-MAP mode's projection and carries its own pan/zoom
+// state, fZoom/fPanX/fPanY, that a one-time texture bake must not use).
+// The +TEXTURE_LON_OFFSET_DEG matches the geometry-axis correction
+// applied to the sphere mesh in webgl-globe.js — both sides of that
+// correction must agree, see that file's comment for the derivation.
+function flatProjectForBake(lat, lon, W, H) {
+  const lonOffset = (window.GlobeGL && window.GlobeGL.TEXTURE_LON_OFFSET_DEG) || 0;
+  const wrappedLon = ((lon + lonOffset + 180) % 360 + 360) % 360 - 180;
+  return {
+    sx: (wrappedLon + 180) / 360 * W,
+    sy: (90 - lat) / 180 * H,
+    z: 1, // an equirect bake has no back side to cull
+  };
 }
 
-// Cheap, low-resolution terrain preview shown WHILE the globe is actively
-// moving. Full-detail shading only ever runs once settled (~230ms — far
-// too slow for every frame), but showing nothing at all while dragging
-// made the terrain feel like it was disappearing every time the globe
-// moved, which read as more jarring than the same live/settled split
-// already used for country-boundary detail (that swap is subtle; flat
-// color vs. visible relief is not). Downscales sharply — renders at
-// roughly 1/14th linear resolution, so the per-pixel shading pass costs a
-// few ms instead of hundreds — then scales the blurred result back up.
-// Soft, but keeps a continuous sense of relief instead of flattening out.
-// Reused every frame instead of allocating a new canvas each time — a
-// fresh document.createElement('canvas') per frame was a measurable chunk
-// of this overlay's cost (GC pressure from constant small-canvas churn).
-const _liveTerrainCanvas = document.createElement('canvas');
-const _liveTerrainCtx = _liveTerrainCanvas.getContext('2d');
-let _liveTerrainRefreshDue = true;
+const EQUIRECT_TEXTURE_W = 4096, EQUIRECT_TEXTURE_H = 2048;
+let equirectCanvas = null, equirectCtx = null;
 
-function drawLiveTerrainOverlay(cx, cy, r) {
-  if (!elevationPixels || showHeat) return;
-  // Fixed target size, NOT r/zoom-scaled: R() scales with zoom, so a
-  // "downscale by a constant ratio" box grows right along with it — at
-  // zoom 4 that was already a 180x180 box (16x the pixel count of zoom 1),
-  // eating most of the frame budget it was supposed to protect. A fixed
-  // box bounds the per-frame cost of this pass regardless of zoom; it's a
-  // blurred preview by design, so more blur relative to screen size at
-  // high zoom is an acceptable tradeoff for staying cheap.
-  //
-  // (Tried re-rendering the low-res land mesh straight onto the small
-  // canvas via a scale transform instead of copying pixels back from the
-  // main canvas, hoping to dodge a GPU readback sync — measured worse:
-  // re-projecting ~8k mesh points a second time cost as much as the
-  // entire rest of the live frame. The drawImage-based downscale below
-  // wins in practice, so keeping it.)
-  const boxSize = 80;
-
-  const needsResize = _liveTerrainCanvas.width !== boxSize || _liveTerrainCanvas.height !== boxSize;
-  if (needsResize) {
-    _liveTerrainCanvas.width = boxSize;
-    _liveTerrainCanvas.height = boxSize;
+// Bakes ocean + land + borders (+ terrain relief, if the elevation texture
+// has finished loading) once into a flat canvas and hands it to
+// window.GlobeGL as the sphere's texture. Cheap relative to the OLD
+// per-frame rotating-mesh redraw this replaces — this only ever runs when
+// the underlying data actually changes (mesh tier upgrade from low→high
+// res), not every frame or every rotation.
+function bakeEquirectTexture(features, borders) {
+  if (!window.GlobeGL || !window.GlobeGL.ready) return;
+  if (!equirectCanvas) {
+    equirectCanvas = document.createElement('canvas');
+    equirectCanvas.width = EQUIRECT_TEXTURE_W;
+    equirectCanvas.height = EQUIRECT_TEXTURE_H;
+    equirectCtx = equirectCanvas.getContext('2d');
   }
+  const W = EQUIRECT_TEXTURE_W, H = EQUIRECT_TEXTURE_H;
+  const bakeProject = (lat, lon) => flatProjectForBake(lat, lon, W, H);
 
-  // Refresh the downscaled source + shading only every other frame — one
-  // frame (~16ms) of staleness is imperceptible on a preview that's
-  // already blurred to 80x80px, and this halves the cost of the only two
-  // non-trivial steps here (the cross-canvas readback and the per-pixel
-  // shading loop) for the whole time the globe is being dragged. Still
-  // blits the (possibly-reused) result below every frame, so there's no
-  // visible skip/flicker — only the underlying detail updates less often.
-  _liveTerrainRefreshDue = needsResize || !_liveTerrainRefreshDue;
-  if (_liveTerrainRefreshDue) {
-    if (!needsResize) _liveTerrainCtx.clearRect(0, 0, boxSize, boxSize);
-    // canvas's own pixel buffer is DPR-scaled (device pixels), but cx/cy/r
-    // are in the CSS-pixel space every other coordinate here uses —
-    // convert when reading it back, since drawImage's source rect is
-    // always in the source's native pixel space. Must match the (clamped)
-    // ratio the backing store was actually sized with in fitCanvasToDisplay,
-    // not the raw devicePixelRatio, or this crops the wrong region.
-    const dpr = getCanvasDPR();
-    _liveTerrainCtx.drawImage(
-      canvas,
-      (cx - r) * dpr, (cy - r) * dpr, 2 * r * dpr, 2 * r * dpr,
-      0, 0, boxSize, boxSize
-    );
-    applyTerrainShading(_liveTerrainCtx, boxSize / 2, boxSize / 2, boxSize / 2);
-  }
+  equirectCtx.clearRect(0, 0, W, H);
+  equirectCtx.fillStyle = '#0f4068';
+  equirectCtx.fillRect(0, 0, W, H);
 
-  ctx.save();
-  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip();
-  // The 80px source has to stretch up to 2r screen pixels — at typical
-  // zoom that's a 5-20x upscale, and canvas's default 'low'-quality
-  // resampling renders that as visible blocky patches rather than the
-  // soft blur this preview is supposed to be. 'high' quality plus an
-  // explicit blur (scaled to the upscale factor, so higher zoom — a
-  // bigger stretch — gets proportionally more softening) fixes that.
-  const upscale = (2 * r) / boxSize;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.filter = `blur(${Math.min(10, Math.max(2, upscale * 0.35))}px)`;
-  ctx.drawImage(_liveTerrainCanvas, cx - r, cy - r, 2 * r, 2 * r);
-  ctx.filter = 'none';
-  ctx.restore();
-}
+  // One beginPath()/fill() PER FEATURE (batch=true still applies within a
+  // feature's own rings) rather than one accumulated path across every
+  // country — bounds any residual antimeridian/winding defect to a single
+  // country instead of letting it punch holes in unrelated fill coverage
+  // sharing the same scanline (this is how Antarctica's coastline used to
+  // leave a stray ocean-colored gap). Runs twice total (once per LOD
+  // tier), not per frame, so the extra fill() calls are free.
+  equirectCtx.fillStyle = 'rgba(26,60,40,0.95)';
+  features.forEach(f => {
+    equirectCtx.beginPath();
+    drawGeoFeature(f.geometry, true, equirectCtx, true, bakeProject);
+    equirectCtx.fill();
+  });
 
-// Renders land fill + highlighted-country glow + borders for one frame,
-// against whichever context it's given. Pulled out of drawGlobe() so it can
-// target either the live main canvas (cheap low-res mesh, every frame) or
-// an offscreen canvas (expensive high-res mesh, built once and cached —
-// see the high-detail cache in drawGlobe()).
-function renderLandAndBorders(targetCtx, features, borders, cx, cy, r) {
-  renderLandFill(targetCtx, features, cx, cy, r);
-  renderBorders(targetCtx, borders);
-}
-
-// Land fill + highlighted-country glow only (no borders) — split out so the
-// high-detail cache can slot the expensive per-pixel terrain shading pass
-// in between the fill and the borders, keeping border strokes crisp on top
-// of the raster relief shading rather than getting shaded themselves.
-function renderLandFill(targetCtx, features, cx, cy, r) {
-  if (showHeat) {
-    features.forEach(f => {
-      targetCtx.fillStyle = '#1a4a2e';
-      drawGeoFeature(f.geometry, true, targetCtx);
-    });
-    ACTORS.forEach(actor => {
-      const p = project(actor.lat, actor.lon);
-      if (p.z > 0) {
-        // This is meant to be a *power* heatmap, not just an actor-location
-        // marker — so the glow needs to actually scale with power. It
-        // previously used a fixed radius/intensity for every actor
-        // regardless of their military/economic/political/tech scores,
-        // making a superpower and a minor actor look identical.
-        const power = (
-          (actor.military_power ?? 50) +
-          (actor.economic_power ?? 50) +
-          (actor.political_influence ?? 50) +
-          (actor.technological_capability ?? 50)
-        ) / 400; // 0–1
-        const glowR = r * (0.14 + power * 0.34);
-        const innerAlphaHex = Math.round(40 + power * 170).toString(16).padStart(2, '0');
-        const grd = targetCtx.createRadialGradient(p.sx, p.sy, 0, p.sx, p.sy, glowR);
-        grd.addColorStop(0, actor.color + innerAlphaHex);
-        grd.addColorStop(1, 'transparent');
-        targetCtx.fillStyle = grd;
-        targetCtx.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+  if (elevationPixels) {
+    // Per-pixel relief-shading factor, applied once to the flat bake
+    // instead of per-frame to a rotated canvas (the old approach, before
+    // this became a WebGL-rendered sphere) — sample (lon,lat) directly
+    // from pixel coordinates since there's no rotation to invert here.
+    const imgData = equirectCtx.getImageData(0, 0, W, H);
+    const px = imgData.data;
+    for (let py = 0; py < H; py++) {
+      const lat = 90 - (py / H) * 180;
+      for (let pxi = 0; pxi < W; pxi++) {
+        const idx = (py * W + pxi) * 4;
+        if (px[idx + 3] === 0) continue; // ocean, not land
+        const lon = (pxi / W) * 360 - 180;
+        const elev = sampleElevationBilinear(lon, lat);
+        const factor = 1 + (elev - 55) / 255 * 0.85;
+        px[idx]     = Math.min(255, Math.max(0, px[idx]     * factor));
+        px[idx + 1] = Math.min(255, Math.max(0, px[idx + 1] * factor));
+        px[idx + 2] = Math.min(255, Math.max(0, px[idx + 2] * factor));
       }
-    });
-  } else {
-    // Normal land
-    targetCtx.fillStyle = 'rgba(26,60,40,0.85)';
-    features.forEach(f => drawGeoFeature(f.geometry, true, targetCtx));
+    }
+    equirectCtx.putImageData(imgData, 0, 0);
   }
 
-  // Highlighted country glow
-  if (highlightedCountry) {
-    targetCtx.save();
-    targetCtx.fillStyle = 'rgba(0,212,255,0.18)';
-    targetCtx.shadowColor = '#00d4ff';
-    targetCtx.shadowBlur = 18;
-    drawGeoFeature(highlightedCountry.feature.geometry, true, targetCtx);
-    targetCtx.restore();
-    targetCtx.save();
-    targetCtx.strokeStyle = 'rgba(0,212,255,0.85)';
-    targetCtx.lineWidth = 1.5;
-    targetCtx.shadowColor = '#00d4ff';
-    targetCtx.shadowBlur = 10;
-    drawGeoFeature(highlightedCountry.feature.geometry, false, targetCtx);
-    targetCtx.restore();
-  }
-}
+  equirectCtx.strokeStyle = 'rgba(255,255,255,0.25)';
+  equirectCtx.lineWidth = 1.2;
+  equirectCtx.beginPath();
+  drawGeoMesh(borders, equirectCtx, true, bakeProject);
+  equirectCtx.stroke();
 
-function renderBorders(targetCtx, borders) {
-  targetCtx.strokeStyle = 'rgba(255,255,255,0.18)';
-  targetCtx.lineWidth = 0.5;
-  drawGeoMesh(borders, targetCtx);
-}
-
-// High-detail (50m) land layer is too expensive to re-project and
-// redraw every single frame (~80k points vs ~8k for the 110m mesh) — but
-// once the globe is settled, rotX/rotY/zoom aren't changing, so the exact
-// same bitmap would be produced every frame anyway. Render it once into an
-// offscreen canvas, cache it keyed on everything that could change its
-// appearance, and just blit the cached bitmap on subsequent frames until
-// something in the key changes (rotation resumes, zoom changes, a country
-// gets highlighted, heatmap mode toggles, or the canvas is resized).
-let highDetailCache = null, highDetailCacheKey = null;
-
-function getHighDetailLandBitmap(features, borders, cx, cy, r) {
-  const key = [
-    rotX, rotY, zoom, canvas.clientWidth, canvas.clientHeight,
-    showHeat, highlightedCountry?.feature?.id ?? null,
-    !!elevationPixels, // texture loads async — rebuild once it's ready so terrain doesn't stay missing from a bitmap cached before it arrived
-  ].join('|');
-
-  if (highDetailCache && highDetailCacheKey === key) return highDetailCache;
-
-  const off = document.createElement('canvas');
-  off.width  = canvas.clientWidth;
-  off.height = canvas.clientHeight;
-  const offCtx = off.getContext('2d');
-  offCtx.save();
-  offCtx.beginPath(); offCtx.arc(cx, cy, r, 0, Math.PI * 2); offCtx.clip();
-  renderLandFill(offCtx, features, cx, cy, r);
-  offCtx.restore();
-
-  // Terrain relief shading — only in the cached high-detail tier (see
-  // applyTerrainShading's comment); runs on the raw pixels after the land
-  // fill but before borders, so border strokes stay crisp on top.
-  if (!showHeat) applyTerrainShading(offCtx, cx, cy, r);
-
-  offCtx.save();
-  offCtx.beginPath(); offCtx.arc(cx, cy, r, 0, Math.PI * 2); offCtx.clip();
-  renderBorders(offCtx, borders);
-  offCtx.restore();
-
-  highDetailCache = off;
-  highDetailCacheKey = key;
-  return off;
+  window.GlobeGL.regenerateTexture(equirectCanvas);
 }
 
 function drawGlobe() {
@@ -1559,6 +1452,7 @@ function drawGlobe() {
   const newHeight = canvas.clientHeight;
   if (newWidth !== lastCanvasWidth || newHeight !== lastCanvasHeight) {
     fitCanvasToDisplay(canvas, ctx);
+    if (window.GlobeGL && window.GlobeGL.ready) window.GlobeGL.resize(newWidth, newHeight, getCanvasDPR());
     lastCanvasWidth = newWidth;
     lastCanvasHeight = newHeight;
   }
@@ -1577,66 +1471,41 @@ function drawGlobe() {
 
   const r  = R(), cx = CX(), cy = CY();
 
-  // Space bg
-  ctx.fillStyle = '#07090f';
-  ctx.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+  // #canvas is now a transparent overlay — the sphere itself (ocean, land,
+  // borders, terrain relief, real-time day/night lighting) is rendered by
+  // the GPU onto #glCanvas beneath it; see webgl-globe.js and
+  // bakeEquirectTexture() above. clearRect, not an opaque fillRect, or
+  // this would hide the WebGL layer.
+  ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
 
-  // Atmosphere halo
+  if (window.GlobeGL && window.GlobeGL.ready) {
+    window.GlobeGL.setFrustum(canvas.clientWidth / 2, canvas.clientHeight / 2, r);
+    window.GlobeGL.setRotation(rotX, rotY);
+    // Subsolar drift is slow (~15°/hour) — recomputing the underlying
+    // date/declination math every ~60s is indistinguishable from every
+    // frame and far cheaper. But the light's DIRECTION relative to the
+    // rotating mesh must be re-derived every frame (cheap — reuses
+    // latLonToViewVec, the same rotation-aware function pins use), or the
+    // lit region drifts across geography as the globe spins instead of
+    // staying pinned to the real subsolar point.
+    if (!lastSunUpdateAt || performance.now() - lastSunUpdateAt > 60000) {
+      cachedSubsolar = getSubsolarPoint();
+      lastSunUpdateAt = performance.now();
+    }
+    if (cachedSubsolar) {
+      const sv = latLonToViewVec(cachedSubsolar.lat, cachedSubsolar.lon);
+      window.GlobeGL.setSunDirection(sv.x, sv.y, sv.z);
+    }
+    window.GlobeGL.render();
+  }
+
+  // Atmosphere halo — cosmetic, screen-space, sits at/outside the sphere's
+  // silhouette edge, so it stays on the 2D overlay same as before.
   const atm = ctx.createRadialGradient(cx, cy, r * 0.92, cx, cy, r * 1.18);
   atm.addColorStop(0, 'rgba(78,158,255,0.07)');
   atm.addColorStop(1, 'rgba(78,158,255,0)');
   ctx.fillStyle = atm;
   ctx.beginPath(); ctx.arc(cx, cy, r * 1.18, 0, Math.PI * 2); ctx.fill();
-
-  // Ocean
-  const oc = ctx.createRadialGradient(cx - r*.25, cy - r*.25, r*.05, cx, cy, r);
-  oc.addColorStop(0, '#0f4068');
-  oc.addColorStop(1, '#061d38');
-  ctx.fillStyle = oc;
-  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
-
-  if (worldTopoLow) {
-    // Settled + high-res ready → blit a cached bitmap (built once per
-    // settle, see getHighDetailLandBitmap) instead of re-projecting ~80k
-    // points every frame. Otherwise (still moving, or high-res not loaded
-    // yet) render live against the light low-res mesh.
-    if (topoFeaturesHigh && isSettled()) {
-      const bitmap = getHighDetailLandBitmap(topoFeaturesHigh, topoMeshHigh, cx, cy, r);
-      ctx.drawImage(bitmap, 0, 0);
-    } else {
-      const { features, mesh: borders } = getActiveTopo();
-      ctx.save();
-      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip();
-      renderLandAndBorders(ctx, features, borders, cx, cy, r);
-      ctx.restore();
-      drawLiveTerrainOverlay(cx, cy, r);
-    }
-  }
-
-  // Day/night terminator — darkens the hemisphere currently facing away
-  // from the sun, computed from the real subsolar point so it tracks
-  // real-world UTC time. A single linear gradient across the sun's own
-  // screen-space axis (cheap, no per-pixel work) rather than a hard-edged
-  // split, so the transition band reads as a soft terminator. Drawn before
-  // routes/pins so their risk/importance/severity colors stay fully
-  // legible on the night side.
-  {
-    const sun = getSubsolarPoint();
-    const sv = latLonToViewVec(sun.lat, sun.lon);
-    const sunMag = Math.hypot(sv.x, sv.y);
-    if (sunMag > 0.05) {
-      const nightGrad = ctx.createLinearGradient(cx + r * sv.x, cy - r * sv.y, cx - r * sv.x, cy + r * sv.y);
-      nightGrad.addColorStop(0,    'rgba(5,8,20,0)');
-      nightGrad.addColorStop(0.5,  'rgba(5,8,20,0)');
-      nightGrad.addColorStop(0.62, 'rgba(5,8,20,0.35)');
-      nightGrad.addColorStop(1,    'rgba(5,8,20,0.55)');
-      ctx.save();
-      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip();
-      ctx.fillStyle = nightGrad;
-      ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
-      ctx.restore();
-    }
-  }
 
   // Trade/transit routes (sea/air/rail — each gated on its own toggle inside)
   if (showTrade || showAir || showRail) drawAllRoutes();
@@ -1769,8 +1638,8 @@ function drawGlobe() {
   ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
 
-  // Draw smooth heatmap overlay then pins on top
-  drawHeatmapOverlay();
+  // Crisis density heat map, gated behind the showHeat toggle, then pins on top
+  if (showHeat) drawCrisisHeatmap();
   drawPins();
 }
 
@@ -2033,63 +1902,125 @@ function drawPins() {
   });
 }
 
-function drawHeatmapOverlay() {
+// TRUE density heat map: crisis contributions accumulate additively
+// ('lighter' blending) into an intensity field, so overlapping/clustered
+// crises compound into hotter zones — unlike the old drawHeatmapOverlay(),
+// which colored each crisis independently with no interaction between
+// nearby crises. Two-pass: (1) accumulate grayscale intensity into a
+// DOWNSAMPLED offscreen buffer (perf: this is screen-space and must
+// re-run every frame during rotation, unlike the WebGL sphere's
+// once-baked texture — downsampling avoids a full-res per-pixel readback
+// every frame), (2) colorize that buffer's pixels in-place through the
+// heat ramp, then upscale-composite onto the sphere with drawImage
+// (cheap, GPU-accelerated; the upscale's implicit softening is
+// desirable here, not a quality loss, since the content is already
+// blurred and low-frequency).
+const HEAT_DOWNSAMPLE = 0.4; // buffer edge = 0.4 * (2r)
+function drawCrisisHeatmap() {
   const cx = CX(), cy = CY(), r = R();
 
-  // Fade heatmap as user zooms in so pins stay readable
-  // zoom 0.5 → alpha 0.35, zoom 1.5 → alpha 0.2, zoom 2.5+ → alpha 0.04
-  const baseAlpha = Math.max(0.04, 0.35 - (zoom - 0.5) * 0.155);
-
-  // Gather visible, filtered crises — same location filter as drawPins()
   const filteredCrises = filterByDateRange(CRISES, currentYear).filter(c => {
     return (activeType === 'all' || c.type === activeType) &&
       (activeDomain === 'all' || getDomainForType(c.type) === activeDomain) &&
       (c.location_confidence ?? 70) >= 75;
   });
-
   if (filteredCrises.length === 0) return;
 
-  // Off-screen canvas, sized in CSS pixels (not the DPR-scaled backing-store
-  // size) — it's a soft blurred glow layer, doesn't need retina crispness,
-  // and this keeps its coordinate space matching project()'s CSS-pixel
-  // output without needing its own devicePixelRatio transform.
+  // Buffer covers the sphere's 2r x 2r bounding box, downsampled.
+  const bufSize = Math.max(1, Math.round(2 * r * HEAT_DOWNSAMPLE));
+  const scale = bufSize / (2 * r); // CSS-px screen space -> buffer-local space
+
   const off = document.createElement('canvas');
-  off.width  = canvas.clientWidth;
-  off.height = canvas.clientHeight;
-  const offCtx = off.getContext('2d');
+  off.width = bufSize;
+  off.height = bufSize;
+  // willReadFrequently: this buffer is always read back via getImageData
+  // below — without this hint, a freshly-created canvas defaults to a
+  // GPU-backed surface and that readback forces an expensive GPU->CPU
+  // sync (measured ~19ms on a fresh 252x252 canvas vs ~2ms with the hint,
+  // i.e. the dominant cost of this whole function without it).
+  const offCtx = off.getContext('2d', { willReadFrequently: true });
 
-  // Blur radius scales with the globe radius so it looks consistent at any window size
-  const blurPx = Math.round(r * 0.18);
-  offCtx.filter = `blur(${blurPx}px)`;
+  // Pass 1: additive accumulation of soft weight blobs. No ctx.filter
+  // blur here — measured cost: applying a CSS blur filter during drawing
+  // forces this canvas onto a much more expensive path for the
+  // getImageData readback below (~15ms vs ~1ms for the same draws
+  // without it, even with willReadFrequently set — the dominant cost of
+  // this whole function). Softness instead comes from the gradient's own
+  // multi-stop falloff plus the implicit smoothing of upscaling this
+  // downsampled buffer back to full size in the final composite.
+  offCtx.globalCompositeOperation = 'lighter';
 
-  // Draw each crisis as a soft glowing dot on the off-screen canvas.
-  // Severity drives colour: blue (low) → yellow (medium) → red (high).
+  const spreadR = r * 0.22 * scale; // fixed-ish geographic spread, not severity-scaled
+
   filteredCrises.forEach(crisis => {
     const p = project(crisis.lat, crisis.lon);
-    if (p.z < 0.04) return;  // Back-facing, skip
+    if (p.z < 0.04) return;
 
-    const severity  = (crisis.severity || 50) / 100;  // 0-1
-    const hue       = Math.round(240 - severity * 240); // 240=blue, 120=green, 60=yellow, 0=red
-    const dotRadius = r * 0.09 + severity * r * 0.06;  // larger dot for higher severity
+    // Screen space (cx-r .. cx+r) -> buffer-local (0 .. bufSize)
+    const bx = (p.sx - (cx - r)) * scale;
+    const by = (p.sy - (cy - r)) * scale;
 
-    const grad = offCtx.createRadialGradient(p.sx, p.sy, 0, p.sx, p.sy, dotRadius);
-    grad.addColorStop(0,   `hsla(${hue}, 100%, 65%, 0.9)`);
-    grad.addColorStop(0.4, `hsla(${hue}, 100%, 55%, 0.5)`);
-    grad.addColorStop(1,   `hsla(${hue}, 100%, 45%, 0)`);
+    const severity = (crisis.severity || 50) / 100;
+    // Kept well under 1.0 even at max severity (0.18-0.50 range) so a
+    // SINGLE crisis never saturates the accumulation buffer's alpha —
+    // otherwise 'lighter' blending has no headroom left to show that a
+    // cluster of crises is hotter than any one of them alone, which
+    // defeats the entire point of a density heat map. (Verified: with
+    // the earlier 0.25-0.80 range plus a 1.6x post-boost below, one
+    // severity-90 crisis alone already hit the 255 alpha ceiling.)
+    const peakAlpha = 0.18 + severity * 0.32;
+
+    const grad = offCtx.createRadialGradient(bx, by, 0, bx, by, spreadR);
+    grad.addColorStop(0,   `rgba(255,255,255,${peakAlpha})`);
+    grad.addColorStop(0.5, `rgba(255,255,255,${peakAlpha * 0.35})`);
+    grad.addColorStop(1,   'rgba(255,255,255,0)');
 
     offCtx.fillStyle = grad;
     offCtx.beginPath();
-    offCtx.arc(p.sx, p.sy, dotRadius, 0, Math.PI * 2);
+    offCtx.arc(bx, by, spreadR, 0, Math.PI * 2);
     offCtx.fill();
   });
 
-  // Clip the heatmap to the globe circle, then composite at chosen alpha
+  offCtx.globalCompositeOperation = 'source-over';
+
+  // Pass 2: colorize accumulated grayscale intensity through the heat ramp.
+  const imgData = offCtx.getImageData(0, 0, bufSize, bufSize);
+  const data = imgData.data;
+  const rgb = [0, 0, 0];
+  for (let i = 0; i < data.length; i += 4) {
+    const intensity = data[i + 3] / 255; // accumulated alpha = accumulated density
+    if (intensity <= 0.003) continue;
+    heatRampColor(intensity, rgb);
+    data[i]     = rgb[0];
+    data[i + 1] = rgb[1];
+    data[i + 2] = rgb[2];
+    // Deliberately NO extra boost multiplier here (unlike an earlier
+    // version that used *1.6): that boost was applied per-pixel BEFORE
+    // compositing, so it saturated a single crisis's own alpha to the
+    // 255 ceiling just as easily as a whole cluster's, erasing the
+    // density signal this function exists to show. Overall visibility
+    // instead comes from `baseAlpha` below, a single multiplier applied
+    // uniformly at composite time — it makes the whole layer more or
+    // less visible without disturbing the RELATIVE intensity differences
+    // between sparse and dense areas that a boost baked in here would.
+    data[i + 3] = Math.round(intensity * 255);
+  }
+  offCtx.putImageData(imgData, 0, 0);
+
+  // Zoom-aware fade so pins stay readable when zoomed in — punchier
+  // baseline (0.85 max) than the old drawHeatmapOverlay's 0.35 cap,
+  // since "too subtle" was the explicit complaint. Safe to push higher
+  // here specifically because peakAlpha/no-boost above now leave real
+  // headroom in the 0-255 range for density to show through — this
+  // baseAlpha is a uniform final multiplier, not a per-pixel one.
+  const baseAlpha = Math.max(0.1, 0.85 - (zoom - 0.5) * 0.28);
+
   ctx.save();
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.clip();
   ctx.globalAlpha = baseAlpha;
-  ctx.drawImage(off, 0, 0);
+  ctx.drawImage(off, 0, 0, bufSize, bufSize, cx - r, cy - r, 2 * r, 2 * r);
   ctx.globalAlpha = 1;
   ctx.restore();
 }
@@ -2170,107 +2101,21 @@ function updateRoutePanel(route) {
   document.getElementById('ri-ownership').textContent = route.ownership || 'No data available.';
 }
 
+// Heuristic forecasts carry a real relative signal (system reads this as
+// higher/lower risk) but no real statistical precision — so the UI shows a
+// qualitative band, not the underlying number, even though the bar width
+// still tracks it for a quick visual comparison.
+function probBand(v) {
+  if (v >= 60) return 'High';
+  if (v >= 30) return 'Med';
+  return 'Low';
+}
+
 function updateAllPanels() {
   if (!selected) return;
   const c = selected;
-  const tm = TYPE_META[c.type] || { color:'#888', name:'Unknown' };
 
-  // ── Overview ──
-  document.getElementById('emptyState').style.display = 'none';
-  const ov = document.getElementById('overviewContent');
-  ov.style.display = 'flex';
-
-  const badge = document.getElementById('ov-type-badge');
-  badge.textContent = tm.name;
-  badge.style.background = tm.color + '33';
-  badge.style.color = tm.color;
-  badge.style.border = `1px solid ${tm.color}55`;
-
-  const confEl = document.getElementById('ov-conf');
-  const confColor = c.confidence > 80 ? '#3dffaa' : c.confidence > 60 ? '#ffd93d' : '#ff8833';
-  confEl.textContent = `${c.confidence}% confidence`;
-  confEl.style.background = confColor + '18';
-  confEl.style.borderColor = confColor + '44';
-  confEl.style.color = confColor;
-
-  document.getElementById('ov-title').textContent = c.title;
-  // Sync bookmark star
-  const bBtn = document.getElementById('ov-bookmark-btn');
-  if (bBtn) bBtn.classList.toggle('on', bookmarks.has(c.id));
-  document.getElementById('ov-date').textContent  = c.date;
-
-  const schedBanner = document.getElementById('ov-scheduled-banner');
-  if (schedBanner) {
-    if (c.status === 'upcoming' && c.date_scheduled) {
-      const schedDate = new Date(c.date_scheduled);
-      schedBanner.textContent = `Scheduled: ${isNaN(schedDate) ? c.date_scheduled : schedDate.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}`;
-      schedBanner.style.display = 'block';
-    } else {
-      schedBanner.style.display = 'none';
-    }
-  }
-
-  const sevColor = c.severity > 80 ? '#ff3b3b' : c.severity > 60 ? '#ff8833' : '#ffd93d';
-  document.getElementById('ov-sev-bar').style.width = c.severity + '%';
-  document.getElementById('ov-sev-bar').style.background = sevColor;
-  document.getElementById('ov-sev-num').textContent = c.severity;
-  document.getElementById('ov-sev-num').style.color = sevColor;
-
-  // Sparkline — drawn from escalation history if available, otherwise skip
-  const sparkCanvas = document.getElementById('overviewSparkline');
-  if (sparkCanvas && c.escalation?.history?.length > 1) {
-    sparkCanvas.style.display = 'block';
-    drawSparkline(sparkCanvas, c.escalation.history, sevColor);
-  } else if (sparkCanvas) {
-    sparkCanvas.style.display = 'none';
-  }
-
-  const stEl = document.getElementById('ov-stakeholders');
-  const ACTOR_CLASS = { US:'us', CN:'cn', RU:'ru', EU:'eu' };
-  stEl.innerHTML = c.stakeholders.map(s => {
-    const cls = ACTOR_CLASS[s] || 'x';
-    const actorName = ACTORS.find(a => a.id === s)?.name || s;
-    return `<span class="tag ${cls}">${escapeHtml(actorName)}</span>`;
-  }).join('');
-
-  document.getElementById('ov-analysis').textContent = c.analysis;
-  document.getElementById('ov-impact').textContent   = c.impact;
-
-  // Display image from briefing if available, otherwise fetch from Wikipedia
-  const imgWrap      = document.getElementById('ov-image-wrap');
-  const imgEl        = document.getElementById('ov-image');
-  const imgCaption   = document.getElementById('ov-image-caption');
-  imgWrap.style.display = 'none';
-
-  // Use image from briefing response if it exists, otherwise try Wikipedia fallback
-  const displayImage = (img) => {
-    if (img) {
-      imgEl.src = img.src;
-      imgEl.alt = img.caption;
-      imgCaption.textContent = img.caption;
-      imgWrap.style.display = 'block';
-    }
-  };
-
-  if (c.briefing?.image) {
-    displayImage(c.briefing.image);
-  } else {
-    fetchWikiImage(c).then(displayImage);
-  }
-
-  const aEl = document.getElementById('ov-analogy');
-  if (c.analogy) {
-    aEl.innerHTML = `<div class="analogy-match">${escapeHtml(c.analogy.match)} <span class="analogy-pct">${c.analogy.pct}% match</span></div><div class="analogy-desc">${escapeHtml(c.analogy.desc)}</div>`;
-    aEl.parentElement.style.display = '';
-  } else {
-    // Without this, a crisis with no analogy silently kept showing
-    // whichever OTHER crisis's analogy was last rendered — aEl.innerHTML
-    // was only ever written inside the `if`, never cleared, so switching
-    // from a crisis with a match to one without left the previous match
-    // on screen, now misattributed to the wrong crisis.
-    aEl.innerHTML = '';
-    aEl.parentElement.style.display = 'none';
-  }
+  document.getElementById('panelTitleText').textContent = c.title;
 
   // ── Forecast ──
   document.getElementById('forecastEmpty').style.display = 'none';
@@ -2283,17 +2128,17 @@ function updateAllPanels() {
         <div class="prob-row">
           <span class="prob-lbl">Unlikely</span>
           <div class="prob-track"><div class="prob-fill" style="width:${f.low}%;background:#3dffaa"></div></div>
-          <span class="prob-pct" style="color:#3dffaa">${f.low}%</span>
+          <span class="prob-pct" style="color:#3dffaa">${probBand(f.low)}</span>
         </div>
         <div class="prob-row">
           <span class="prob-lbl">Possible</span>
           <div class="prob-track"><div class="prob-fill" style="width:${f.mid}%;background:#ffd93d"></div></div>
-          <span class="prob-pct" style="color:#ffd93d">${f.mid}%</span>
+          <span class="prob-pct" style="color:#ffd93d">${probBand(f.mid)}</span>
         </div>
         <div class="prob-row">
           <span class="prob-lbl">Likely</span>
           <div class="prob-track"><div class="prob-fill" style="width:${f.high}%;background:#ff3b3b"></div></div>
-          <span class="prob-pct" style="color:#ff3b3b">${f.high}%</span>
+          <span class="prob-pct" style="color:#ff3b3b">${probBand(f.high)}</span>
         </div>
       </div>
     </div>
@@ -2370,6 +2215,11 @@ function updateEventsList() {
 
   const filtered = crisisesInYear
     .filter(c => {
+      // Dated events (elections, referendums, summits — 'upcoming' before
+      // they happen, 'resolved' once they have) live in the Calendar tab
+      // instead — otherwise, on a database with no other crises yet, this
+      // "ongoing crises" list would show nothing but those.
+      if (c.status === 'upcoming' || c.status === 'resolved') return false;
       const typeMatch = activeType === 'all' || c.type === activeType;
       const domainMatch = activeDomain === 'all' || getDomainForType(c.type) === activeDomain;
       const countryMatch = !countryFilter || c.country === countryFilter;
@@ -2405,19 +2255,6 @@ function updateEventsList() {
     });
     el.addEventListener('click', () => selectCrisis(crisis));
     list.appendChild(el);
-  });
-}
-
-function buildAlerts() {
-  const al = document.getElementById('alertsList');
-  ALERTS.forEach(a => {
-    const el = document.createElement('div');
-    el.className = 'alert-strip';
-    el.style.borderColor = a.color + '44';
-    el.style.background  = a.color + '11';
-    el.style.color       = a.color;
-    el.textContent       = a.text;
-    al.appendChild(el);
   });
 }
 
@@ -2497,17 +2334,12 @@ document.querySelectorAll('.tab[data-tab]').forEach(tab => {
     tab.setAttribute('aria-selected', 'true');
     document.getElementById('tab-' + id).classList.add('active');
 
-    // Update panels when switching tabs. Overview holds two canvases
-    // (severity sparkline, escalation-trend chart) — if a different tab
-    // was active when a *new* crisis got selected, they drew into a
-    // hidden (0-width) canvas and came out blank. Re-run their draw now
-    // that this tab is actually visible.
-    if (id === 'overview' && selected) {
-      updateAllPanels();
-      if (selected.escalation) updateEscalationPanel(selected.escalation);
-    }
+    // Re-render cached data now that this tab is actually visible (each
+    // panel's data was already fetched once in selectCrisis — this just
+    // repaints it, cheap and idempotent).
     if (id === 'briefing' && selected) updateBriefingPanel(selected.briefing);
     if (id === 'history' && selected) updateHistoryPanel(selected.history);
+    if (id === 'news' && selected) updateNewsPanel(selected.news);
   });
 });
 
@@ -3033,6 +2865,7 @@ async function applyDeepLink() {
     stakeholders: Array.isArray(raw.stakeholders) ? raw.stakeholders : [],
     domains: raw.domains || { military:50, economic:50, political:50, environment:50, technology:50, information:50 },
     forecasts: [], cascade: [], causal: [], analogy: null,
+    is_verified: raw.is_verified || false,
     _shared: true,
   };
 
@@ -3055,11 +2888,6 @@ function toggleBookmark(crisis) {
   localStorage.setItem('geointel_bookmarks', JSON.stringify([...bookmarks]));
   updateWatchlist();
   updateEventsList(); // refresh stars in crisis list
-  // Sync star in overview panel if this is the selected crisis
-  if (selected && Number(selected.id) === Number(crisis.id)) {
-    const btn = document.getElementById('ov-bookmark-btn');
-    if (btn) btn.classList.toggle('on', bookmarks.has(crisis.id));
-  }
 }
 
 function updateWatchlist() {
@@ -3111,7 +2939,11 @@ function renderCalendar() {
 
   const upcoming = CRISES.filter(c => c.status === 'upcoming' && c.date_scheduled)
     .sort((a, b) => new Date(a.date_scheduled) - new Date(b.date_scheduled));
-  const past = CRISES.filter(c => c.status !== 'upcoming' && (c.date || c.date_start))
+  // Only *concluded* dated events (status flipped to 'resolved' once they
+  // happen) — not every non-upcoming crisis, which would otherwise sweep
+  // in genuinely ongoing reactive crises (status 'active') too and
+  // duplicate the Crises tab under a misleading "Past" heading.
+  const past = CRISES.filter(c => c.status === 'resolved' && (c.date || c.date_start))
     .sort((a, b) => new Date(b.date || b.date_start) - new Date(a.date || a.date_start));
 
   if (countEl) countEl.textContent = `${upcoming.length} upcoming`;
@@ -3175,10 +3007,6 @@ document.getElementById('clearWatchlist').addEventListener('click', () => {
   localStorage.setItem('geointel_bookmarks', JSON.stringify([]));
   updateWatchlist();
   updateEventsList();
-});
-
-document.getElementById('ov-bookmark-btn').addEventListener('click', () => {
-  if (selected) toggleBookmark(selected);
 });
 
 // Keyboard shortcuts
@@ -3495,6 +3323,7 @@ async function loadRealData() {
         cascade: [],
         causal: [],
         analogy: null,
+        is_verified: c.is_verified || false,
         status: c.status || 'active',
         date_scheduled: c.date_scheduled || null,
       }));
@@ -3510,10 +3339,14 @@ async function loadRealData() {
         color: a.color,
         lat: a.lat,
         lon: a.lon,
-        military_power: a.military || 50,
-        economic_power: a.economic || 50,
-        political_influence: a.political || 50,
-        technological_capability: a.technology || 50,
+        // These are real WorldBank-derived stats (economic_power) or
+        // genuinely unrated (the other three have no real data source) —
+        // `?? null` preserves that distinction instead of `|| 50` silently
+        // turning "not rated" back into a fabricated middle-of-the-road number.
+        military_power: a.military ?? null,
+        economic_power: a.economic ?? null,
+        political_influence: a.political ?? null,
+        technological_capability: a.technology ?? null,
         is_nuclear: a.is_nuclear || false,
       }));
     }
@@ -3620,53 +3453,6 @@ function showBreakingAlert(crisis) {
   } catch (e) {}
 }
 
-async function loadReliabilityData(id) { try { const r = await fetch(`${(window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : '/api')}/crises/${id}/reliability`); return r.ok ? await r.json() : null; } catch (e) { return null; } }
-async function loadEscalationData(id) { try { const r = await fetch(`${(window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : '/api')}/crises/${id}/escalation`); return r.ok ? await r.json() : null; } catch (e) { return null; } }
-
-// ── Alert email subscriptions ─────────────────────────────────────────────────
-async function submitAlertSubscription() {
-  const name   = document.getElementById('alertSubName').value.trim();
-  const email  = document.getElementById('alertSubEmail').value.trim();
-  const region = document.getElementById('alertSubRegion').value.trim() ||
-                 (window._selectedCrisis?.country) || 'all';
-  const msg    = document.getElementById('alertSubMsg');
-
-  if (!email || !email.includes('@')) {
-    msg.textContent = '⚠️ Please enter a valid email.';
-    msg.style.color = '#f59e0b';
-    msg.style.display = 'block';
-    return;
-  }
-
-  try {
-    const res = await fetch((window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : '/api') + '/alerts/subscribe', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name || 'Subscriber', email, regions: [region] }),
-    });
-    const data = await res.json();
-    if (res.ok) {
-      msg.textContent = `✅ Subscribed! You'll receive alerts for: ${region}`;
-      msg.style.color = '#22c55e';
-      document.getElementById('alertSubEmail').value = '';
-      document.getElementById('alertSubName').value = '';
-    } else {
-      msg.textContent = `⚠️ ${data.error || 'Subscription failed.'}`;
-      msg.style.color = '#f59e0b';
-    }
-  } catch (e) {
-    msg.textContent = '⚠️ Could not connect to server.';
-    msg.style.color = '#f59e0b';
-  }
-  msg.style.display = 'block';
-}
-
-// Pre-fill region when a crisis is selected
-function prefillAlertRegion(country) {
-  const field = document.getElementById('alertSubRegion');
-  if (field && country) field.value = country;
-}
-async function loadEconomicData(id) { try { const r = await fetch(`${(window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : '/api')}/crises/${id}/economic`); return r.ok ? await r.json() : null; } catch (e) { return null; } }
 async function loadBriefing(id) { try { const r = await fetch(`${(window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : '/api')}/crises/${id}/briefing`); return r.ok ? await r.json() : null; } catch (e) { return null; } }
 async function loadDeepHistory(id) { try { const r = await fetch(`${(window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : '/api')}/crises/${id}/history`); return r.ok ? await r.json() : null; } catch (e) { return null; } }
 
@@ -3726,273 +3512,54 @@ function resetPanelEmpty(emptyEl) {
   if (emptyEl.dataset.defaultHtml) emptyEl.innerHTML = emptyEl.dataset.defaultHtml;
 }
 
-function updateReliabilityPanel(rel) {
-  const content = document.getElementById('reliabilityContent');
-  const empty = document.getElementById('reliabilityEmpty');
+// Trust-signal badges shown above every tab (reliability, citation count,
+// human-verified) — these are all genuinely computed from real stored data
+// (calculate_source_reliability, the briefing's numbered source list,
+// Crisis.is_verified), unlike the fabricated metrics this redesign removed.
+const RELIABILITY_COLORS = {
+  verified:     '#3dffaa',
+  corroborated: '#4e9eff',
+  reported:     '#ffd93d',
+  unverified:   '#ff8a3d',
+  unknown:      'var(--dim)',
+};
 
-  if (!rel) {
-    if (content) content.style.display = 'none';
-    if (selected) {
-      showPanelUnavailable(empty, 'Source reliability data<br>could not be loaded');
-    } else {
-      resetPanelEmpty(empty);
-      if (empty) empty.style.display = 'flex';
-    }
-    return;
-  }
-  resetPanelEmpty(empty);
+function updatePanelBadges(crisis) {
+  const el = document.getElementById('panelBadges');
+  if (!el) return;
+  const badges = [];
 
-  if (empty) empty.style.display = 'none';
-  if (content) content.style.display = 'flex';
-
-  const statusMap = {
-    'verified': '🟢 Verified by 3+ sources',
-    'corroborated': '🟡 Corroborated by 2+ sources',
-    'reported': '🟠 Reported by 1 source',
-    'unverified': '🔴 Unverified',
-    'unknown': '❓ No source data yet'
-  };
-
-  const statusEl = document.getElementById('rel-status');
-  if (statusEl) {
-    statusEl.textContent = statusMap[rel.reliability] || rel.reliability;
-    statusEl.className = `source-badge ${rel.reliability}`;
+  const rel = crisis.reliability;
+  if (rel && rel.reliability && rel.reliability !== 'unknown') {
+    const color = RELIABILITY_COLORS[rel.reliability] || 'var(--accent)';
+    badges.push(`<span class="conf-badge" style="padding:3px 9px;font-size:10px;color:${color};border-color:${color}40;background:${color}1f">${escapeHtml(rel.reliability)} (${rel.source_count} source${rel.source_count === 1 ? '' : 's'})</span>`);
   }
 
-  const scoreBar = document.getElementById('rel-score-bar');
-  if (scoreBar) {
-    scoreBar.style.width = (rel.score || 0) + '%';
-    scoreBar.style.background = rel.score >= 80 ? '#3dffaa' : rel.score >= 60 ? '#ffd93d' : rel.score > 0 ? '#ff8833' : '#666';
+  const sourceCount = crisis.briefing && Array.isArray(crisis.briefing.sources) ? crisis.briefing.sources.length : 0;
+  if (sourceCount > 0) {
+    badges.push(`<span class="conf-badge" style="padding:3px 9px;font-size:10px">${sourceCount} cited source${sourceCount === 1 ? '' : 's'}</span>`);
   }
 
-  const scoreNum = document.getElementById('rel-score-num');
-  if (scoreNum) scoreNum.textContent = (rel.score || 0) + '/100';
-
-  const sourcesEl = document.getElementById('rel-sources');
-  if (sourcesEl) {
-    if (rel.sources && rel.sources.length > 0) {
-      sourcesEl.innerHTML = rel.sources.map(s => `<span class="source-badge ${rel.reliability}">${escapeHtml(s)}</span>`).join('');
-    } else {
-      sourcesEl.innerHTML = '<span style="color:#888;font-size:10px;font-style:italic;">Sources will appear as news articles are aggregated</span>';
-    }
+  if (crisis.is_verified) {
+    badges.push(`<span class="conf-badge" style="padding:3px 9px;font-size:10px;color:#3dffaa;border-color:#3dffaa40;background:#3dffaa1f">✓ Verified</span>`);
   }
+
+  el.innerHTML = badges.join('');
 }
 
-function updateEscalationPanel(esc) {
-  const content = document.getElementById('escalationContent');
-  const empty = document.getElementById('escalationEmpty');
-
-  if (!esc || !esc.trend) {
-    if (content) content.style.display = 'none';
-    if (selected) {
-      showPanelUnavailable(empty, 'Escalation trajectory data<br>could not be loaded');
-    } else {
-      resetPanelEmpty(empty);
-      if (empty) empty.style.display = 'flex';
-    }
-    return;
-  }
-
-  resetPanelEmpty(empty);
-  if (empty) empty.style.display = 'none';
-  if (content) content.style.display = 'flex';
-
-  const trendMap = {
-    'escalating': '📈 ESCALATING',
-    'de-escalating': '📉 DE-ESCALATING',
-    'stable': '➡️ STABLE',
-    'new': '✨ NEW'
-  };
-
-  const trendEl = document.getElementById('esc-trend');
-  if (trendEl) {
-    trendEl.textContent = trendMap[esc.trend] || esc.trend;
-    trendEl.className = 'trend-' + esc.trend.replace(' ', '-');
-  }
-
-  const warningEl = document.getElementById('esc-warning');
-  if (warningEl) {
-    if (esc.warning) {
-      warningEl.style.display = 'block';
-      warningEl.textContent = esc.warning;
-    } else {
-      warningEl.style.display = 'none';
-    }
-  }
-
-  const changeColor = esc.severity_change > 0 ? '#ff3b3b' : esc.severity_change < 0 ? '#3dffaa' : '#ffd93d';
-  const changeEl = document.getElementById('esc-change');
-  if (changeEl) {
-    changeEl.textContent = (esc.severity_change > 0 ? '+' : '') + (esc.severity_change || 0) + ' pts';
-    changeEl.style.color = changeColor;
-  }
-
-  const velocityEl = document.getElementById('esc-velocity');
-  if (velocityEl) {
-    velocityEl.textContent = (esc.velocity > 0 ? '+' : '') + (esc.velocity || 0) + ' pts/day';
-    velocityEl.style.color = esc.velocity > 0 ? '#ff3b3b' : esc.velocity < 0 ? '#3dffaa' : '#ffd93d';
-  }
-
-  if (esc.history && esc.history.length > 0) {
-    const chartCanvas = document.getElementById('escalationChart');
-    if (chartCanvas) drawEscalationChart(chartCanvas, esc.history);
-  }
-}
-
-function rollingAvg(arr, window) {
-  return arr.map((_, i) => {
-    const start = Math.max(0, i - Math.floor(window / 2));
-    const end   = Math.min(arr.length, start + window);
-    const slice = arr.slice(start, end);
-    return slice.reduce((s, v) => s + v, 0) / slice.length;
-  });
-}
-
-function drawSparkline(canvas, history, color) {
-  const w = canvas.clientWidth || 200;
-  canvas.width = w;
-  const h = canvas.height = 44;
-  const c = canvas.getContext('2d');
-  c.clearRect(0, 0, w, h);
-
-  const PAD = { l: 28, r: 8, t: 6, b: 14 };
-  const cw = w - PAD.l - PAD.r, ch = h - PAD.t - PAD.b;
-
-  const sevs = history.map(p => p.severity);
-  const avg  = rollingAvg(sevs, Math.max(3, Math.round(sevs.length / 4)));
-  const lo   = Math.min(...sevs) - 2;
-  const hi   = Math.max(...sevs) + 2;
-  const range = hi - lo || 1;
-
-  const sx = i => PAD.l + (i / (sevs.length - 1 || 1)) * cw;
-  const sy = v => PAD.t + ch - ((v - lo) / range) * ch;
-
-  // Y-axis labels (min / max)
-  c.font = '8px Segoe UI';
-  c.fillStyle = 'rgba(143,163,192,0.7)';
-  c.textAlign = 'right';
-  c.fillText(Math.round(hi), PAD.l - 3, PAD.t + 4);
-  c.fillText(Math.round(lo), PAD.l - 3, PAD.t + ch + 1);
-
-  // Raw data — faint background line
-  c.beginPath();
-  sevs.forEach((v, i) => i === 0 ? c.moveTo(sx(i), sy(v)) : c.lineTo(sx(i), sy(v)));
-  c.strokeStyle = color + '30';
-  c.lineWidth = 1;
-  c.stroke();
-
-  // Fill under rolling average
-  const grad = c.createLinearGradient(0, PAD.t, 0, PAD.t + ch);
-  grad.addColorStop(0, color + '40');
-  grad.addColorStop(1, color + '00');
-  c.beginPath();
-  avg.forEach((v, i) => i === 0 ? c.moveTo(sx(i), sy(v)) : c.lineTo(sx(i), sy(v)));
-  c.lineTo(sx(avg.length - 1), PAD.t + ch);
-  c.lineTo(sx(0), PAD.t + ch);
-  c.closePath();
-  c.fillStyle = grad;
-  c.fill();
-
-  // Rolling average — main bright line
-  c.beginPath();
-  avg.forEach((v, i) => i === 0 ? c.moveTo(sx(i), sy(v)) : c.lineTo(sx(i), sy(v)));
-  c.strokeStyle = color;
-  c.lineWidth = 2;
-  c.stroke();
-
-  // Endpoint dot + current value label
-  const last = avg.length - 1;
-  c.beginPath();
-  c.arc(sx(last), sy(avg[last]), 3, 0, Math.PI * 2);
-  c.fillStyle = color;
-  c.fill();
-
-  // Trend arrow below chart
-  const trend = avg[last] > avg[0] + 1 ? '▲' : avg[last] < avg[0] - 1 ? '▼' : '━';
-  const trendColor = avg[last] > avg[0] + 1 ? '#ff3b3b' : avg[last] < avg[0] - 1 ? '#3dffaa' : '#ffd93d';
-  c.font = 'bold 8px Segoe UI';
-  c.fillStyle = trendColor;
-  c.textAlign = 'left';
-  c.fillText(`${trend} 30-day avg`, PAD.l, h - 2);
-}
-
-function drawEscalationChart(canvas, history) {
-  if (!canvas || !history || history.length === 0) return;
-
-  const ctx = canvas.getContext('2d');
-  const w = canvas.width, h = canvas.height;
-
-  // Clear
-  ctx.fillStyle = '#0a0d1a';
-  ctx.fillRect(0, 0, w, h);
-
-  // Draw background grid
-  ctx.strokeStyle = 'rgba(78,158,255,0.1)';
-  ctx.lineWidth = 1;
-  for (let i = 0; i <= 4; i++) {
-    const y = (h / 4) * i;
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(w, y);
-    ctx.stroke();
-  }
-
-  // Draw line chart
-  const severities = history.map(h => h.severity);
-  const maxSev = Math.max(...severities, 100);
-  const minSev = Math.min(...severities, 0);
-  const range = maxSev - minSev || 1;
-
-  ctx.strokeStyle = '#4e9eff';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-
-  history.forEach((point, i) => {
-    const x = (i / (history.length - 1 || 1)) * (w - 10) + 5;
-    const y = h - 10 - ((point.severity - minSev) / range) * (h - 20);
-
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  });
-  ctx.stroke();
-
-  // Draw points
-  ctx.fillStyle = '#4e9eff';
-  history.forEach((point, i) => {
-    const x = (i / (history.length - 1 || 1)) * (w - 10) + 5;
-    const y = h - 10 - ((point.severity - minSev) / range) * (h - 20);
-    ctx.beginPath();
-    ctx.arc(x, y, 3, 0, Math.PI * 2);
-    ctx.fill();
-  });
-
-  // Draw border
-  ctx.strokeStyle = 'rgba(78,158,255,0.3)';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(0, 0, w, h);
-}
-
-function updateEconomicPanel(eco) {
-  const c = document.getElementById('economicContent'), e = document.getElementById('economicEmpty');
-  if (!eco) {
-    c.style.display='none';
-    if (selected) {
-      showPanelUnavailable(e, 'Economic impact data<br>could not be loaded');
-    } else {
-      resetPanelEmpty(e);
-      e.style.display='flex';
-    }
-    return;
-  }
-  resetPanelEmpty(e);
-  e.style.display='none'; c.style.display='flex';
-  const col = eco.impact_severity==='severe'?'#ff3b3b':eco.impact_severity==='significant'?'#ff8833':eco.impact_severity==='moderate'?'#ffd93d':'#3dffaa';
-  const se = document.getElementById('econ-severity');
-  se.textContent = eco.impact_severity.toUpperCase();
-  se.style.color = col;
-  document.getElementById('econ-sectors').innerHTML = eco.estimated_impact.industry_sectors_affected.map(s=>`<span class="sector-tag">${escapeHtml(s)}</span>`).join('');
-  const est = eco.estimated_impact;
-  document.getElementById('econ-estimates').innerHTML = `<div>Trade: ~${est.trade_disruption_percent}%</div><div>Volatility: ~${est.market_volatility_percent}%</div>`;
+// Every briefing/history response carries a real `model` field distinguishing
+// actual Claude generation from the rule-based static fallback (which fires
+// whenever ANTHROPIC_API_KEY isn't configured) — surface that distinction
+// directly rather than letting static content masquerade as AI analysis.
+function setGenBadge(el, model) {
+  if (!el) return;
+  if (!model) { el.style.display = 'none'; return; }
+  const isAI = model.startsWith('claude-');
+  el.textContent = isAI ? '🤖 AI-generated' : '📋 Static (rule-based)';
+  el.style.color = isAI ? '#4e9eff' : 'var(--dim)';
+  el.style.borderColor = isAI ? '#4e9eff40' : 'rgba(255,255,255,.15)';
+  el.style.background = isAI ? '#4e9eff1f' : 'rgba(255,255,255,.05)';
+  el.style.display = 'block';
 }
 
 function updateBriefingPanel(br) {
@@ -4001,11 +3568,13 @@ function updateBriefingPanel(br) {
   const textEl    = document.getElementById('briefing-text');
   const imgWrap   = document.getElementById('briefing-image-wrap');
   const imgEl     = document.getElementById('briefing-image');
+  const genBadge  = document.getElementById('briefing-genbadge');
 
   if (!br) {
     c.style.display = 'none';
     loadingEl.style.display = 'none'; textEl.style.display = 'none';
     imgWrap.style.display = 'none';
+    genBadge.style.display = 'none';
     if (selected) {
       showPanelUnavailable(e, 'AI briefing unavailable for this crisis<br>(check ANTHROPIC_API_KEY on the backend, or try again shortly)');
     } else {
@@ -4027,6 +3596,8 @@ function updateBriefingPanel(br) {
     imgWrap.style.display = 'none';
   }
 
+  setGenBadge(genBadge, br.model);
+
   // Render markdown-formatted briefing text
   renderMarkdown(textEl, br.briefing);
 }
@@ -4035,10 +3606,14 @@ function updateHistoryPanel(hist) {
   const c = document.getElementById('historyContent'), e = document.getElementById('historyEmpty');
   const loadingEl = document.getElementById('history-loading');
   const textEl    = document.getElementById('history-text');
+  const analogyEl = document.getElementById('history-analogy');
+  const genBadge  = document.getElementById('history-genbadge');
 
   if (!hist) {
     c.style.display = 'none';
     loadingEl.style.display = 'none'; textEl.style.display = 'none';
+    analogyEl.style.display = 'none';
+    genBadge.style.display = 'none';
     if (selected) {
       showPanelUnavailable(e, 'Deep historical analysis unavailable for this crisis<br>(check ANTHROPIC_API_KEY on the backend, or try again shortly)');
     } else {
@@ -4051,7 +3626,67 @@ function updateHistoryPanel(hist) {
   e.style.display = 'none'; c.style.display = 'flex';
   loadingEl.style.display = 'none'; textEl.style.display = 'block';
 
+  setGenBadge(genBadge, hist.model);
+
+  // The analogy's "strength" is a qualitative word (strong/moderate/loose)
+  // from the model, never a numeric match percentage — no real precedent
+  // database backs a precise figure, so this stays a fast visual anchor for
+  // a comparison already stated in the rendered prose, not a new claim.
+  if (hist.analogy && hist.analogy.match && hist.analogy.strength) {
+    analogyEl.textContent = `Strongest historical parallel: ${hist.analogy.match} (${hist.analogy.strength})`;
+    analogyEl.style.display = 'block';
+  } else {
+    analogyEl.style.display = 'none';
+  }
+
   renderMarkdown(textEl, hist.history);
+}
+
+// Per-crisis news articles — the fetch (crisis.news, via GeoIntelAPI.getNews
+// in selectCrisis below) already existed; this just renders it, matching the
+// same pattern as updateBriefingPanel/updateHistoryPanel above.
+function updateNewsPanel(articles) {
+  const c = document.getElementById('newsContent'), e = document.getElementById('newsEmpty');
+
+  if (!articles) {
+    c.style.display = 'none';
+    if (selected) {
+      showPanelUnavailable(e, 'News articles unavailable for this crisis<br>(try again shortly)');
+    } else {
+      resetPanelEmpty(e);
+      e.style.display = 'flex';
+    }
+    return;
+  }
+  if (articles.length === 0) {
+    c.style.display = 'none';
+    showPanelUnavailable(e, 'No recent news articles found<br>for this crisis');
+    return;
+  }
+
+  resetPanelEmpty(e);
+  e.style.display = 'none';
+  c.style.display = 'flex';
+
+  c.innerHTML = articles.map(a => {
+    // Two possible shapes reach here: real DB-backed articles use
+    // published_at (snake_case, News.to_dict()); the synthetic fallback
+    // generated when no real articles are indexed uses publishedAt
+    // (camelCase, backend's _generate_contextual_news). Accept either.
+    const rawDate = a.published_at || a.publishedAt;
+    const dateStr = rawDate ? new Date(rawDate).toLocaleDateString() : '';
+    const meta = [escapeHtml(a.source || 'Unknown source'), dateStr].filter(Boolean).join(' • ');
+    const body = `
+      <div style="font-weight:600;color:#e0eaff;font-size:11px;margin-bottom:3px;line-height:1.4">${escapeHtml(a.title || 'Untitled')}</div>
+      <div style="color:var(--dim);font-size:9px">${meta}</div>`;
+    const itemStyle = 'display:block;padding:8px;border:1px solid rgba(255,255,255,.1);border-radius:3px;background:rgba(255,255,255,.03);text-decoration:none;transition:background .2s;';
+    // Only a clickable link for http(s) URLs — same scheme restriction
+    // renderMarkdown() already applies to source citations, so a
+    // malformed/untrusted URL can't smuggle a javascript: scheme.
+    return /^https?:\/\//.test(a.url || '')
+      ? `<a href="${escapeHtml(a.url)}" target="_blank" rel="noopener noreferrer" style="${itemStyle}" onmouseover="this.style.background='rgba(78,158,255,.1)'" onmouseout="this.style.background='rgba(255,255,255,.03)'">${body}</a>`
+      : `<div style="${itemStyle}">${body}</div>`;
+  }).join('');
 }
 
 // Enhanced selectCrisis with all new data
@@ -4059,17 +3694,15 @@ const originalSelectCrisis = selectCrisis;
 selectCrisis = async function(crisis) {
   setPanelMode('crisis');
   selected = crisis;
-  window._selectedCrisis = crisis; // For alert subscription pre-fill
-  prefillAlertRegion(crisis.country);
   document.getElementById('colRight').classList.add('open');
 
-  // These six lookups are independent — each is its own network round-trip
+  // These four lookups are independent — each is its own network round-trip
   // with no data dependency on the others. Awaiting them one at a time (as
   // this used to) means the total wait is their SUM; on higher-latency
   // connections (mobile/cellular especially, where 150-300ms per request
   // isn't unusual) that turned clicking a pin into a multi-second wait
-  // before anything past the overview panel populated. Firing them
-  // concurrently drops that to roughly the slowest single request.
+  // before anything populated. Firing them concurrently drops that to
+  // roughly the slowest single request.
   if (!crisis.briefing) document.getElementById('briefing-loading').style.display = 'block';
   if (!crisis.history) document.getElementById('history-loading').style.display = 'block';
 
@@ -4090,26 +3723,22 @@ selectCrisis = async function(crisis) {
         if (!nr.error && nr.articles) { crisis.news = nr.articles; }
       } catch (e) {}
     })(),
-    (async () => { if (!crisis.reliability) crisis.reliability = await loadReliabilityData(crisis.id); })(),
-    (async () => { if (!crisis.escalation) crisis.escalation = await loadEscalationData(crisis.id); })(),
-    (async () => { if (!crisis.economic) crisis.economic = await loadEconomicData(crisis.id); })(),
     (async () => { if (!crisis.briefing) crisis.briefing = await loadBriefing(crisis.id); })(),
+    (async () => { if (!crisis.history) crisis.history = await loadDeepHistory(crisis.id); })(),
     (async () => {
-      if (!crisis.history) crisis.history = await loadDeepHistory(crisis.id);
-      // Feed the historical-analogy match into the Overview card's existing
-      // field, before updateAllPanels() runs below — that panel already
-      // correctly shows/hides #ov-analogy based on crisis.analogy being
-      // truthy or not, so this just needs to supply the real value.
-      if (crisis.history && crisis.history.analogy) crisis.analogy = crisis.history.analogy;
+      if (crisis.reliability) return;
+      try {
+        const rr = await GeoIntelAPI.getReliability(crisis.id);
+        if (!rr.error) { crisis.reliability = rr; }
+      } catch (e) {}
     })(),
   ]);
 
   updateAllPanels();
-  updateReliabilityPanel(crisis.reliability);
-  updateEscalationPanel(crisis.escalation);
-  updateEconomicPanel(crisis.economic);
   updateBriefingPanel(crisis.briefing);
   updateHistoryPanel(crisis.history);
+  updateNewsPanel(crisis.news);
+  updatePanelBadges(crisis);
   updateEventsList();
 };
 
@@ -4117,9 +3746,25 @@ selectCrisis = async function(crisis) {
 // INIT
 // ════════════════════════════════════════════════════════════
 
+// webgl-globe.js is loaded as an ES module (<script type="module">), which
+// defers its execution until after the document has parsed — potentially
+// AFTER this classic script has already run past this point. So: try the
+// synchronous path first (module already loaded), and fall back to
+// listening for its 'globegl-ready' event otherwise. See webgl-globe.js's
+// top comment for the full reasoning.
+function initWebGLGlobe() {
+  const start = () => {
+    window.GlobeGL.init(document.getElementById('glCanvas'));
+    window.GlobeGL.resize(canvas.clientWidth, canvas.clientHeight, getCanvasDPR());
+    if (topoFeaturesLow && topoMeshLow) bakeEquirectTexture(topoFeaturesLow, topoMeshLow);
+  };
+  if (window.GlobeGL) start();
+  else window.addEventListener('globegl-ready', start, { once: true });
+}
+
 async function initApp() {
+  initWebGLGlobe();
   buildChips();
-  buildAlerts();
 
   // Connect to real-time event stream
   connectToEventStream();
@@ -4158,6 +3803,11 @@ async function initApp() {
       // frame first, which won't happen at all if the high-detail cache is
       // already warm by the time the first frame runs.
       getActiveTopo();
+      // First texture for the GPU sphere — a no-op if GlobeGL hasn't
+      // finished loading yet (initWebGLGlobe's own 'globegl-ready'
+      // listener bakes it then instead; whichever of the two happens
+      // second is the one that actually succeeds).
+      bakeEquirectTexture(topoFeaturesLow, topoMeshLow);
     })
     .catch(err => console.error('Map data error (low-res):', err));
 
@@ -4180,6 +3830,9 @@ async function initApp() {
         const buildHighResCache = () => {
           topoFeaturesHigh = topojson.feature(worldTopoHigh, worldTopoHigh.objects.countries).features;
           topoMeshHigh     = topojson.mesh(worldTopoHigh, worldTopoHigh.objects.countries, (a, b) => a !== b);
+          // Upgrade the GPU sphere's texture from the low-res bake to the
+          // full 50m one — non-blocking, runs whenever this finishes.
+          bakeEquirectTexture(topoFeaturesHigh, topoMeshHigh);
         };
         window.requestIdleCallback ? window.requestIdleCallback(buildHighResCache) : setTimeout(buildHighResCache, 0);
       })
@@ -4603,6 +4256,15 @@ function exportBriefing() {
   el('pb-type').textContent    = tm.name;
   el('pb-country').textContent = c.country;
 
+  const rel = c.reliability;
+  el('pb-reliability').textContent = (rel && rel.reliability && rel.reliability !== 'unknown')
+    ? `${rel.reliability} (${rel.source_count} source${rel.source_count === 1 ? '' : 's'})`
+    : 'Not enough sources to assess';
+  const genModel = c.briefing?.model;
+  el('pb-genmethod').textContent = genModel
+    ? (genModel.startsWith('claude-') ? 'AI-generated (Claude)' : 'Static (rule-based)')
+    : 'Unknown';
+
   // Date
   const dateStr = c.date_start || c.date || '';
   const dYear   = dateStr ? new Date(dateStr).getFullYear() : '';
@@ -4614,8 +4276,19 @@ function exportBriefing() {
     <span>Severity ${c.severity}</span>
   `;
 
-  el('pb-analysis').textContent    = c.analysis  || 'No analysis available.';
-  el('pb-impact').textContent      = c.impact    || 'No impact assessment available.';
+  // Full AI-generated briefing when one has been generated — this is what
+  // makes the export an extensive report instead of a terse summary.
+  // renderMarkdown() is the same function the on-screen Brief tab uses, so
+  // headings/bullets in the AI text render consistently in both places.
+  // Falls back to the short analysis/impact fields (e.g. ANTHROPIC_API_KEY
+  // not configured on the backend, so no briefing was ever generated).
+  if (c.briefing?.briefing) {
+    renderMarkdown(el('pb-briefing'), c.briefing.briefing);
+  } else {
+    const fallback = [c.analysis, c.impact].filter(Boolean).join('\n\n') || 'No briefing available for this crisis.';
+    renderMarkdown(el('pb-briefing'), fallback);
+  }
+
   el('pb-stakeholders').textContent = c.stakeholders?.length
     ? c.stakeholders.map(s => ACTORS.find(a => a.id === s)?.name || s).join(', ')
     : 'No stakeholders identified.';

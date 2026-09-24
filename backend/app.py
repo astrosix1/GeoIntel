@@ -20,7 +20,7 @@ from functools import wraps
 import csv
 from io import StringIO
 
-from models import Session, Crisis, News, Actor, Relationship, Forecast, EconomicData
+from models import Session, Crisis, News, Actor, Relationship, Forecast, EconomicData, CrisisSnapshot
 from data_sources import DataAggregator, init_actors, init_relationships, init_scheduled_events
 from cache import cache_get, cache_set, cache_delete, cache_clear_prefix, cache_stats
 
@@ -285,62 +285,51 @@ def calculate_source_reliability_batch(crisis_ids):
 
 def analyze_escalation(crisis_id, _crisis=None):
     """
-    Analyze escalation trajectory for a crisis.
-    Returns trend, velocity, and warnings.
-    Generates mock historical data for visualization.
+    Analyze escalation trajectory for a crisis using real CrisisSnapshot
+    history (see DataAggregator.snapshot_severity_history — one row per
+    active crisis per hourly scheduled sync). Returns None if the crisis
+    doesn't exist. Returns an explicit 'insufficient_data' result — not a
+    fabricated trend — when fewer than 2 real snapshots exist yet for this
+    crisis (e.g. it was created since the last sync ran). This function
+    used to invent a "7-day history" via deterministic backward
+    extrapolation from the single current severity value, which guaranteed
+    any high-severity crisis always showed as "escalating" regardless of
+    its real trajectory — there was never any actual historical reading
+    behind it. That fabrication is gone; a real trend now requires real data.
 
     If the caller already has the Crisis row loaded (e.g. iterating a query
-    result), pass it as `_crisis` to avoid a redundant lookup query.
+    result), pass it as `_crisis` to skip the redundant crisis lookup — a
+    session is still opened regardless, to query real snapshot history.
     """
-    session = None
+    session = Session()
     try:
-        if _crisis is not None:
-            crisis = _crisis
-        else:
-            session = Session()
-            crisis = session.query(Crisis).filter(Crisis.id == crisis_id).first()
+        crisis = _crisis if _crisis is not None else session.query(Crisis).filter(Crisis.id == crisis_id).first()
         if not crisis:
             return None
 
-        # Generate mock historical data based on crisis characteristics
-        # This simulates how severity has changed over time
-        current_severity = crisis.severity
-        base_date = crisis.date_start if crisis.date_start else datetime.utcnow()
+        snapshots = (
+            session.query(CrisisSnapshot)
+            .filter(CrisisSnapshot.crisis_id == crisis_id)
+            .order_by(CrisisSnapshot.recorded_at.asc())
+            .all()
+        )
 
-        # Create 7-day mock history
-        # BUG FIX: today (days_ago=0) must land on the crisis's actual
-        # current_severity, with earlier days showing where it likely came
-        # from — that's what makes a "high severity => escalating" story
-        # coherent. The previous `(6 - days_ago)` multiplier did the
-        # opposite: it anchored *6-days-ago* at current_severity and
-        # subtracted the most from *today*, so every high-severity crisis
-        # computed a falling (de-escalating) mock trend despite the comments
-        # below describing a rise.
-        history = []
-        for days_ago in range(6, -1, -1):
-            # Mock history: severity increased or stayed stable based on current severity
-            if current_severity > 75:
-                # High severity: likely escalated recently
-                mock_severity = max(30, current_severity - days_ago * 8)
-            elif current_severity > 50:
-                # Medium severity: gradual increase
-                mock_severity = max(20, current_severity - days_ago * 4)
-            else:
-                # Low severity: stayed relatively low
-                mock_severity = current_severity - days_ago * 2
+        if len(snapshots) < 2:
+            return {
+                'trend': 'insufficient_data',
+                'severity_change': None,
+                'velocity': None,
+                'current_severity': crisis.severity,
+                'warning': None,
+                'history': [{'severity': s.severity, 'date': s.recorded_at.isoformat()} for s in snapshots],
+                'message': 'Not enough historical readings yet to compute a trend for this crisis.',
+            }
 
-            mock_date = base_date - timedelta(days=days_ago)
-            history.append({
-                'severity': max(0, int(mock_severity)),
-                'timestamp': mock_date
-            })
-
-        # Calculate trend from mock history
-        severities = [h['severity'] for h in history]
+        severities = [s.severity for s in snapshots]
+        days_span = max((snapshots[-1].recorded_at - snapshots[0].recorded_at).total_seconds() / 86400, 1 / 24)
         severity_change = severities[-1] - severities[0]
-        velocity = severity_change / max(len(severities) - 1, 1)
+        velocity = severity_change / days_span
 
-        # Determine trend
         if velocity > 5:
             trend = 'escalating'
         elif velocity < -5:
@@ -348,7 +337,6 @@ def analyze_escalation(crisis_id, _crisis=None):
         else:
             trend = 'stable'
 
-        # Issue warnings
         warning = None
         if velocity > 10:
             warning = '🔴 RAPID ESCALATION'
@@ -361,13 +349,12 @@ def analyze_escalation(crisis_id, _crisis=None):
             'trend': trend,
             'severity_change': round(severity_change),
             'velocity': round(velocity, 1),
-            'current_severity': current_severity,
+            'current_severity': crisis.severity,
             'warning': warning,
-            'history': [{'severity': h['severity'], 'date': h['timestamp'].isoformat()} for h in history]
+            'history': [{'severity': s.severity, 'date': s.recorded_at.isoformat()} for s in snapshots],
         }
     finally:
-        if session is not None:
-            session.close()
+        session.close()
 
 
 def analyze_cascade(crisis_id, depth=2, threshold=50):
@@ -405,6 +392,21 @@ def analyze_cascade(crisis_id, depth=2, threshold=50):
         # Identify which actors are directly involved in the crisis
         crisis_country = crisis.country
         initial_actors = [a.id for a in actors if a.name == crisis_country]
+
+        if not initial_actors and crisis_country:
+            # crisis.country is sometimes a city/region name rather than a
+            # real country name matching an Actor.name value (e.g. ACLED's
+            # sample fallback data uses "Kyiv", not "Ukraine") — resolve it
+            # via the same curated city->country map NewsBasedCrisisDetector
+            # already uses for geocoding, before falling back to raw
+            # geographic proximity. Without this, the exact-match lookup
+            # above almost never hit and this silently fell through to the
+            # proximity fallback every time.
+            from data_sources import NewsBasedCrisisDetector
+            city_entry = NewsBasedCrisisDetector.LOCATION_MAP.get(crisis_country.lower())
+            if city_entry:
+                initial_actors = [a.id for a in actors if a.name == city_entry['country']]
+
         if not initial_actors:
             # Fallback: use geographic proximity
             import math
@@ -512,8 +514,15 @@ def analyze_cascade(crisis_id, depth=2, threshold=50):
             'total_steps': len(cascade_steps),
             'total_cascade_probability': round(sum(min(s['probability'], 1.0) for s in cascade_steps) / max(len(cascade_steps), 1), 2),
             'estimated_timeline': timeline,
-            'affected_regions': list(set(
-                [actor_map[aid].region for aid in sum([s['actors'] for s in cascade_steps], []) if aid in actor_map and hasattr(actor_map[aid], 'region')]
+            # Actor.region is a real column (see models.py) populated from
+            # the curated actor roster (init_actors()) — this used to always
+            # return [] because no such column existed, so the `hasattr`
+            # guard here was permanently False regardless of the actors
+            # involved.
+            'affected_regions': sorted(set(
+                actor_map[aid].region
+                for aid in sum([s['actors'] for s in cascade_steps], [])
+                if aid in actor_map and actor_map[aid].region
             ))
         }
     except Exception as e:
@@ -557,15 +566,34 @@ def get_economic_impact(crisis_id):
         else:
             impact_severity = 'minor'
 
+        # No time-series economic-disruption data exists anywhere in this
+        # app, so a headline "trade disruption %" would still be an invented
+        # metric regardless of the arithmetic behind it. economic_profile is
+        # instead a real ratio computed from the actual WorldBank-sourced
+        # EconomicData row already fetched above — None when no real
+        # economic data exists for this country, never a fabricated stand-in.
+        econ = economic_impact.get(crisis.country)
+        economic_profile = None
+        if econ and econ.get('gdp'):
+            exports = econ.get('exports') or 0
+            imports = econ.get('imports') or 0
+            trade_openness_percent_of_gdp = round((exports + imports) / econ['gdp'] * 100, 1)
+            economic_profile = {
+                'trade_openness_percent_of_gdp': trade_openness_percent_of_gdp,
+                'gdp_growth': econ.get('gdp_growth'),
+                'trade_balance': econ.get('trade_balance'),
+                'unemployment': econ.get('unemployment'),
+                'inflation': econ.get('inflation'),
+            }
+
         return {
             'impact_severity': impact_severity,
             'affected_countries': affected_countries,
             'economic_data': economic_impact,
-            'estimated_impact': {
-                'trade_disruption_percent': int(crisis.severity / 2),
-                'market_volatility_percent': int(crisis.severity / 3),
-                'industry_sectors_affected': estimate_affected_sectors(crisis)
-            }
+            'economic_profile': economic_profile,
+            # A category lookup by crisis type, not this crisis's measured
+            # exposure — named to be honest about that distinction.
+            'sectors_typically_exposed': estimate_affected_sectors(crisis),
         }
     finally:
         session.close()
@@ -684,9 +712,10 @@ Source Reliability: {reliability['reliability']} ({reliability['source_count']} 
 
 Analysis: {crisis.analysis}
 
-Escalation Trend: {escalation['trend']} (velocity: {escalation['velocity']} points/day)
+Escalation Trend: {escalation['trend']}{f" (velocity: {escalation['velocity']} points/day)" if escalation.get('velocity') is not None else ""}
 Economic Impact: {economic['impact_severity']}
-Affected Sectors: {', '.join(economic['estimated_impact']['industry_sectors_affected'])}
+Affected Sectors: {', '.join(economic['sectors_typically_exposed'])}
+{f"Trade Openness: {economic['economic_profile']['trade_openness_percent_of_gdp']}% of GDP" if economic.get('economic_profile') else ""}
 
 Numbered Source List (cite these by number — see instructions):
 {sources_block}
@@ -791,9 +820,10 @@ def _generate_static_briefing(crisis, escalation, economic, reliability, numbere
     """Generate a rule-based intelligence briefing when no API key is available."""
     sev = crisis.severity
     trend = escalation.get('trend', 'stable') if escalation else 'stable'
-    velocity = escalation.get('velocity', 0) if escalation else 0
+    velocity = escalation.get('velocity') if escalation else None
+    velocity = velocity if velocity is not None else 0
     impact_sev = economic.get('impact_severity', 'moderate') if economic else 'moderate'
-    sectors = ', '.join(economic.get('estimated_impact', {}).get('industry_sectors_affected', [])) if economic else 'General Economy'
+    sectors = ', '.join(economic.get('sectors_typically_exposed', [])) if economic else 'General Economy'
     src_count = reliability.get('source_count', 1) if reliability else 1
     rel_label = reliability.get('reliability', 'moderate') if reliability else 'moderate'
     # Cite the two most recent headlines inline by their source-list number
@@ -808,6 +838,7 @@ def _generate_static_briefing(crisis, escalation, economic, reliability, numbere
         'de-escalating': f'de-escalating (velocity −{abs(velocity):.1f} pts/day)',
         'stable': 'holding at current intensity',
         'volatile': 'volatile with unpredictable swings',
+        'insufficient_data': 'too new to establish a trend',
     }.get(trend, 'evolving')
 
     domain_scores = {
@@ -877,17 +908,27 @@ Key unknowns include internal decision-making dynamics of primary actors and the
     return result
 
 
+_ANALOGY_STRENGTHS = ('strong', 'moderate', 'loose')
+
+
 def _parse_analogy_line(text):
     """Pull the single strongest historical parallel out of the model's
-    response as one clean {match, pct, desc} record, without a JSON-parsing
-    pipeline that would be fragile against prose containing stray braces or
-    quotes. The prompt asks the model to end its response with exactly one
-    line: "ANALOGY_MATCH: <name>|<0-100 integer>|<one-sentence reason>" —
+    response as one clean {match, strength, desc} record, without a
+    JSON-parsing pipeline that would be fragile against prose containing
+    stray braces or quotes. The prompt asks the model to end its response
+    with exactly one line:
+    "ANALOGY_MATCH: <name>|<strong|moderate|loose>|<one-sentence reason>" —
     this just finds that line and splits it. Any failure (missing line,
-    wrong shape, non-numeric percentage) returns None rather than guessing
-    or returning a partial/garbled record — None flows straight into the
-    existing "hide the analogy card" behavior, which is the correct
-    fallback here, not a synthesized default.
+    wrong shape, an unrecognized strength word) returns None rather than
+    guessing or returning a partial/garbled record — None flows straight
+    into the existing "hide the analogy card" behavior, which is the
+    correct fallback here, not a synthesized default.
+
+    A qualitative strength word, not a 0-100 integer, is deliberate: no
+    real precedent database or similarity metric backs this comparison,
+    so a numeric "87% match" would be a fabricated precision the model
+    invented on the spot. "strength" (not "pct") makes that impossible to
+    mistake for one downstream.
 
     Returns (analogy_or_None, text_with_the_line_removed).
     """
@@ -900,15 +941,14 @@ def _parse_analogy_line(text):
     if len(parts) != 3:
         return None, cleaned_text
 
-    name, pct_raw, desc = (p.strip() for p in parts)
-    try:
-        pct = max(0, min(100, int(pct_raw)))
-    except ValueError:
+    name, strength_raw, desc = (p.strip() for p in parts)
+    strength = strength_raw.lower()
+    if strength not in _ANALOGY_STRENGTHS:
         return None, cleaned_text
     if not name or not desc:
         return None, cleaned_text
 
-    return {'match': name, 'pct': pct, 'desc': desc}, cleaned_text
+    return {'match': name, 'strength': strength, 'desc': desc}, cleaned_text
 
 
 def _format_history_disclaimer():
@@ -1005,7 +1045,7 @@ Format your response EXACTLY as follows (keep the headers):
 [2-3 real past crises or conflicts this one genuinely resembles, with an honest assessment of how strong each parallel actually is — including where the comparison breaks down, not just where it holds.]
 
 After the three sections above, end your ENTIRE response with exactly one more line in this exact format, for whichever historical parallel from the section above is the single strongest match:
-ANALOGY_MATCH: <name of the historical event>|<0-100 integer estimating how strong the parallel is>|<one sentence on why>
+ANALOGY_MATCH: <name of the historical event>|<one word: strong, moderate, or loose>|<one sentence on why>
 
 Do not add any text after that line. Do not repeat it earlier in your response.
 
@@ -1784,24 +1824,28 @@ def _generate_static_forecasts(crisis):
             'low':  clamp(p_resolve),
             'mid':  clamp(p_stable),
             'high': clamp(p_escalate),
+            'method': 'heuristic',
         },
         {
             'q': q2,
             'low':  clamp(p_escalate),
             'mid':  clamp(p_stable),
             'high': clamp(p_resolve),
+            'method': 'heuristic',
         },
         {
             'q': f'Will this crisis cause significant humanitarian impact in {crisis.country or "the region"}?',
             'low':  clamp(max(5, 100 - sev)),
             'mid':  clamp(int(sev * 0.3)),
             'high': clamp(int(sev * 0.6)),
+            'method': 'heuristic',
         },
         {
             'q': 'Will major-power diplomatic engagement intensify within 30 days?',
             'low':  clamp(max(5, 70 - sev // 2)),
             'mid':  clamp(20),
             'high': clamp(sev // 2),
+            'method': 'heuristic',
         },
     ]
     return forecasts
@@ -2416,6 +2460,17 @@ def scheduled_sync():
     except Exception as e:
         logger.error(f"Scheduled sync error: {e}")
 
+    # Snapshot current severity for every active crisis, once per sync run —
+    # this is the real history analyze_escalation() needs. Its own
+    # try/except so a snapshot failure never blocks the primary sync above.
+    try:
+        session = Session()
+        DataAggregator.snapshot_severity_history(session)
+        session.commit()
+        session.close()
+    except Exception as e:
+        logger.error(f"Severity snapshot error: {e}")
+
     # Multilingual news sync (runs every 6 hours to stay within NewsAPI rate limits)
     try:
         from newsapi_multilingual import MultilingualNewsConnector
@@ -2443,7 +2498,12 @@ def before_request():
             # Load sample crises without full sync (sync can hang on external APIs)
             try:
                 session = Session()
-                existing_crises = session.query(Crisis).count()
+                # Excludes curated scheduled events (elections/summits, added
+                # by init_scheduled_events() just above) from this count —
+                # otherwise, on a brand-new database, those rows alone would
+                # make this non-zero and permanently skip seeding the sample
+                # reactive crises, leaving the Crises tab empty forever.
+                existing_crises = session.query(Crisis).filter(Crisis.source != 'CURATED').count()
                 session.close()
                 if existing_crises == 0:
                     # Only populate sample data if database is empty

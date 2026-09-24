@@ -309,7 +309,12 @@ body {
 
 /* ── Globe wrapper ── */
 .globe-col { flex:1; min-width:0; position:relative; }
-#canvas { display:block; width:100%; height:100%; }
+/* #glCanvas (WebGL: ocean/land/borders/terrain/lighting) sits beneath the
+   transparent #canvas (2D: pins/routes/arcs/tooltips/hit-testing), both
+   filling .globe-col — same stacking pattern #flatMapCanvas already used. */
+#glCanvas, #canvas { position:absolute; inset:0; width:100%; height:100%; }
+#glCanvas { z-index:0; }
+#canvas { z-index:1; }
 
 /* ── Right panel (floating overlay) ── */
 .col-right {
@@ -461,6 +466,19 @@ body {
   display:none; font-family:'Segoe UI',Arial,sans-serif;
   color:#111; background:#fff; line-height:1.6;
 }
+/* #pb-briefing is filled via renderMarkdown() — the same function used for
+   the on-screen Brief tab — which emits h2/ul/li/strong/em/a tags. Style
+   them to match the rest of the printed report instead of bare browser
+   defaults (which would look inconsistent against the report's deliberate
+   typography). */
+#pb-briefing h2 {
+  font-size:11px; font-weight:700; text-transform:uppercase;
+  letter-spacing:1px; color:#444; margin:16px 0 6px;
+}
+#pb-briefing h2:first-child { margin-top:0; }
+#pb-briefing ul { margin:6px 0 6px 18px; padding:0; }
+#pb-briefing li { margin-bottom:4px; }
+#pb-briefing strong { color:#111; }
 
 /* ── Toast notification ── */
 #toast {
@@ -660,23 +678,6 @@ body {
   box-shadow: var(--shadow-sm);
 }
 
-/* ── Historical analogy ── */
-.analogy-card {
-  padding:12px;
-  background: linear-gradient(135deg, rgba(194,78,255,.08) 0%, rgba(194,78,255,.04) 100%);
-  border:1.5px solid rgba(194,78,255,.25);
-  border-radius:10px;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.analogy-card:hover {
-  border-color:rgba(194,78,255,.4);
-  background: linear-gradient(135deg, rgba(194,78,255,.12) 0%, rgba(194,78,255,.06) 100%);
-  box-shadow: var(--shadow-sm);
-}
-.analogy-match { font-size:12px; font-weight:700; color:#dd99ff; margin-bottom:6px; }
-.analogy-pct { float:right; font-size:11px; color:#c24eff; font-weight:700; }
-.analogy-desc { font-size:11px; color:var(--text2); line-height:1.6; }
-
 /* ── Empty state ── */
 .empty {
   flex:1;
@@ -803,25 +804,6 @@ input[type=range]::-moz-range-thumb:hover { width:14px; height:14px; box-shadow:
 .logo-text { font-size:14px; font-weight:700; letter-spacing:.5px; color:#e8f4ff; }
 .logo-sub { font-size:9px; color:var(--dim); text-transform:uppercase; letter-spacing:1.1px; }
 
-/* ── Alert strip ── */
-.alert-strip {
-  padding:8px 12px;
-  background:rgba(255,45,94,.12);
-  border:1.5px solid rgba(255,45,94,.4);
-  border-radius:10px;
-  font-size:11px;
-  color:#ff6080;
-  display:flex;
-  align-items:center;
-  gap:8px;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  font-weight: 600;
-}
-.alert-strip:hover {
-  background:rgba(255,45,94,.16);
-  border-color:rgba(255,45,94,.5);
-}
-
 /* ── Alert badge ── */
 .alert-badge {
   display:inline-flex; align-items:center; justify-content:center;
@@ -857,6 +839,7 @@ input[type=range]::-moz-range-thumb:hover { width:14px; height:14px; box-shadow:
 #flatMapCanvas {
   position:absolute; inset:0; width:100%; height:100%;
   display:none;
+  z-index:2; /* above #glCanvas (0) and #canvas (1) whenever visible */
 }
 #flatMapCanvas.visible { display:block; }
 
@@ -926,42 +909,6 @@ input[type=range]::-moz-range-thumb:hover { width:14px; height:14px; box-shadow:
 /* Breaking alert auto-dismiss */
 #breakingAlert.dismissing { animation:fadeOut 0.3s ease-in forwards; }
 
-/* Source reliability badge */
-.source-badge {
-  display:inline-block;
-  padding:5px 10px;
-  border-radius:8px;
-  font-size:10px;
-  font-weight:700;
-  margin:3px;
-  border:1.5px solid;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.source-badge:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-sm);
-}
-.source-badge.verified { background:#3dffaa22;color:#3dffaa;border-color:#3dffaa77; }
-.source-badge.corroborated { background:#ffd93d22;color:#ffd93d;border-color:#ffd93d77; }
-.source-badge.reported { background:#ff7a3d22;color:#ff7a3d;border-color:#ff7a3d77; }
-.source-badge.unverified { background:#ff2d5e22;color:#ff2d5e;border-color:#ff2d5e77; }
-
-/* Escalation trend colors */
-.trend-escalating { color:#ff2d5e; font-weight:700; }
-.trend-deescalating { color:#1dd9c1; font-weight:700; }
-.trend-stable { color:#ffd01a; font-weight:700; }
-
-/* Sector tag */
-.sector-tag {
-  display:inline-block;
-  padding:4px 8px;
-  background:rgba(78,158,255,0.2);
-  border:1px solid rgba(78,158,255,0.4);
-  border-radius:4px;
-  font-size:9px;
-  color:#b8d8ff;
-  margin:2px;
-}
 
 /* Briefing text formatting */
 #briefing-text {

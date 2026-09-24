@@ -120,6 +120,20 @@ class GeoIntelAPI {
   }
 
   /**
+   * Fetch source reliability analysis for a crisis
+   */
+  static async getReliability(crisisId) {
+    try {
+      const response = await fetch(`${API_BASE}/crises/${crisisId}/reliability`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return await response.json();
+    } catch (error) {
+      console.error(`Error fetching reliability for ${crisisId}:`, error);
+      return { error: error.message };
+    }
+  }
+
+  /**
    * Fetch news articles
    */
   static async getNews(options = {}) {
