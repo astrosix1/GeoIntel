@@ -26,6 +26,17 @@ NEWSAPI_BASE = "https://newsapi.org/v2"
 WORLDBANK_BASE = "https://api.worldbank.org/v2"
 NOMINATIM_BASE = "https://nominatim.openstreetmap.org/search"
 
+# GDELT's Event Database — real, free, no key/registration required
+# (confirmed live: https://www.gdeltproject.org/data.html states "100% free
+# and open"). Added as an ACLED alternative after ACLED's own myACLED access
+# system turned out to gate real API reads behind a Research-tier/licensed
+# account — see GDELTConnector below. lastupdate.txt always points at the
+# 3 real files (export/mentions/gkg) for the most recent 15-minute window;
+# GDELT_EVENT_URL_TEMPLATE reconstructs the export file URL for any other
+# real, valid 15-minute-aligned timestamp GDELT has published.
+GDELT_LASTUPDATE_URL = "http://data.gdeltproject.org/gdeltv2/lastupdate.txt"
+GDELT_EVENT_URL_TEMPLATE = "http://data.gdeltproject.org/gdeltv2/{ts}.export.CSV.zip"
+
 # Optional: same AI-primary/static-fallback pattern app.py's anthropic_client
 # already uses for briefings/history — here it drives real incident-level
 # geocoding (see NominatimGeocoder / _extract_incident_location) instead of
@@ -1346,6 +1357,220 @@ class WorldBankConnector:
             return []
 
 
+# CAMEO event root codes (2-digit prefix of EventCode) mapped to this app's
+# crisis types, mirroring ACLED_TYPE_MAP's pattern above. Only the codes
+# that can actually appear under GDELTConnector's QuadClass 3/4 filter
+# (verbal + material conflict) are listed — codes 01-09 (cooperation) never
+# reach this map since those rows are filtered out before type lookup.
+GDELT_TYPE_MAP = {
+    '10': 'diplomatic',    # DEMAND
+    '11': 'diplomatic',    # DISAPPROVE
+    '12': 'diplomatic',    # REJECT
+    '13': 'diplomatic',    # THREATEN
+    '14': 'civil_unrest',  # PROTEST
+    '15': 'military',      # EXHIBIT FORCE POSTURE
+    '16': 'diplomatic',    # REDUCE RELATIONS
+    '17': 'diplomatic',    # COERCE
+    '18': 'conflict',      # ASSAULT
+    '19': 'conflict',      # FIGHT
+    '20': 'conflict',      # USE UNCONVENTIONAL MASS VIOLENCE
+}
+
+
+class GDELTConnector:
+    """
+    Free, real alternative/addition to ACLED — the GDELT Project's Event
+    Database (https://www.gdeltproject.org/data.html, confirmed live as
+    "100% free and open", no registration or key). Monitors global news
+    every 15 minutes and publishes structured, CAMEO-coded events with real
+    lat/lon, the same shape of data ACLED provides.
+
+    File format: tab-separated, no header, 61 fixed columns per row. Column
+    positions below were verified by downloading and inspecting a real live
+    file during development, not just the public docs, since off-by-one
+    errors in this schema are a known pitfall.
+    """
+    _COL_EVENT_CODE = 26
+    _COL_QUAD_CLASS = 29
+    _COL_GOLDSTEIN = 30
+    _COL_NUM_SOURCES = 32
+    _COL_NUM_ARTICLES = 33
+    _COL_ACTOR1_NAME = 6
+    _COL_ACTOR2_NAME = 16
+    _COL_ACTION_GEO_FULLNAME = 52
+    _COL_ACTION_GEO_LAT = 56
+    _COL_ACTION_GEO_LONG = 57
+    _COL_DATE_ADDED = 59
+    _COL_SOURCE_URL = 60
+    _MIN_COLUMNS = 61
+
+    @staticmethod
+    def _get_recent_timestamps():
+        """The real, currently-published GDELT event-file timestamp (from
+        lastupdate.txt) plus the 3 that precede it at 15-minute intervals —
+        covers a full hour so nothing is missed between this app's hourly
+        sync runs. No persisted sync-cursor needed: `_upsert_crisis()`
+        already dedups by id, so a little overlap between runs is harmless,
+        the same way ACLED/NewsAPI's own rolling-window fetches work."""
+        response = requests.get(GDELT_LASTUPDATE_URL, timeout=10)
+        response.raise_for_status()
+
+        latest_ts = None
+        for line in response.text.splitlines():
+            if '.export.CSV.zip' in line:
+                url = line.strip().split()[-1]
+                latest_ts = url.rsplit('/', 1)[-1].split('.export.CSV.zip')[0]
+                break
+        if not latest_ts:
+            raise ValueError("lastupdate.txt did not contain an export.CSV.zip entry")
+
+        latest_dt = datetime.strptime(latest_ts, '%Y%m%d%H%M%S')
+        return [(latest_dt - timedelta(minutes=15 * i)).strftime('%Y%m%d%H%M%S') for i in range(4)]
+
+    @staticmethod
+    def _fetch_event_rows(timestamp):
+        """Download and unzip one real GDELT event file, returning its raw
+        tab-separated rows. Returns [] on any failure (network, missing
+        file — GDELT occasionally publishes late) rather than raising, so
+        one bad window never breaks the other 3."""
+        import zipfile
+        import io
+
+        url = GDELT_EVENT_URL_TEMPLATE.format(ts=timestamp)
+        try:
+            response = requests.get(url, timeout=20)
+            response.raise_for_status()
+            with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+                name = zf.namelist()[0]
+                text = zf.read(name).decode('utf-8', errors='replace')
+            return [line.split('\t') for line in text.splitlines() if line.strip()]
+        except Exception as e:
+            logger.warning(f"GDELT fetch failed for {timestamp}: {e}")
+            return []
+
+    @staticmethod
+    def _country_from_geo_fullname(full_name):
+        """GDELT's ActionGeo_CountryCode is FIPS 10-4, not ISO — this app's
+        Crisis.country convention is a real country NAME string (matching
+        Actor.name, per LOCATION_MAP/ACLED's own convention). ActionGeo_
+        FullName is a real, already-geocoded hierarchical description
+        ("City, Admin1, Country" or just "Country" for a country-level
+        geo-type) — the country name is reliably its last comma segment,
+        confirmed against real sample rows during development, so this
+        parses it directly rather than maintaining a ~200-entry FIPS
+        lookup table."""
+        if not full_name:
+            return None
+        parts = [p.strip() for p in full_name.split(',') if p.strip()]
+        return parts[-1] if parts else None
+
+    @staticmethod
+    def _parse_row(fields):
+        """One raw TSV row -> a crisis dict, or None if it's not a real
+        conflict-relevant row (wrong QuadClass, unmapped event type, or
+        missing the geo/severity data a real crisis record needs)."""
+        if len(fields) < GDELTConnector._MIN_COLUMNS:
+            return None
+
+        quad_class = fields[GDELTConnector._COL_QUAD_CLASS]
+        if quad_class not in ('3', '4'):  # keep only verbal + material conflict
+            return None
+
+        event_root = fields[GDELTConnector._COL_EVENT_CODE][:2]
+        crisis_type = GDELT_TYPE_MAP.get(event_root)
+        if crisis_type is None:
+            return None
+
+        try:
+            lat = float(fields[GDELTConnector._COL_ACTION_GEO_LAT])
+            lon = float(fields[GDELTConnector._COL_ACTION_GEO_LONG])
+        except (ValueError, IndexError):
+            return None
+        if lat == 0 and lon == 0:  # GDELT's placeholder for "no real geo resolved"
+            return None
+
+        country = GDELTConnector._country_from_geo_fullname(
+            fields[GDELTConnector._COL_ACTION_GEO_FULLNAME]
+        )
+        if not country:
+            return None
+
+        # Severity — real, not fabricated: GoldsteinScale is GDELT's own
+        # published -10 (maximally conflictual) .. +10 (maximally
+        # cooperative) intensity score for this exact event. A maximally
+        # conflictual event scores 100; anything trending cooperative
+        # (rare but possible even inside QuadClass 3/4's edge cases)
+        # clamps to a low, not negative, severity.
+        try:
+            goldstein = float(fields[GDELTConnector._COL_GOLDSTEIN])
+        except (ValueError, IndexError):
+            goldstein = 0.0
+        severity = max(0, min(100, round(-goldstein * 10)))
+
+        # Confidence — real, not a flat constant: more independent sources
+        # corroborating the same event is a real (if rough) signal.
+        try:
+            num_sources = int(float(fields[GDELTConnector._COL_NUM_SOURCES]))
+        except (ValueError, IndexError):
+            num_sources = 1
+        confidence = max(50, min(95, 50 + num_sources * 5))
+
+        global_event_id = fields[0]
+        date_added_raw = fields[GDELTConnector._COL_DATE_ADDED]
+        try:
+            date_start = datetime.strptime(date_added_raw, '%Y%m%d%H%M%S')
+        except ValueError:
+            date_start = datetime.utcnow()
+
+        actor_text = fields[GDELTConnector._COL_ACTOR1_NAME] + ' ' + fields[GDELTConnector._COL_ACTOR2_NAME]
+        stakeholders = NewsBasedCrisisDetector._find_stakeholders(actor_text)
+
+        source_url = fields[GDELTConnector._COL_SOURCE_URL]
+
+        return {
+            'id': f"gdelt_{global_event_id}",
+            'type': crisis_type,
+            'title': f"{fields[GDELTConnector._COL_ACTOR1_NAME] or 'Unknown actor'} — {crisis_type} event in {country}",
+            'country': country,
+            'latitude': lat,
+            'longitude': lon,
+            'severity': severity,
+            'confidence': confidence,
+            'location_confidence': 85,  # GDELT's own geocoding, not text inference
+            'date_start': date_start,
+            'analysis': f"GDELT-monitored event (CAMEO {fields[GDELTConnector._COL_EVENT_CODE]}), reported via {source_url}",
+            'impact': f"{num_sources} source(s) reporting",
+            'source': 'GDELT',
+            'source_id': global_event_id,
+            'is_verified': False,
+            'stakeholders': ','.join(stakeholders),
+        }
+
+    @staticmethod
+    def fetch_recent_events():
+        """Real, current conflict-relevant events from GDELT — covers the
+        last hour (4 real 15-minute files) so nothing is missed between
+        this app's hourly sync runs. Returns [] (never raises) on total
+        failure, matching ACLED/NewsAPI's own graceful-degradation pattern."""
+        try:
+            timestamps = GDELTConnector._get_recent_timestamps()
+        except Exception as e:
+            logger.error(f"GDELT lastupdate.txt fetch failed: {e}")
+            return []
+
+        crises = []
+        seen_ids = set()
+        for ts in timestamps:
+            for fields in GDELTConnector._fetch_event_rows(ts):
+                crisis = GDELTConnector._parse_row(fields)
+                if crisis and crisis['id'] not in seen_ids:
+                    seen_ids.add(crisis['id'])
+                    crises.append(crisis)
+
+        logger.info(f"Fetched {len(crises)} conflict-relevant events from GDELT")
+        return crises
+
+
 class DataAggregator:
     """Aggregate data from multiple sources into Crisis records"""
 
@@ -1361,6 +1586,19 @@ class DataAggregator:
             acled_crises = ACLEDConnector.fetch_recent_events(days=30)
             for crisis_data in acled_crises:
                 DataAggregator._upsert_crisis(session, crisis_data)
+
+            # GDELT — free, real, no-key alternative/addition to ACLED
+            # (see GDELTConnector). Caught locally rather than letting a
+            # GDELT-side failure bubble to this function's outer except,
+            # which would roll back the ACLED/news/economic work already
+            # staged in this same session — a GDELT hiccup must only cost
+            # GDELT's own rows, never the rest of the sync.
+            try:
+                gdelt_crises = GDELTConnector.fetch_recent_events()
+                for crisis_data in gdelt_crises:
+                    DataAggregator._upsert_crisis(session, crisis_data)
+            except Exception as e:
+                logger.error(f"GDELT sync error: {e}")
 
             # Also fetch real crises from news articles
             news_crises = NewsBasedCrisisDetector.extract_crises_from_news(days=7)

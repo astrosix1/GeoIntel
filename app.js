@@ -2240,11 +2240,21 @@ function updateEventsList() {
   list.innerHTML = '';
 
   const filtered = getFilteredCrises();
+  // Cap what actually renders as DOM rows — filtered itself stays uncapped
+  // (Export and the count badge both need the real total, not just what's
+  // currently visible). crisisDisplayLimit is the same counter the globe's
+  // own pin cap uses (drawPins() in this file) and the existing infinite-
+  // scroll listener on #eventsList already increments it — this just makes
+  // the list actually respect it, since a large GDELT-fed crisis set (see
+  // Phase 6) would otherwise render thousands of unbounded DOM rows here.
+  const visible = filtered.slice(0, crisisDisplayLimit);
 
-  document.getElementById('crisisCount').textContent = `${filtered.length} active`;
+  document.getElementById('crisisCount').textContent = visible.length < filtered.length
+    ? `${visible.length} of ${filtered.length} active`
+    : `${filtered.length} active`;
   updateAlertBadge();
 
-  filtered.forEach(crisis => {
+  visible.forEach(crisis => {
     const el  = document.createElement('div');
     el.className = 'evt-item' + (crisis.id === selected?.id ? ' sel' : '');
     el.dataset.id = crisis.id;
