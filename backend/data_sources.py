@@ -11,6 +11,11 @@ import json
 import logging
 from dotenv import load_dotenv
 
+import event_pipeline
+from event_pipeline.config import get_config
+from event_pipeline.keywords import has_keyword, find_keywords, strip_excluded_phrases
+from event_pipeline.normalize import stable_news_id, canonical_url
+
 # Load environment variables
 load_dotenv()
 
@@ -24,7 +29,6 @@ ACLED_OAUTH_URL = "https://acleddata.com/oauth/token"
 ACLED_BASE = "https://acleddata.com/api/acled/read"
 NEWSAPI_BASE = "https://newsapi.org/v2"
 WORLDBANK_BASE = "https://api.worldbank.org/v2"
-NOMINATIM_BASE = "https://nominatim.openstreetmap.org/search"
 
 # GDELT's Event Database — real, free, no key/registration required
 # (confirmed live: https://www.gdeltproject.org/data.html states "100% free
@@ -36,18 +40,6 @@ NOMINATIM_BASE = "https://nominatim.openstreetmap.org/search"
 # real, valid 15-minute-aligned timestamp GDELT has published.
 GDELT_LASTUPDATE_URL = "http://data.gdeltproject.org/gdeltv2/lastupdate.txt"
 GDELT_EVENT_URL_TEMPLATE = "http://data.gdeltproject.org/gdeltv2/{ts}.export.CSV.zip"
-
-# Optional: same AI-primary/static-fallback pattern app.py's anthropic_client
-# already uses for briefings/history — here it drives real incident-level
-# geocoding (see NominatimGeocoder / _extract_incident_location) instead of
-# text generation. A separate client instance because this module has no
-# dependency on app.py today and geocoding needs to keep working even if
-# app.py's own client init ever changes.
-try:
-    from anthropic import Anthropic
-    _geocode_ai_client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY', ''))
-except Exception:
-    _geocode_ai_client = None
 
 # In-memory cache for the ACLED OAuth token, shared across calls within
 # this process — access_token is valid 24h, refresh_token 14 days, so
@@ -608,113 +600,6 @@ class NewsAPIConnector:
             return None
 
 
-class NominatimGeocoder:
-    """
-    Thin client for OpenStreetMap's free Nominatim geocoding API — resolves
-    an arbitrary place name (a landmark, a national capital, an ad-hoc
-    incident location) to real coordinates, no API key required. This is
-    what makes precise pins possible for things the curated LOCATION_MAP
-    below was never going to cover (the UN, the White House, a specific
-    neighborhood a missile was heard over) without hand-maintaining an
-    ever-growing landmark table.
-
-    Nominatim's usage policy caps free use at 1 request/second and requires
-    a real, descriptive User-Agent identifying the calling application —
-    both enforced here, the same courtesy fetch_wikipedia_bilateral() (see
-    app.py) already extends to Wikipedia's API.
-    """
-    _last_request_at = 0.0
-    _cache = {}  # place name -> {'lat', 'lon', 'country'} or None, in-process
-
-    @staticmethod
-    def geocode(place_name):
-        """Real (lat, lon, country) for `place_name`, or None if Nominatim
-        has nothing for it or the request fails. Cached in-process by exact
-        place name — the same landmark (the UN, the Kremlin) recurs across
-        many articles over time, and repeating the network call for an
-        identical string would just burn the shared rate limit."""
-        if not place_name:
-            return None
-        key = place_name.strip().lower()
-        if key in NominatimGeocoder._cache:
-            return NominatimGeocoder._cache[key]
-
-        import time
-        elapsed = time.monotonic() - NominatimGeocoder._last_request_at
-        if elapsed < 1.0:
-            time.sleep(1.0 - elapsed)
-        NominatimGeocoder._last_request_at = time.monotonic()
-
-        result = None
-        try:
-            response = requests.get(
-                NOMINATIM_BASE,
-                # accept-language=en: Nominatim otherwise replies in the
-                # location's local language by default (e.g. country
-                # "Россия" for Russia) — every other country name in this
-                # app (the Actor roster, LOCATION_MAP) is English, and
-                # analyze_cascade()'s initial-actor lookup matches
-                # Crisis.country against Actor.name by exact string, so a
-                # non-English country name here would silently never match.
-                params={'q': place_name, 'format': 'json', 'addressdetails': 1, 'limit': 1, 'accept-language': 'en'},
-                headers={'User-Agent': 'GeoIntel/1.0 (geopolitical intelligence platform)'},
-                timeout=10,
-            )
-            response.raise_for_status()
-            data = response.json()
-            if data:
-                match = data[0]
-                result = {
-                    'lat': float(match['lat']),
-                    'lon': float(match['lon']),
-                    'country': (match.get('address') or {}).get('country'),
-                }
-        except Exception as e:
-            logger.warning(f"Nominatim geocode failed for '{place_name}': {e}")
-
-        NominatimGeocoder._cache[key] = result
-        return result
-
-
-def _extract_incident_location(text):
-    """
-    Ask Claude for the single most specific real-world location (a
-    building, landmark, city, or region) genuinely associated with the
-    EVENT this article describes — not just any place named in passing.
-    Returns a location name string, or None when no ANTHROPIC_API_KEY is
-    configured, the model finds no clear location, or anything goes wrong.
-    None here always means "fall back to LOCATION_MAP city-matching below"
-    — never a guessed location.
-    """
-    if not _geocode_ai_client or not _geocode_ai_client.api_key:
-        return None
-    try:
-        message = _geocode_ai_client.messages.create(
-            model="claude-3-5-sonnet-20241022",
-            max_tokens=40,
-            messages=[{
-                "role": "user",
-                "content": (
-                    "What is the single most specific real-world location "
-                    "(a building, landmark, city, or region) genuinely "
-                    "associated with the main event in this news text — not "
-                    "just any place mentioned in passing? Reply with ONLY "
-                    "the location name (e.g. \"United Nations Headquarters, "
-                    "New York\" or \"the Kremlin, Moscow\"), or reply with "
-                    "exactly NONE if there is no clear location.\n\n"
-                    f"Text: {text[:1000]}"
-                ),
-            }],
-        )
-        answer = message.content[0].text.strip()
-        if not answer or answer.upper() == 'NONE':
-            return None
-        return answer
-    except Exception as e:
-        logger.warning(f"AI location extraction failed: {e}")
-        return None
-
-
 class NewsBasedCrisisDetector:
     """Extract real crises from news articles"""
 
@@ -971,27 +856,13 @@ class NewsBasedCrisisDetector:
         'ulaanbaatar': {'lat': 47.8864, 'lon': 106.9057, 'country': 'Mongolia'},
     }
 
-    # Keywords for crisis type detection. Dict order matters — first match
-    # wins (see _extract_crisis_from_article) — so leadership_change and
-    # civil_unrest must come before conflict/military, since a coup or
-    # protest story often also contains generic "armed"/"military" words.
-    CRISIS_KEYWORDS = {
-        'leadership_change': ['coup', 'ousted', 'overthrown', 'seized power', 'junta',
-                               'assassinated', 'resigns as president', 'unconstitutional',
-                               'succession crisis'],
-        'civil_unrest': ['protest', 'unrest', 'riot', 'demonstrators', 'uprising',
-                          'crackdown', 'mass arrests', 'general strike'],
-        'conflict': ['war', 'combat', 'fighting', 'battle', 'attack', 'strike', 'bomb', 'military', 'armed', 'clash'],
-        'military': ['military', 'deployment', 'exercise', 'buildup', 'troops', 'forces', 'defense'],
-        'diplomatic': ['diplomatic', 'crisis', 'tensions', 'talks', 'negotiations', 'standoff',
-                        'peace deal', 'peace agreement', 'ceasefire signed', 'ceasefire agreed'],
-        'alliance': ['alliance', 'joins nato', 'treaty signed', 'accession',
-                      'mutual defense pact', 'normalizes relations'],
-        'economic': ['economic', 'embargo', 'sanction', 'trade', 'crisis', 'collapse'],
-        'resource': ['resource', 'oil', 'gas', 'commodity', 'supply', 'shortage'],
-        'technology': ['technology', 'cyber', 'ai', 'chip', 'semiconductor'],
-        'proxy': ['proxy', 'indirect', 'support', 'militia'],
-    }
+    # Keywords for crisis type detection live in config/event_filters.json
+    # ("news_crisis_keywords"). Dict order matters — first match wins (see
+    # _extract_crisis_from_article) — so leadership_change and civil_unrest
+    # come before conflict/military, since a coup or protest story often
+    # also contains generic "armed"/"military" words. Matching is always
+    # word-boundary (event_pipeline.keywords), never a raw substring check.
+    CRISIS_KEYWORDS = get_config()['news_crisis_keywords']
 
     # Wire-service articles conventionally open with a dateline naming the
     # REPORTING BUREAU's city, not necessarily the story's subject — e.g.
@@ -1040,6 +911,7 @@ class NewsBasedCrisisDetector:
     # _get_location_patterns. The roster is curated seed data (init_actors)
     # that doesn't change while a process is running.
     _actor_name_patterns = None
+    _actor_roster_warned = False
 
     @staticmethod
     def _get_actor_name_patterns():
@@ -1051,6 +923,16 @@ class NewsBasedCrisisDetector:
                     (re.compile(r'\b' + re.escape(a.name) + r'\b', re.IGNORECASE), a.id)
                     for a in actors
                 ]
+            except Exception as e:
+                # No actors table yet (e.g. scripts/preview_pipeline.py against
+                # a fresh database) — stakeholder matching just finds nothing,
+                # rather than failing every connector's parse. Not cached, so
+                # it retries once the table exists.
+                if not NewsBasedCrisisDetector._actor_roster_warned:
+                    NewsBasedCrisisDetector._actor_roster_warned = True
+                    logger.warning(f"Actor roster unavailable for stakeholder matching "
+                                   f"({type(e).__name__}); stakeholders will be empty")
+                return []
             finally:
                 session.close()
         return NewsBasedCrisisDetector._actor_name_patterns
@@ -1151,98 +1033,59 @@ class NewsBasedCrisisDetector:
             description_for_location = NewsBasedCrisisDetector.DATELINE_RE.sub('', description, count=1)
             text_lower = (title + ' ' + description_for_location).lower()
 
-            # Topic-relevance check runs FIRST, before any geocoding — an
-            # off-topic article shouldn't spend an LLM call or a Nominatim
-            # request just to be discarded a moment later anyway. REQUIRE at
-            # least one crisis-relevant keyword to actually be present; this
-            # used to default to 'conflict' when nothing matched, which meant
-            # the only real gate on "is this a crisis" was having a
-            # recognized city name — any article mentioning a mapped city (a
-            # filmmaker survey, a ballet review) got accepted regardless of
-            # topic.
+            # Topic-relevance check runs FIRST, before any geocoding. REQUIRE
+            # at least one crisis-relevant keyword to actually be present —
+            # this used to default to 'conflict' when nothing matched, which
+            # meant the only real gate on "is this a crisis" was having a
+            # recognized city name. Matching is word-boundary only, after
+            # stripping idioms like "heart attack" / "price war": the old
+            # substring test let 'ai' match "said" and 'war' match
+            # "software"/"Warsaw", so almost any article passed.
+            match_text = strip_excluded_phrases(text_lower)
             crisis_type = None
             for ctype, keywords in NewsBasedCrisisDetector.CRISIS_KEYWORDS.items():
-                if any(kw in text_lower for kw in keywords):
+                if has_keyword(match_text, keywords):
                     crisis_type = ctype
                     break
 
             if crisis_type is None:
                 return None
 
-            # Geocoding: try a real, incident-level location first — AI
-            # extraction of the specific place genuinely tied to this
-            # event (a landmark, a capital, an ad-hoc reported location),
-            # geocoded via Nominatim — since that generalizes to anything
-            # (the UN, the White House, a neighborhood a missile was heard
-            # over) the curated LOCATION_MAP below was never going to cover.
-            # Falls back to the curated city-name match whenever the AI
-            # path finds nothing (including when ANTHROPIC_API_KEY isn't
-            # configured) or Nominatim has no result — never worse than the
-            # old behavior, meaningfully better whenever a key is set.
-            location = None
-            lat, lon = None, None
-            country = None
-            location_confidence = 82
-
-            extracted_place = _extract_incident_location(title + '. ' + description_for_location)
-            if extracted_place:
-                geocoded = NominatimGeocoder.geocode(extracted_place)
-                # Crisis.country is a required field — only accept this
-                # result if Nominatim actually returned one, otherwise fall
-                # through to the city-match path below rather than crash
-                # (or silently drop the crisis) on a null country.
-                if geocoded and geocoded.get('country'):
-                    location = extracted_place
-                    lat = geocoded['lat']
-                    lon = geocoded['lon']
-                    country = geocoded['country']
-                    # Higher confidence than a bare city match — this is a
-                    # specific, AI-identified real-world location, not just
-                    # "some city was named somewhere in the text."
-                    location_confidence = 90
-
-            if not location:
-                # Search the TITLE first: a city named in the headline is
-                # almost always the article's actual subject, whereas the
-                # DESCRIPTION often opens with a wire-service dateline
-                # naming the reporting bureau's city, unrelated to the
-                # story (e.g. a "LIMA (Reuters) -" prefix on a story about
-                # Africa) — matching that blindly used to mis-geocode
-                # articles to the wrong country. Only fall back to the full
-                # title+description text if the title alone names no known
-                # city.
-                matched_city = (
-                    NewsBasedCrisisDetector._find_earliest_city(title.lower())
-                    or NewsBasedCrisisDetector._find_earliest_city(text_lower)
-                )
-                if matched_city:
-                    coords = NewsBasedCrisisDetector.LOCATION_MAP[matched_city]
-                    location = matched_city.title()
-                    lat = coords['lat']
-                    lon = coords['lon']
-                    country = coords['country']
-                    location_confidence = 82
+            # Search the TITLE first: a city named in the headline is almost
+            # always the article's actual subject, whereas the DESCRIPTION
+            # often opens with a wire-service dateline naming the reporting
+            # bureau's city, unrelated to the story. Only fall back to the
+            # full title+description text if the title alone names no known
+            # city. (Location validation — metonymy, ambiguous names, the
+            # point-in-country check — is a later pipeline stage; see
+            # docs/EVENT_FILTERING.md.)
+            matched_city = (
+                NewsBasedCrisisDetector._find_earliest_city(title.lower())
+                or NewsBasedCrisisDetector._find_earliest_city(text_lower)
+            )
 
             # Skip article if no specific location found — we only plot verified locations
-            if not location:
+            if not matched_city:
                 return None
 
-            # Calculate severity based on keywords
-            severity_keywords = {
-                'death': 20, 'killed': 20, 'wounded': 15,
-                'war': 80, 'attack': 60, 'bomb': 70,
-                'nuclear': 95, 'missile': 75,
-                'military': 50, 'conflict': 70,
-                'crisis': 60, 'tension': 40,
-            }
+            coords = NewsBasedCrisisDetector.LOCATION_MAP[matched_city]
+            lat = coords['lat']
+            lon = coords['lon']
+            country = coords['country']
+            location_confidence = 82
 
-            severity = 50  # Base severity
-            for keyword, weight in severity_keywords.items():
-                if keyword in text_lower:
-                    severity = max(severity, weight)
+            # Interim keyword severity (highest matching weight wins, word-
+            # boundary matched) until event_pipeline scoring replaces it.
+            severity_cfg = get_config()['news_severity_keywords']
+            weights = severity_cfg['weights']
+            severity = severity_cfg['base']
+            for keyword in find_keywords(match_text, list(weights)):
+                severity = max(severity, weights[keyword])
 
-            # Create unique ID
-            crisis_id = f"news_{source.lower().replace(' ', '_')}_{published[:10]}"
+            # Stable, per-article id from the canonical URL. The old
+            # f"news_{source}_{date}" id collided for every article one
+            # outlet published that day, so they overwrote each other.
+            crisis_id = stable_news_id(url or f"{source}|{title}|{published}")
 
             # Real actor ids mentioned by name in the article — [] when
             # nothing matches, never a guessed default (see _find_stakeholders).
@@ -1257,12 +1100,12 @@ class NewsBasedCrisisDetector:
                 'longitude': lon,     # exact city lon
                 'severity': min(100, severity),
                 'confidence': 75,
-                'location_confidence': location_confidence,  # 90 for AI+Nominatim, 82 for curated city match
+                'location_confidence': location_confidence,  # curated city match
                 'date_start': datetime.fromisoformat(published.replace('Z', '+00:00')) if published else datetime.utcnow(),
                 'analysis': description[:500] if description else title,
                 'impact': f"Reported by {source}",
                 'source': 'NewsAPI',
-                'source_id': url,
+                'source_id': canonical_url(url) or url,  # clamped to the column width by the pipeline
                 'is_verified': False,
                 'stakeholders': ','.join(stakeholders),
             }
@@ -1580,12 +1423,17 @@ class DataAggregator:
         logger.info("Starting data sync...")
 
         session = Session()
+        report = event_pipeline.PipelineReport(label='sync')
 
         try:
+            # Every connector's candidates go through the event pipeline
+            # (event_pipeline.process_batch) before being written — that's
+            # where validation, filtering and dedup live, with a reason code
+            # for every rejection (see docs/EVENT_FILTERING.md).
+
             # Try ACLED first (if available)
             acled_crises = ACLEDConnector.fetch_recent_events(days=30)
-            for crisis_data in acled_crises:
-                DataAggregator._upsert_crisis(session, crisis_data)
+            DataAggregator._upsert_batch(session, acled_crises, 'ACLED', report)
 
             # GDELT — free, real, no-key alternative/addition to ACLED
             # (see GDELTConnector). Caught locally rather than letting a
@@ -1595,15 +1443,13 @@ class DataAggregator:
             # GDELT's own rows, never the rest of the sync.
             try:
                 gdelt_crises = GDELTConnector.fetch_recent_events()
-                for crisis_data in gdelt_crises:
-                    DataAggregator._upsert_crisis(session, crisis_data)
+                DataAggregator._upsert_batch(session, gdelt_crises, 'GDELT', report)
             except Exception as e:
                 logger.error(f"GDELT sync error: {e}")
 
             # Also fetch real crises from news articles
             news_crises = NewsBasedCrisisDetector.extract_crises_from_news(days=7)
-            for crisis_data in news_crises:
-                DataAggregator._upsert_crisis(session, crisis_data)
+            DataAggregator._upsert_batch(session, news_crises, 'NewsAPI', report)
 
             # Fetch News articles for context
             news_articles = NewsAPIConnector.fetch_geopolitical_news()
@@ -1620,6 +1466,8 @@ class DataAggregator:
 
             session.commit()
             logger.info("Data sync completed successfully")
+            logger.info(report.summary_line())
+            event_pipeline.remember(report)
 
         except Exception as e:
             session.rollback()
@@ -1698,6 +1546,15 @@ class DataAggregator:
         for c in crises:
             session.add(CrisisSnapshot(crisis_id=c.id, severity=c.severity, recorded_at=now))
         logger.info(f"Recorded {len(crises)} severity snapshots")
+
+    @staticmethod
+    def _upsert_batch(session, candidates, source, report=None):
+        """Run one connector's candidates through the event pipeline and
+        upsert whatever it keeps. Returns the PipelineResult."""
+        result = event_pipeline.process_batch(candidates, source, report=report)
+        for crisis_data in result.kept:
+            DataAggregator._upsert_crisis(session, crisis_data)
+        return result
 
     @staticmethod
     def _upsert_crisis(session, crisis_data):

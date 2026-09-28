@@ -16,7 +16,8 @@ import os
 import logging
 import requests
 from datetime import datetime, timedelta
-from data_sources import NewsBasedCrisisDetector
+import event_pipeline
+from data_sources import NewsBasedCrisisDetector, DataAggregator
 
 logger = logging.getLogger(__name__)
 
@@ -148,10 +149,16 @@ class MultilingualNewsConnector:
         return crises
 
     def sync_all_languages(self, db_session, days: int = 3) -> int:
-        """Fetch news in all configured languages and persist new crises to DB."""
+        """Fetch news in all configured languages and persist crises to DB.
+
+        Goes through the same event pipeline + upsert as the primary sync
+        (DataAggregator._upsert_batch) — this used to db_session.add() rows
+        directly, skipping every validation step and keeping only the first
+        version of any id. Returns the number of NEW crisis rows."""
         from models import Crisis
 
         total_added = 0
+        report = event_pipeline.PipelineReport(label='multilingual')
 
         try:
             for lang_config in LANGUAGE_CONFIGS:
@@ -160,25 +167,28 @@ class MultilingualNewsConnector:
                     f"({lang_config['region_hint']})..."
                 )
                 articles = self.fetch_articles(lang_config, days=days)
-                # Crisis-shaped dicts, not ORM instances — build/merge the model here.
                 crisis_dicts = self.detect_crises_from_articles(articles, lang_config['label'])
+                source = f"NEWS_API_{lang_config['label'].upper()}"
 
-                for crisis_data in crisis_dicts:
-                    existing = db_session.query(Crisis).filter_by(id=crisis_data['id']).first()
-                    if not existing:
-                        db_session.add(Crisis(**crisis_data))
-                        total_added += 1
+                existing_ids = {
+                    row.id for row in db_session.query(Crisis.id)
+                    .filter(Crisis.id.in_([c['id'] for c in crisis_dicts])).all()
+                } if crisis_dicts else set()
+                result = DataAggregator._upsert_batch(db_session, crisis_dicts, source, report)
+                total_added += sum(1 for c in result.kept if c['id'] not in existing_ids)
 
                 if crisis_dicts:
                     logger.info(
                         f"[Multilingual] {lang_config['label']}: "
-                        f"{len(articles)} articles → {len(crisis_dicts)} crises"
+                        f"{len(articles)} articles → {len(result.kept)} crises kept"
                     )
 
             db_session.commit()
+            logger.info(report.summary_line())
+            event_pipeline.remember(report)
             logger.info(f"[Multilingual] Sync complete — {total_added} new crises added")
             return total_added
         except Exception as e:
             db_session.rollback()
             logger.error(f"[Multilingual] Sync failed, rolled back: {e}")
-            return total_added
+            return 0

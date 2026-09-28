@@ -22,6 +22,7 @@ from io import StringIO
 
 from models import Session, Crisis, News, Actor, Relationship, Forecast, EconomicData, CrisisSnapshot
 from data_sources import DataAggregator, init_actors, init_relationships, init_scheduled_events
+import event_pipeline
 from cache import cache_get, cache_set, cache_delete, cache_clear_prefix, cache_stats
 
 # Optional: Anthropic for AI briefings
@@ -2146,6 +2147,18 @@ def trigger_data_sync():
         return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
 
 
+@app.route('/api/admin/pipeline-report', methods=['GET'])
+@limiter.limit("30 per minute")
+def pipeline_report():
+    """What the event pipeline kept and rejected (with reason codes and
+    sample titles) for the most recent syncs, newest first. This is the
+    feedback loop for tuning config/event_filters.json."""
+    if not _check_admin_key():
+        return jsonify({'error': 'Unauthorized'}), 401
+    reports = event_pipeline.recent_reports()
+    return jsonify({'count': len(reports), 'reports': reports})
+
+
 @app.route('/api/admin/stats', methods=['GET'])
 @limiter.limit("10 per minute")
 def get_stats():
@@ -2554,6 +2567,10 @@ def scheduled_sync():
         logger.info(f"Multilingual sync completed — {added} new crises")
     except Exception as e:
         logger.error(f"Multilingual sync error: {e}")
+
+    # Serve the freshly synced/filtered set right away rather than letting a
+    # pre-sync /api/crises response live out its cache TTL.
+    cache_clear_prefix('crises:')
 
 
 # ════════════════════════════════════════════════════════════

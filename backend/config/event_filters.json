@@ -1,0 +1,44 @@
+{
+  "_comment": "Tunables for the event quality pipeline (backend/event_pipeline/). Keyword lists are matched on word boundaries (see event_pipeline/keywords.py), never as raw substrings. Edit here — no code change needed. See docs/EVENT_FILTERING.md.",
+
+  "news_crisis_keywords": {
+    "_comment": "Order matters: the first type with a hit wins, so leadership_change and civil_unrest come before conflict/military (a coup or protest story often also says 'armed'/'military').",
+    "leadership_change": ["coup", "ousted", "overthrown", "seized power", "junta", "assassinated",
+                          "resigns as president", "unconstitutional", "succession crisis"],
+    "civil_unrest": ["protest", "unrest", "riot", "demonstrators", "uprising", "crackdown",
+                     "mass arrests", "general strike"],
+    "conflict": ["war", "combat", "fighting", "battle", "attack", "strike", "bomb", "military",
+                 "armed", "clash"],
+    "military": ["military", "deployment", "exercise", "buildup", "troops", "forces", "defense"],
+    "diplomatic": ["diplomatic", "crisis", "tensions", "talks", "negotiations", "standoff",
+                   "peace deal", "peace agreement", "ceasefire signed", "ceasefire agreed"],
+    "alliance": ["alliance", "joins nato", "treaty signed", "accession", "mutual defense pact",
+                 "normalizes relations"],
+    "economic": ["economic", "embargo", "sanction", "trade", "crisis", "collapse"],
+    "resource": ["resource", "oil", "gas", "commodity", "supply", "shortage"],
+    "technology": ["technology", "cyber", "ai", "chip", "semiconductor"],
+    "proxy": ["proxy", "indirect", "support", "militia"]
+  },
+
+  "news_severity_keywords": {
+    "_comment": "Interim weights until event_pipeline/scoring.py replaces this rubric (phase 6). Highest matching weight wins.",
+    "base": 50,
+    "weights": {
+      "death": 20, "killed": 20, "wounded": 15,
+      "war": 80, "attack": 60, "bomb": 70,
+      "nuclear": 95, "missile": 75,
+      "military": 50, "conflict": 70,
+      "crisis": 60, "tension": 40
+    }
+  },
+
+  "phrase_exclusions": {
+    "_comment": "Idioms removed from text before keyword matching, so e.g. 'heart attack' never counts as an attack.",
+    "phrases": ["heart attack", "heart attacks", "panic attack", "panic attacks", "asthma attack",
+                "shark attack", "shark attacks", "dog attack", "price war", "price wars",
+                "bidding war", "console war", "streaming war", "streaming wars", "talent war",
+                "culture war", "culture wars", "star wars", "war room", "charm offensive",
+                "brain drain", "lightning strike", "lightning strikes", "strike a deal",
+                "strike a balance"]
+  }
+}
