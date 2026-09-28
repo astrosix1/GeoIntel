@@ -16,15 +16,8 @@ _history = deque(maxlen=_HISTORY_SIZE)
 
 
 def severity_band(score):
-    if score is None:
-        return 'unknown'
-    if score >= 80:
-        return 'critical'
-    if score >= 60:
-        return 'high'
-    if score >= 35:
-        return 'elevated'
-    return 'low'
+    from .scoring import band
+    return band(score)
 
 
 class PipelineReport:
@@ -37,6 +30,7 @@ class PipelineReport:
         self.rejected = defaultdict(Counter)            # source -> reason -> count
         self.samples = defaultdict(list)                # (source, reason) -> [title, ...]
         self.severity_bands = defaultdict(Counter)      # source -> band -> count
+        self.impact_bands = defaultdict(Counter)        # source -> global_impact band -> count
 
     def record_received(self, source, n=1):
         self.received[source] += n
@@ -44,6 +38,7 @@ class PipelineReport:
     def record_kept(self, source, candidate):
         self.kept[source] += 1
         self.severity_bands[source][severity_band(candidate.get('severity'))] += 1
+        self.impact_bands[source][severity_band(candidate.get('global_impact'))] += 1
 
     def record_merged(self, source, n=1):
         self.merged[source] += n
@@ -70,6 +65,8 @@ class PipelineReport:
                 self.samples[key].extend(titles[:room])
         for source, bands in other.severity_bands.items():
             self.severity_bands[source].update(bands)
+        for source, bands in other.impact_bands.items():
+            self.impact_bands[source].update(bands)
         return self
 
     def to_dict(self):
@@ -93,6 +90,7 @@ class PipelineReport:
                         reason: self.samples[(s, reason)] for reason in self.rejected[s]
                     },
                     'severity_bands': dict(self.severity_bands[s]),
+                    'impact_bands': dict(self.impact_bands[s]),
                 }
                 for s in sources
             },

@@ -88,19 +88,12 @@ def test_unmapped_cameo_root_code_is_skipped(app_module):
     assert ds.GDELTConnector._parse_row(make_row(event_code='990', quad_class='4')) is None
 
 
-def test_severity_derived_from_goldstein_not_a_constant(app_module):
-    harsh = ds.GDELTConnector._parse_row(make_row(goldstein='-10.0'))
-    mild = ds.GDELTConnector._parse_row(make_row(goldstein='-1.0'))
-    assert harsh['severity'] == 100
-    assert mild['severity'] == 10
-    assert harsh['severity'] > mild['severity']
-
-
-def test_severity_clamps_to_zero_for_cooperative_goldstein(app_module):
-    # Edge case: a QuadClass 3/4 row with an unusually positive Goldstein
-    # score must not produce a negative severity.
-    crisis = ds.GDELTConnector._parse_row(make_row(goldstein='5.0'))
-    assert crisis['severity'] == 0
+def test_goldstein_no_longer_sets_severity(app_module):
+    # GoldsteinScale is a fixed constant per CAMEO code (every "fight" is
+    # -10), not this event's intensity — it made every fight severity 100.
+    # Severity now comes from event_pipeline/scoring.py (see test_scoring.py).
+    crisis = ds.GDELTConnector._parse_row(make_row(goldstein='-10.0'))
+    assert 'severity' not in crisis
 
 
 def test_confidence_derived_from_real_num_sources(app_module):

@@ -153,6 +153,7 @@ def test_acled_title_from_fields():
     # "us" in a slug is the pronoun, not the country: never upper-cased to US.
     ('https://site.com/news/iran-tells-us-to-stay-out-of-gulf-1234567',
      'Iran Tells Us to Stay Out of Gulf'),
+    ('https://site.com/news/09-28-congolese-politician-beaten-to-death', 'Congolese Politician Beaten to Death'),
     ('https://site.com/news/2559138', None),
     ('https://site.com/index.php?id=5', None),
     ('', None),

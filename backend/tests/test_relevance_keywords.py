@@ -69,16 +69,17 @@ def test_heart_attack_is_not_an_attack():
     assert extract('Heart attack survivor runs London marathon') is None
 
 
-def test_real_conflict_story_still_detected_with_real_severity():
+def test_real_conflict_story_still_detected():
     crisis = extract('Missile strike on Kyiv kills civilians')
     assert crisis is not None
     assert crisis['type'] == 'conflict'
     assert crisis['country'] == 'Ukraine'
-    assert crisis['severity'] == 75  # 'missile' weight, word-boundary matched
 
 
-def test_severity_no_longer_inflated_by_substrings():
-    # 'warsaw' used to hit 'war' (80); only the real 'protest' keyword applies now.
+def test_warsaw_is_not_war_for_scoring():
+    # 'warsaw' used to hit the 'war' severity weight (80). Severity is now
+    # scored from the event class, which for this story is a protest.
+    from event_pipeline.scoring import extract_features
     crisis = extract('Farmers protest new rules in Warsaw')
     assert crisis['type'] == 'civil_unrest'
-    assert crisis['severity'] == 50
+    assert extract_features(crisis, {'kind': 'news', 'text': crisis['title']})['class'] == 'protest'

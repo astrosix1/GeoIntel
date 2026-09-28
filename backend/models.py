@@ -36,6 +36,12 @@ Session = sessionmaker(bind=engine)
 Base = declarative_base()
 
 
+def _band(score):
+    # One band definition for the whole app (event_pipeline/scoring.py).
+    from event_pipeline.scoring import band
+    return band(score)
+
+
 class Crisis(Base):
     """Represents a geopolitical crisis or conflict"""
     __tablename__ = 'crises'
@@ -136,6 +142,8 @@ class Crisis(Base):
             'location_precision': self.location_precision,
             'source_count': self.source_count or 1,
             'global_impact': self.global_impact or 0,
+            'severity_band': _band(self.severity),
+            'impact_band': _band(self.global_impact or 0),
         }
 
 

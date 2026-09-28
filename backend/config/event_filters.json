@@ -168,16 +168,63 @@
     "proxy": ["proxy", "indirect", "support", "militia"]
   },
 
-  "news_severity_keywords": {
-    "_comment": "Interim weights until event_pipeline/scoring.py replaces this rubric (phase 6). Highest matching weight wins.",
-    "base": 50,
-    "weights": {
-      "death": 20, "killed": 20, "wounded": 15,
-      "war": 80, "attack": 60, "bomb": 70,
-      "nuclear": 95, "missile": 75,
-      "military": 50, "conflict": 70,
-      "crisis": 60, "tension": 40
-    }
+  "scoring": {
+    "_comment": "event_pipeline/scoring.py. Two 0-100 scores. severity = LOCAL intensity (how violent/serious on the ground): class_base[event class] + fatality bucket + one scale word, then caps. global_impact = INTERNATIONAL significance (drives globe emphasis, the critical badge and default sort): a share of severity plus international-scope bonuses, then caps; >= 80 also needs two of critical_requirements. Bands (both scores): critical >= 80, high >= 60, elevated >= 35, low < 35.",
+    "bands": {"critical": 80, "high": 60, "elevated": 35},
+    "class_base": {"verbal": 10, "threat": 20, "protest": 15, "riot": 25, "posture": 25, "repression": 25,
+                   "assault": 40, "armed_clash": 45, "aerial": 50, "mass_violence": 60},
+    "fatality_buckets": [[500, 40], [100, 32], [25, 25], [5, 15], [1, 8]],
+    "scale_words": {"hundreds": 10, "thousands displaced": 8, "thousands": 8, "dozens": 5},
+    "severity_caps": {"verbal": 30, "protest_without_fatalities": 40, "single_unverified_source": 65},
+    "impact": {
+      "severity_share": 0.4, "severity_share_max_input": 50,
+      "interstate": 20, "interstate_military": 15,
+      "nuclear_party": 12, "two_nuclear_parties": 20,
+      "great_power_party": 8, "strategic_location": 8, "escalation_term": 10,
+      "corroboration": [[25, 10], [10, 6], [3, 3]],
+      "mass_casualties": [[100, 15], [25, 5]],
+      "caps": {"domestic": 55, "single_source": 60, "verbal_only": 50},
+      "critical_requirements": ["interstate", "nuclear_party", "deaths_100", "sources_10"]
+    },
+    "nuclear_states": ["United States", "Russia", "China", "United Kingdom", "France", "India", "Pakistan",
+                       "North Korea", "Israel"],
+    "great_powers": ["United States", "Russia", "China"],
+    "escalation_terms": ["declares war", "declared war", "invasion", "invades", "nuclear test", "ballistic missile",
+                         "martial law", "general mobilization", "no-fly zone", "chemical weapons",
+                         "nuclear strike", "tactical nuclear"],
+    "strategic_locations": [
+      {"name": "Strait of Hormuz", "keywords": ["hormuz"], "bbox": [25.0, 54.5, 27.5, 57.5], "at_sea_only": true},
+      {"name": "Taiwan Strait", "keywords": ["taiwan strait"], "bbox": [22.0, 117.0, 26.5, 121.0], "at_sea_only": true},
+      {"name": "Bab-el-Mandeb", "keywords": ["bab el-mandeb", "bab al-mandab", "red sea"], "bbox": [11.5, 42.5, 16.0, 44.5], "at_sea_only": true},
+      {"name": "Suez Canal", "keywords": ["suez"], "bbox": [29.5, 32.0, 31.5, 33.0], "at_sea_only": false},
+      {"name": "Strait of Malacca", "keywords": ["malacca"], "bbox": [0.5, 98.0, 6.5, 104.5], "at_sea_only": true},
+      {"name": "Black Sea", "keywords": ["black sea"], "bbox": [40.5, 27.5, 47.0, 42.0], "at_sea_only": true},
+      {"name": "South China Sea", "keywords": ["south china sea", "spratly", "paracel", "scarborough shoal", "second thomas shoal"], "bbox": [3.0, 105.0, 23.0, 121.0], "at_sea_only": true},
+      {"name": "Baltic Sea", "keywords": ["baltic sea"], "bbox": [53.5, 9.5, 66.0, 30.5], "at_sea_only": true},
+      {"name": "Korean DMZ", "keywords": ["dmz", "demilitarized zone", "panmunjom"], "bbox": [37.7, 126.0, 38.4, 129.0], "at_sea_only": false},
+      {"name": "Zaporizhzhia nuclear plant", "keywords": ["zaporizhzhia nuclear", "nuclear power plant"], "bbox": [47.4, 34.5, 47.6, 34.7], "at_sea_only": false}
+    ]
+  },
+
+  "news_event_classes": {
+    "_comment": "Event class for a news article: the first class whose keywords appear (word-boundary) wins, so order matters (most severe first). Articles with none fall back to type_defaults by crisis type.",
+    "mass_violence": ["massacre", "genocide", "ethnic cleansing", "chemical weapons", "chemical attack", "nuclear strike",
+                      "coup", "mass killing", "mass killings"],
+    "aerial": ["airstrike", "air strike", "air raid", "missile", "missiles", "drone strike", "drone attack", "drones",
+               "bombardment", "shelling", "artillery", "rocket", "rockets"],
+    "armed_clash": ["clash", "clashes", "fighting", "battle", "offensive", "combat", "firefight", "gunfight", "skirmish"],
+    "assault": ["bombing", "bomb", "explosion", "suicide attack", "assassination", "assassinated", "ambush",
+                "kidnapped", "abducted", "hostage", "attack", "gunmen", "massacred"],
+    "repression": ["crackdown", "arrested", "detained", "mass arrests", "tear gas", "jailed"],
+    "riot": ["riot", "rioting", "violent protest", "looting"],
+    "protest": ["protest", "demonstration", "demonstrators", "rally", "march", "general strike", "sit-in"],
+    "posture": ["troops", "deployment", "deployed", "exercise", "drills", "mobilization", "buildup", "warship",
+                "warships", "fighter jets", "incursion"],
+    "threat": ["threatens", "threatened", "sanctions", "sanction", "ultimatum", "expels", "expelled", "embargo",
+               "warns", "warned", "retaliate", "retaliation"],
+    "type_defaults": {"conflict": "posture", "military": "posture", "proxy": "posture", "civil_unrest": "protest",
+                      "leadership_change": "repression", "diplomatic": "verbal", "alliance": "verbal",
+                      "economic": "threat", "resource": "threat", "technology": "threat", "cyber": "threat"}
   },
 
   "titles": {

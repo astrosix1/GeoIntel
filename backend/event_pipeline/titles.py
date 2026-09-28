@@ -310,6 +310,13 @@ def slug_title(url):
         ]
         while words and words[0].lower() in _SLUG_DROP_LEADING:
             words.pop(0)
+        # A leading run of 2+ numbers is a date ("09-28-congolese-..."),
+        # unlike a single count ("5-miners-killed").
+        lead = 0
+        while lead < len(words) and words[lead].isdigit():
+            lead += 1
+        if lead >= 2:
+            words = words[lead:]
         # Only purely alphabetic tokens count as words, so hash fragments
         # ("article-9cdd-4dc8-98c1") never pass as a headline.
         alpha = [w for w in words if w.isalpha()]

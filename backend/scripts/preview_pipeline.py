@@ -74,10 +74,11 @@ def main():
     print("=" * 70)
     for name, stats in summary['sources'].items():
         print(f"\n{name}: received {stats['received']}, kept {stats['kept']}")
-        bands = stats['severity_bands']
-        if bands:
-            print("  severity bands: " + ', '.join(
-                f"{b}={bands.get(b, 0)}" for b in ('critical', 'high', 'elevated', 'low')))
+        for label, key in (('severity', 'severity_bands'), ('global impact', 'impact_bands')):
+            bands = stats.get(key) or {}
+            if bands:
+                print(f"  {label} bands: " + ', '.join(
+                    f"{b}={bands.get(b, 0)}" for b in ('critical', 'high', 'elevated', 'low')))
         for reason, count in sorted(stats['rejected'].items(), key=lambda kv: -kv[1]):
             print(f"  rejected {reason}: {count}")
             for title in stats['rejected_samples'].get(reason, []):
@@ -86,7 +87,7 @@ def main():
     print(f"\nSample kept titles (up to {args.samples}):")
     by_type = Counter(c.get('type') for c in kept)
     for c in kept[: args.samples]:
-        print(f"  [{c.get('source')}] sev={c.get('severity'):>3} {c.get('type'):<17} "
+        print(f"  [{c.get('source')}] sev={c.get('severity'):>3} imp={c.get('global_impact', 0):>3} {c.get('type'):<17} "
               f"{c.get('country')[:18]:<18} {c.get('title')[:90]}")
     if by_type:
         print("\nKept by type: " + ', '.join(f"{t}={n}" for t, n in by_type.most_common()))

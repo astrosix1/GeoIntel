@@ -23,6 +23,7 @@ from io import StringIO
 from models import Session, Crisis, News, Actor, Relationship, Forecast, EconomicData, CrisisSnapshot
 from data_sources import DataAggregator, init_actors, init_relationships, init_scheduled_events
 import event_pipeline
+from event_pipeline.scoring import band
 from cache import cache_get, cache_set, cache_delete, cache_clear_prefix, cache_stats
 
 # Optional: Anthropic for AI briefings
@@ -556,16 +557,12 @@ def get_economic_impact(crisis_id):
             if econ_data:
                 economic_impact[country_name] = econ_data.to_dict()
 
-        # Estimate impact severity based on crisis severity and economic size
-        impact_severity = 'moderate'
-        if crisis.severity > 80:
-            impact_severity = 'severe'
-        elif crisis.severity > 60:
-            impact_severity = 'significant'
-        elif crisis.severity > 40:
-            impact_severity = 'moderate'
-        else:
-            impact_severity = 'minor'
+        # Economic impact follows the event's international significance
+        # (global_impact), not its local intensity — a deadly but local
+        # clash rarely moves markets. Same bands as everywhere else.
+        impact_severity = {
+            'critical': 'severe', 'high': 'significant', 'elevated': 'moderate', 'low': 'minor',
+        }[band(crisis.global_impact or 0)]
 
         # No time-series economic-disruption data exists anywhere in this
         # app, so a headline "trade disruption %" would still be an invented
@@ -617,8 +614,8 @@ def estimate_affected_sectors(crisis):
 
     base_sectors = sectors.get(crisis.type, ['General Economy'])
 
-    # Add more sectors if severe
-    if crisis.severity > 80:
+    # Add more sectors when internationally critical
+    if band(crisis.global_impact or 0) == 'critical':
         base_sectors.extend(['Finance', 'Aviation'])
 
     return list(set(base_sectors))[:5]  # Return top 5
@@ -833,7 +830,7 @@ def _generate_static_briefing(crisis, escalation, economic, reliability, numbere
     lead_citations = ''.join(f"[{s['n']}]" for s in numbered_sources[:2])
     has_citable_news = bool(numbered_sources)
 
-    severity_label = 'Critical' if sev >= 85 else ('High' if sev >= 65 else ('Moderate' if sev >= 40 else 'Low'))
+    severity_label = {'critical': 'Critical', 'high': 'High', 'elevated': 'Moderate', 'low': 'Low'}[band(sev)]
     trend_desc = {
         'escalating': f'rapidly escalating (velocity +{abs(velocity):.1f} pts/day)',
         'de-escalating': f'de-escalating (velocity −{abs(velocity):.1f} pts/day)',
@@ -1133,7 +1130,8 @@ def get_crises():
         min_severity    = request.args.get('min_severity', '0')
         days            = request.args.get('days', '')
         include_analysis = request.args.get('include_analysis', 'false').lower()
-        cache_key = f"crises:list:{crisis_type}:{status}:{min_severity}:{days}:{include_analysis}"
+        min_impact      = request.args.get('min_impact', '0')
+        cache_key = f"crises:list:{crisis_type}:{status}:{min_severity}:{min_impact}:{days}:{include_analysis}"
 
         cached = cache_get(cache_key)
         if cached is not None:
@@ -1141,6 +1139,7 @@ def get_crises():
 
         session = Session()
         min_severity_int = int(min_severity)
+        min_impact_int = int(min_impact)
 
         query = session.query(Crisis).filter(Crisis.is_active == True)
 
@@ -1157,7 +1156,11 @@ def get_crises():
             since = datetime.utcnow() - timedelta(days=int(days))
             query = query.filter(Crisis.date_start >= since)
 
-        crises = query.order_by(Crisis.severity.desc()).all()
+        if min_impact_int:
+            query = query.filter(Crisis.global_impact >= min_impact_int)
+
+        # Most internationally significant first, local intensity as the tiebreak.
+        crises = query.order_by(Crisis.global_impact.desc(), Crisis.severity.desc()).all()
 
         # When analysis is requested, fetch reliability data for all crises in
         # one batched query instead of one query per crisis (N+1 avoidance).
@@ -2362,7 +2365,7 @@ def _send_alert_email(email: str, name: str, crisis_title: str, country: str,
 
     change = severity - old_severity
     direction = f"+{change}" if change > 0 else str(change)
-    urgency_color = '#ef4444' if severity >= 80 else '#f59e0b' if severity >= 60 else '#3b82f6'
+    urgency_color = {'critical': '#ef4444', 'high': '#f59e0b'}.get(band(severity), '#3b82f6')
 
     html = f"""
 <!DOCTYPE html>

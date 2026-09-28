@@ -12,7 +12,8 @@ through the parts of the pipeline that work on stored fields, and:
   - deactivates news rows that fail the outlet/topic/actor checks;
   - normalizes the country, checks coordinates are inside it (or fixes the
     country from the coordinates), and backfills country_code,
-    location_precision, last_seen_at, source_count and crisis_sources;
+    location_precision, last_seen_at, source_count, crisis_sources and
+    global_impact (legacy rows keep their stored severity);
   - cleans titles, deactivating rows with no usable title (ACLED rows whose
     title was an ID code come back with a real title on the next sync);
   - merges duplicate rows of the same event: the best one stays, the rest
@@ -30,6 +31,7 @@ backfilled, never deactivated or merged.
 Run `alembic upgrade head` first (the new columns must exist).
 """
 import argparse
+import json
 import os
 import sys
 from collections import Counter, defaultdict
@@ -61,6 +63,8 @@ def main():
     from event_pipeline.location import check_location
     from event_pipeline.titles import clean_title
     from event_pipeline import dedup
+    from event_pipeline.scoring import extract_features, score
+    from event_pipeline import countries as countries_mod
 
     exempt_sources = set(get_config().get('lifecycle', {}).get('exempt_sources', []))
     now = datetime.utcnow()
@@ -179,6 +183,21 @@ def main():
                                              url_key=key, url=url, title=(member.title or '')[:300],
                                              published_at=member.date_start))
             row.source_count = max(len(known), 1)
+            if not row.scoring_factors:
+                # Legacy rows keep their stored severity (no raw inputs to
+                # re-derive it from); global_impact is computed from what is
+                # known — type, country and merged source count.
+                parties = {c for c, *_ in countries_mod.find_in_text(row.title or '')}
+                for actor_id in (row.stakeholders or '').split(','):
+                    record = countries_mod.resolve(actor_id.strip())
+                    if record:
+                        parties.add(record['code'])
+                features = extract_features(
+                    {'title': row.title, 'type': row.type, 'latitude': row.latitude, 'longitude': row.longitude},
+                    {'country_code': row.country_code, 'parties': sorted(parties)})
+                severity, impact, factors = score(features, row.source_count, preset_severity=row.severity or 50)
+                row.global_impact, row.scoring_factors = impact, json.dumps(factors, sort_keys=True)
+                note('global_impact backfilled', row)
 
         print("\nPlan:" if not args.apply else "\nApplied:")
         for action, count in actions.most_common():

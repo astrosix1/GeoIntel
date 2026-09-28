@@ -15,9 +15,10 @@ modifying it) or rejects it with a reason code recorded in the report:
     batch_dedup -> one candidate per id within a batch
 
 then the survivors are clustered (dedup.py) so each real-world event is one
-kept dict, with every merged report kept as provenance.
+kept dict, with every merged report kept as provenance, and each event is
+scored (scoring.py: local severity + global_impact) from all its reports.
 
-Scoring is added as a further stage in phase 6. Stages are pure functions of the candidate (plus
+Stages are pure functions of the candidate (plus
 config), so each is testable without a database or network.
 """
 from dataclasses import dataclass, field
@@ -28,6 +29,7 @@ from .relevance import check_relevance
 from .location import check_location
 from .titles import gdelt_title
 from .dedup import cluster_batch, source_record
+from .scoring import extract_features, merge_features, apply_scores
 from .report import PipelineReport, remember, recent_reports  # noqa: F401 (re-exported)
 
 META_KEY = '_meta'  # transient per-candidate context for stages; never persisted
@@ -38,6 +40,7 @@ class PipelineResult:
     kept: list = field(default_factory=list)       # one clean crisis dict per event (cluster primary)
     sources: list = field(default_factory=list)    # per kept event: crisis_sources dicts, primary first
     metas: list = field(default_factory=list)      # per kept event: the primary's transient _meta
+    features: list = field(default_factory=list)   # per kept event: scoring inputs (all its reports merged)
     rejected: list = field(default_factory=list)   # (reason, candidate)
     merged: int = 0                                # reports folded into another report of the same event
     report: PipelineReport = None
@@ -133,6 +136,10 @@ def process_batch(candidates, source, report=None):
         primary['location_precision'] = meta.get('location_precision')
         primary['source_url'] = meta.get('url')
         primary['source_count'] = len(sources)
+        features = None
+        for candidate, member_meta in cluster:
+            features = merge_features(features, extract_features(candidate, member_meta))
+        apply_scores(primary, features, source_count=len(sources))
         if len(cluster) > 1:
             result.merged += len(cluster) - 1
             report.record_merged(source, len(cluster) - 1)
@@ -140,5 +147,6 @@ def process_batch(candidates, source, report=None):
         result.kept.append(primary)
         result.sources.append(sources)
         result.metas.append(meta)
+        result.features.append(features)
 
     return result

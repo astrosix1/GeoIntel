@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 
 import event_pipeline
 from event_pipeline.config import get_config
-from event_pipeline.keywords import has_keyword, find_keywords, strip_excluded_phrases
+from event_pipeline.keywords import has_keyword, strip_excluded_phrases
 from event_pipeline.normalize import stable_news_id, canonical_url
 from event_pipeline.titles import acled_title, slug_title, first_sentence
 from event_pipeline.location import load_gazetteer, resolve_news_location
@@ -202,10 +202,6 @@ class ACLEDConnector:
         try:
             crisis_type = ACLED_TYPE_MAP.get(event.get('event_type'), 'conflict')
 
-            # Calculate severity based on fatalities and participants
-            fatalities = int(event.get('fatalities', 0))
-            severity = min(100, 30 + (fatalities // 2))  # Scale fatalities to severity
-
             # Parse ACLED's event_date (YYYY-MM-DD) into a datetime; fall back to now
             event_date_raw = event.get('event_date')
             try:
@@ -244,7 +240,7 @@ class ACLEDConnector:
                 'country': event.get('country', 'Unknown'),
                 'latitude': float(event.get('latitude', 0)),
                 'longitude': float(event.get('longitude', 0)),
-                'severity': severity,
+                # severity/global_impact: event_pipeline/scoring.py (event class + fatalities + scope)
                 'confidence': 85,  # ACLED is well-documented
                 'location_confidence': 85,  # ACLED provides precise coordinates
                 'date_start': date_start,  # Crisis model field is date_start, not date
@@ -798,14 +794,6 @@ class NewsBasedCrisisDetector:
             lat, lon, country = place['lat'], place['lon'], place['country']
             location_confidence = 82 if place['precision'] == 'city' else 55
 
-            # Interim keyword severity (highest matching weight wins, word-
-            # boundary matched) until event_pipeline scoring replaces it.
-            severity_cfg = get_config()['news_severity_keywords']
-            weights = severity_cfg['weights']
-            severity = severity_cfg['base']
-            for keyword in find_keywords(match_text, list(weights)):
-                severity = max(severity, weights[keyword])
-
             # Stable, per-article id from the canonical URL. The old
             # f"news_{source}_{date}" id collided for every article one
             # outlet published that day, so they overwrote each other.
@@ -831,7 +819,7 @@ class NewsBasedCrisisDetector:
                 'country': country,   # actual country (e.g. "Iran")
                 'latitude': lat,      # exact city lat
                 'longitude': lon,     # exact city lon
-                'severity': min(100, severity),
+                # severity/global_impact: event_pipeline/scoring.py
                 'confidence': 75,
                 'location_confidence': location_confidence,  # curated city match
                 'date_start': datetime.fromisoformat(published.replace('Z', '+00:00')) if published else datetime.utcnow(),
@@ -1081,18 +1069,6 @@ class GDELTConnector:
         if not country:
             return None
 
-        # Severity — real, not fabricated: GoldsteinScale is GDELT's own
-        # published -10 (maximally conflictual) .. +10 (maximally
-        # cooperative) intensity score for this exact event. A maximally
-        # conflictual event scores 100; anything trending cooperative
-        # (rare but possible even inside QuadClass 3/4's edge cases)
-        # clamps to a low, not negative, severity.
-        try:
-            goldstein = float(fields[GDELTConnector._COL_GOLDSTEIN])
-        except (ValueError, IndexError):
-            goldstein = 0.0
-        severity = max(0, min(100, round(-goldstein * 10)))
-
         # Confidence — real, not a flat constant: more independent sources
         # corroborating the same event is a real (if rough) signal.
         try:
@@ -1168,7 +1144,9 @@ class GDELTConnector:
             'country': country,
             'latitude': lat,
             'longitude': lon,
-            'severity': severity,
+            # severity/global_impact: event_pipeline/scoring.py. (GoldsteinScale is
+            # a fixed constant per CAMEO code, not this event's intensity — every
+            # "fight" scored 100 — so it's no longer used.)
             'confidence': confidence,
             'location_confidence': 85,  # GDELT's own geocoding, not text inference
             'date_start': date_start,
@@ -1350,18 +1328,21 @@ class DataAggregator:
         result = event_pipeline.process_batch(candidates, source, report=report)
         result.stored = {'inserted': 0, 'updated': 0, 'merged': 0}
         now = datetime.utcnow()
-        for crisis_data, sources, meta in zip(result.kept, result.sources, result.metas):
+        for crisis_data, sources, meta, features in zip(result.kept, result.sources, result.metas, result.features):
             try:
-                outcome = DataAggregator._store_event(session, crisis_data, sources, meta, now)
+                outcome = DataAggregator._store_event(session, crisis_data, sources, meta, now, features)
                 result.stored[outcome] += 1
             except Exception as e:
                 logger.error(f"Error storing crisis {crisis_data.get('id')}: {e}")
         return result
 
     @staticmethod
-    def _store_event(session, crisis_data, sources, meta, now):
-        """Store one pipeline event. Returns 'inserted', 'updated' or 'merged'."""
+    def _store_event(session, crisis_data, sources, meta, now, features=None):
+        """Store one pipeline event. Returns 'inserted', 'updated' or 'merged'.
+        Merged/refreshed events are re-scored from their stored scoring
+        inputs plus the new report's, with the new source_count."""
         from event_pipeline.dedup import find_existing, source_priority
+        from event_pipeline.scoring import rescore_row
 
         existing = session.get(Crisis, crisis_data['id'])
         if existing is not None:
@@ -1388,8 +1369,6 @@ class DataAggregator:
                 if crisis_data.get('title') and not meta.get('title_synthesized') and \
                         source_priority(crisis_data.get('source'), meta.get('outlet')) > source_priority(row.source):
                     row.title = crisis_data['title']
-                if (crisis_data.get('severity') or 0) > (row.severity or 0):
-                    row.severity = crisis_data['severity']
                 if crisis_data.get('date_start') and row.date_start and crisis_data['date_start'] < row.date_start:
                     row.date_start = crisis_data['date_start']
                 outcome = 'merged'
@@ -1402,6 +1381,10 @@ class DataAggregator:
                 known.add(record['url_key'])
                 session.add(CrisisSource(crisis_id=row.id, **record))
         row.source_count = max(len(known), 1)
+        if outcome == 'merged':
+            rescore_row(row, features)
+        elif outcome == 'updated':
+            rescore_row(row)   # inputs just refreshed; source_count may include earlier merges
         return outcome
 
     @staticmethod
