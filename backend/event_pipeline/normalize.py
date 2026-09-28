@@ -19,7 +19,8 @@ MAX_COUNTRY_LEN = 100
 
 _TRACKING_PARAMS = {'fbclid', 'gclid', 'dclid', 'msclkid', 'mc_cid', 'mc_eid', 'ref', 'ref_src', 'cmpid', 'ocid'}
 
-REQUIRED_FIELDS = ('id', 'type', 'title', 'country', 'latitude', 'longitude')
+# Title is not required here — the titles stage supplies or rejects it.
+REQUIRED_FIELDS = ('id', 'type', 'country', 'latitude', 'longitude')
 
 
 def canonical_url(url):
@@ -90,7 +91,8 @@ def normalize_candidate(candidate):
     candidate['latitude'], candidate['longitude'] = lat, lon
 
     candidate['id'] = str(candidate['id'])[:MAX_ID_LEN]
-    candidate['title'] = truncate_words(candidate['title'], MAX_TITLE_LEN)
+    if candidate.get('title'):
+        candidate['title'] = truncate_words(candidate['title'], MAX_TITLE_LEN)
     candidate['country'] = ' '.join(str(candidate['country']).split())[:MAX_COUNTRY_LEN]
     if candidate.get('source_id') is not None:
         candidate['source_id'] = str(candidate['source_id'])[:MAX_SOURCE_ID_LEN]

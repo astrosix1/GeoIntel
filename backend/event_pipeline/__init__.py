@@ -8,12 +8,13 @@ connectors. See docs/EVENT_FILTERING.md for the full design.
 Stages run in order, and each one either keeps a candidate (possibly
 modifying it) or rejects it with a reason code recorded in the report:
 
-    titles      -> clean the source title or synthesize one (titles.py)
     normalize   -> required fields, coordinate sanity, column-length clamps
     relevance   -> geopolitical-event and outlet checks per source (relevance.py)
+    location    -> canonical country, coordinates inside it, precision (location.py)
+    titles      -> clean the source title or synthesize one (titles.py)
     batch_dedup -> one candidate per id within a batch
 
-Later phases add location, cross-source dedup/merge and
+Later phases add cross-source dedup/merge and
 scoring as further stages. Stages are pure functions of the candidate (plus
 config), so each is testable without a database or network.
 """
@@ -22,6 +23,8 @@ from dataclasses import dataclass, field
 from .normalize import normalize_candidate
 from .titles import choose_title
 from .relevance import check_relevance
+from .location import check_location
+from .titles import gdelt_title
 from .report import PipelineReport, remember, recent_reports  # noqa: F401 (re-exported)
 
 META_KEY = '_meta'  # transient per-candidate context for stages; never persisted
@@ -36,11 +39,17 @@ class PipelineResult:
 
 def _stage_titles(candidate, state):
     meta = candidate.get(META_KEY) or {}
+    fallbacks = list(meta.get('fallback_titles', ()))
+    cameo = meta.get('cameo')
+    if cameo:
+        # Built here, not in the connector, so it names the place the
+        # location stage settled on (which may differ from GDELT's).
+        fallbacks.append((gdelt_title(place_full_name=meta.get('place_full_name'), **cameo), False))
     title, synthesized = choose_title(
         candidate.get('title'),
         outlet=meta.get('outlet'),
         url=meta.get('url'),
-        fallbacks=meta.get('fallback_titles', ()),
+        fallbacks=fallbacks,
     )
     if not title:
         return 'no_usable_title'
@@ -58,6 +67,10 @@ def _stage_relevance(candidate, state):
     return check_relevance(candidate, candidate.get(META_KEY) or {})
 
 
+def _stage_location(candidate, state):
+    return check_location(candidate, candidate.setdefault(META_KEY, {}))
+
+
 def _stage_batch_dedup(candidate, state):
     seen = state.setdefault('seen_ids', set())
     if candidate['id'] in seen:
@@ -67,9 +80,10 @@ def _stage_batch_dedup(candidate, state):
 
 
 STAGES = (
-    ('titles', _stage_titles),
     ('normalize', _stage_normalize),
     ('relevance', _stage_relevance),
+    ('location', _stage_location),
+    ('titles', _stage_titles),
     ('batch_dedup', _stage_batch_dedup),
 )
 

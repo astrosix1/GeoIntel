@@ -329,7 +329,7 @@ def _gdelt_place(full_name):
     return parts[0] if len(parts) == 1 else f"{parts[0]}, {parts[-1]}"
 
 
-def gdelt_title(actor1, actor2, event_code, place_full_name, base_code=None, root_code=None):
+def gdelt_title(actor1, actor2, event_code, place_full_name=None, base_code=None, root_code=None):
     """CAMEO-phrased title: "{Actor1} {verb} {Actor2} in {place}", or
     "{noun} involving {Actor} in {place}" / "{noun} in {place}" when an
     actor is missing. None for codes with no phrasing."""

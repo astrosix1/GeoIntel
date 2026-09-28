@@ -22,6 +22,7 @@ import re
 from functools import lru_cache
 from urllib.parse import urlsplit, unquote
 
+from . import countries
 from .config import get_config
 from .keywords import has_keyword, strip_excluded_phrases
 
@@ -101,23 +102,16 @@ def is_off_topic(text):
     return has_keyword(text, _news_cfg().get('negative_topics', [])) or bool(_PAST_YEAR_RE.search(text))
 
 
-@lru_cache(maxsize=1)
-def _gazetteer_countries():
-    # Country names from the curated city table — a real country mention is
-    # an actor signal. (Replaced by config/countries.json in phase 4.)
-    from data_sources import NewsBasedCrisisDetector
-    return tuple(sorted({v['country'].lower() for v in NewsBasedCrisisDetector.LOCATION_MAP.values()}))
-
-
 def has_actor_signal(text, stakeholders=()):
     if stakeholders:
         return True
     cfg = _news_cfg()
+    if countries.find_in_text(text):
+        return True
     text = text.lower()
     return (has_keyword(text, cfg.get('role_terms', []))
             or has_keyword(text, cfg.get('military_action_terms', []))
-            or has_keyword(text, cfg.get('demonyms', []))
-            or has_keyword(text, list(_gazetteer_countries())))
+            or has_keyword(text, cfg.get('demonyms', [])))
 
 
 def _stakeholder_list(candidate):
@@ -150,16 +144,52 @@ def _gdelt_actor(g, n):
         return None
     country = (g.get(f'actor{n}_country') or '').strip()
     kind = (g.get(f'actor{n}_type') or '').strip()
-    return {'code': code, 'country': country, 'type': kind}
+    name = (g.get(f'actor{n}_name') or '').strip()
+    return {'code': code, 'country': country, 'type': kind, 'name': name}
 
 
-def _is_geopolitical_actor(actor, cfg):
-    if actor is None:
+def _letters(text):
+    return re.sub(r'[^a-z]', '', (text or '').lower())
+
+
+def _is_bare_state(actor, url=None):
+    """An untyped actor whose code is just a country code ("RUS") is the
+    state itself — but only when its NAME is that country (or its demonym).
+    GDELT also codes plain place names this way: "CADIZ" (Cadiz, Kentucky)
+    as Spain, "MANCHESTER" as the UK. And an actor named after the
+    publisher's own country ("GRENADA" from grenadachronicle.com) is usually
+    the masthead, not a party."""
+    if actor['type'] or not actor['country'] or actor['code'] != actor['country']:
         return False
-    if actor['type'] in cfg.get('geopolitical_actor_types', []):
-        return True
-    # No type but the actor IS a country (code "RUS", country "RUS"): the state itself.
-    return not actor['type'] and bool(actor['country']) and actor['code'] == actor['country']
+    record = countries.from_iso3(actor['country'])
+    if not record:
+        return False
+    names = {_letters(n) for n in [record['name'], *record.get('aliases', []), *record.get('demonyms', [])]}
+    names.discard('')
+    if _letters(actor['name']) not in names:
+        return False
+    host = _letters(_host(url)) if url else ''
+    if host and any(len(n) >= 4 and n in host for n in names):
+        return False
+    return True
+
+
+def gdelt_actors(meta):
+    """The event's actors with 'geo' (counts as a geopolitical actor) and
+    'party_country' (ISO3 of a country that is genuinely a party) flags.
+    Shared with the location stage."""
+    cfg = get_config().get('gdelt_rules', {})
+    g = meta.get('gdelt') or {}
+    out = []
+    for n in (1, 2):
+        actor = _gdelt_actor(g, n)
+        if not actor:
+            continue
+        bare_state = _is_bare_state(actor, meta.get('url'))
+        actor['geo'] = actor['type'] in cfg.get('geopolitical_actor_types', []) or bare_state
+        actor['party_country'] = actor['country'] if (actor['type'] or bare_state) else ''
+        out.append(actor)
+    return out
 
 
 def check_gdelt(candidate, meta):
@@ -174,10 +204,10 @@ def check_gdelt(candidate, meta):
     if cfg.get('require_root_event', True) and str(g.get('is_root_event', '1')) != '1':
         return 'not_root_event'
 
-    actors = [a for a in (_gdelt_actor(g, 1), _gdelt_actor(g, 2)) if a]
+    actors = gdelt_actors(meta)
     if not actors:
         return 'no_actors'
-    geo_actors = [a for a in actors if _is_geopolitical_actor(a, cfg)]
+    geo_actors = [a for a in actors if a['geo']]
     if not geo_actors:
         return 'non_geopolitical_actors'
     interstate = (

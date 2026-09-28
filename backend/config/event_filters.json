@@ -71,6 +71,27 @@
     "strong_actor_min": 2
   },
 
+  "location": {
+    "_comment": "event_pipeline/location.py. point_tolerance_km: how far outside the claimed country's 1:50m border a point may sit (coastal cities, ports). offshore_km: a point in open sea is kept if within this distance of the claimed country (straits, territorial waters). confidence_by_precision sets location_confidence (the frontend pins only >= 60, so country-level events show in the list, not as pins).",
+    "point_tolerance_km": 25,
+    "offshore_km": 150,
+    "confidence_by_precision": {"point": 90, "city": 82, "region": 70, "country": 55},
+    "government_verbs": ["says", "said", "say", "warns", "warned", "urges", "urged", "condemns", "condemned",
+                         "accuses", "accused", "imposes", "imposed", "announces", "announced", "rejects",
+                         "rejected", "denies", "denied", "threatens", "threatened", "demands", "demanded",
+                         "calls", "called", "signals", "signalled", "signaled", "responds", "responded",
+                         "vows", "vowed", "blames", "blamed", "slams", "slammed", "sanctions", "sanctioned",
+                         "summons", "summoned", "expels", "expelled", "recognizes", "recognises", "backs",
+                         "tells", "told", "pressures", "pressed", "asks", "asked", "hits back", "approves",
+                         "approved", "agrees", "agreed", "plans", "considers", "weighs", "insists"],
+    "location_prepositions": ["in", "near", "outside", "across", "over", "at", "into", "around", "inside",
+                              "throughout", "toward", "towards", "off"],
+    "ambiguous_cities": ["washington", "victoria", "georgetown", "san jose", "kingston", "perth", "santiago",
+                         "cali", "hyderabad", "cambridge",
+                         "richmond", "birmingham", "valencia", "cordoba", "cartagena", "tripoli"],
+    "ambiguous_countries": ["georgia", "jordan", "chad", "jersey", "guinea", "niger", "turkey", "mali"]
+  },
+
   "gdelt_rules": {
     "_comment": "event_pipeline/relevance.py check_gdelt(). Codes are CAMEO base codes matched by prefix. A 'geopolitical' actor has a Type1Code in geopolitical_actor_types, or is a bare state (actor code == its country code, e.g. RUS). 'Interstate' means both actors are geopolitical and from different countries.",
     "require_root_event": true,

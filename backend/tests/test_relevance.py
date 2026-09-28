@@ -52,8 +52,8 @@ def gdelt_meta(url='https://www.reuters.com/world/some-story', headline=None, **
     base = {
         'is_root_event': '1', 'event_code': '190', 'base_code': '190',
         'num_sources': 3, 'num_articles': 5,
-        'actor1_code': 'RUS', 'actor1_country': 'RUS', 'actor1_type': '',
-        'actor2_code': 'UKR', 'actor2_country': 'UKR', 'actor2_type': '',
+        'actor1_code': 'RUS', 'actor1_country': 'RUS', 'actor1_type': '', 'actor1_name': 'RUSSIA',
+        'actor2_code': 'UKR', 'actor2_country': 'UKR', 'actor2_type': '', 'actor2_name': 'UKRAINE',
     }
     base.update(g)
     return {'kind': 'gdelt', 'url': url, 'headline': headline, 'gdelt': base}
@@ -77,10 +77,25 @@ def test_criminal_and_police_only_is_rejected():
     assert check_gdelt({}, meta) == 'non_geopolitical_actors'
 
 
-def test_bare_country_code_does_not_make_domestic_violence_political():
-    # GDELT codes a place ("Kansas City") as the state actor USA; a domestic
-    # shooting needs an armed-group actor to count.
-    meta = gdelt_meta(actor1_code='USA', actor1_country='USA', actor2_code='', base_code='190')
+def test_domestic_violence_by_the_state_alone_needs_an_armed_actor():
+    meta = gdelt_meta(actor1_code='USA', actor1_country='USA', actor1_name='UNITED STATES',
+                      actor2_code='', base_code='190')
+    assert check_gdelt({}, meta) == 'domestic_non_political'
+
+
+def test_place_names_coded_as_countries_are_not_states():
+    # "Cadiz" (Kentucky) coded as Spain + "United States" made a fake
+    # interstate pair around a local arrest.
+    meta = gdelt_meta(actor1_code='ESP', actor1_country='ESP', actor1_name='CADIZ',
+                      actor2_code='USA', actor2_country='USA', actor2_name='UNITED STATES', base_code='173')
+    assert check_gdelt({}, meta) == 'domestic_non_political'
+
+
+def test_publisher_country_is_not_a_party():
+    # grenadachronicle.com's masthead coded as the actor GRENADA.
+    meta = gdelt_meta(url='https://grenadachronicle.com/ethiopia-accuses-sudan-egypt',
+                      actor1_code='ETH', actor1_country='ETH', actor1_name='ETHIOPIA',
+                      actor2_code='GRD', actor2_country='GRD', actor2_name='GRENADA', num_sources=1, num_articles=6)
     assert check_gdelt({}, meta) == 'domestic_non_political'
 
 

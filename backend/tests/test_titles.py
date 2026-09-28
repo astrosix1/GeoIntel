@@ -18,12 +18,12 @@ from event_pipeline.titles import (
 
 def make_row(global_event_id='1000001', source_url='https://example.com/article'):
     """Minimal GDELT export row (see make_row in test_gdelt.py for the
-    column layout): an interstate root event, UNITED STATES vs RUSSIA, CAMEO
+    column layout): an interstate root event, RUSSIA vs UKRAINE, CAMEO
     190, Kyiv — one that passes the relevance rules."""
     fields = [''] * 61
     fields[0] = global_event_id
-    fields[5], fields[7], fields[6] = 'USA', 'USA', 'UNITED STATES'
-    fields[15], fields[17], fields[16] = 'RUS', 'RUS', 'RUSSIA'
+    fields[5], fields[7], fields[6] = 'RUS', 'RUS', 'RUSSIA'
+    fields[15], fields[17], fields[16] = 'UKR', 'UKR', 'UKRAINE'
     fields[25] = '1'
     fields[26], fields[29], fields[30] = '190', '4', '-8.0'
     fields[32], fields[33] = '3', '5'
@@ -201,7 +201,7 @@ def test_gdelt_row_prefers_url_slug_then_cameo(app_module):
         global_event_id='2', source_url='https://example.com/2559138'))
     kept = _run([with_slug, without_slug], 'GDELT')
     assert kept[0]['title'] == '5 Miners Killed in Plateau Attack'
-    assert kept[1]['title'] == 'United States uses military force against Russia in Kyiv, Ukraine'
+    assert kept[1]['title'] == 'Russia uses military force against Ukraine in Kyiv, Ukraine'
 
 
 def test_news_article_title_is_cleaned(app_module):

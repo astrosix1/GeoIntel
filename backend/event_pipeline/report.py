@@ -48,7 +48,10 @@ class PipelineReport:
         self.rejected[source][reason] += 1
         samples = self.samples[(source, reason)]
         if candidate is not None and len(samples) < _MAX_SAMPLES_PER_REASON:
-            samples.append(str(candidate.get('title') or candidate.get('id') or '')[:120])
+            meta = candidate.get('_meta') or {}
+            label = (candidate.get('title') or meta.get('headline') or meta.get('url')
+                     or candidate.get('id') or '')
+            samples.append(str(label)[:120])
 
     def merge(self, other):
         """Fold another report (e.g. one source's batch) into this one."""
