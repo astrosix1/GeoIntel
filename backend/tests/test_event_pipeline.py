@@ -91,7 +91,7 @@ def test_normalize_rejects_invalid_coordinates(lat, lon):
     assert normalize_candidate(make_candidate(latitude=lat, longitude=lon)) == 'invalid_coordinates'
 
 
-@pytest.mark.parametrize('field', ['id', 'type', 'title', 'country', 'latitude'])
+@pytest.mark.parametrize('field', ['id', 'type', 'country', 'latitude'])
 def test_normalize_rejects_missing_required_fields(field):
     assert normalize_candidate(make_candidate(**{field: None})) == 'missing_fields'
 
@@ -101,7 +101,7 @@ def test_normalize_rejects_missing_required_fields(field):
 def test_process_batch_keeps_valid_rejects_invalid_and_dedups_ids():
     candidates = [
         make_candidate(id='a'),
-        make_candidate(id='a', title='Same id again'),
+        make_candidate(id='a', title='Same id with a different headline'),
         make_candidate(id='b', latitude=0, longitude=0),
         make_candidate(id='c', title=''),
         make_candidate(id='d', _meta={'raw': 'transient'}),
@@ -111,7 +111,7 @@ def test_process_batch_keeps_valid_rejects_invalid_and_dedups_ids():
     assert [c['id'] for c in result.kept] == ['a', 'd']
     assert '_meta' not in result.kept[1]
     reasons = sorted(reason for reason, _ in result.rejected)
-    assert reasons == ['duplicate_in_batch', 'invalid_coordinates', 'missing_fields']
+    assert reasons == ['duplicate_in_batch', 'invalid_coordinates', 'no_usable_title']
 
     summary = result.report.to_dict()
     assert summary['totals'] == {'received': 5, 'kept': 2, 'rejected': 3}

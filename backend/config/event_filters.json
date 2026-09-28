@@ -32,6 +32,29 @@
     }
   },
 
+  "titles": {
+    "_comment": "event_pipeline/titles.py. known_outlets are stripped when they trail or lead a headline (in addition to the article's own outlet name and domain). acronyms stay upper-case when an ALL-CAPS headline is re-cased.",
+    "known_outlets": ["Reuters", "AP", "AP News", "Associated Press", "AFP", "Bloomberg", "BBC", "BBC News",
+                      "CNN", "Al Jazeera", "Al Jazeera English", "The Guardian", "Guardian", "Financial Times", "FT",
+                      "The New York Times", "New York Times", "NYT", "The Washington Post", "Washington Post",
+                      "The Wall Street Journal", "WSJ", "NPR", "CBS News", "NBC News", "ABC News", "Fox News",
+                      "Sky News", "DW", "Deutsche Welle", "France 24", "Euronews", "Politico", "Politico Europe",
+                      "Axios", "The Hill", "Newsweek", "Time", "The Economist", "The Independent", "The Telegraph",
+                      "The Times", "Times of India", "The Times of India", "Hindustan Times", "Dawn", "Xinhua",
+                      "TASS", "RT", "Kyiv Independent", "Kyiv Post", "Times of Israel", "The Times of Israel",
+                      "Haaretz", "Jerusalem Post", "The Jerusalem Post", "Arab News", "South China Morning Post",
+                      "SCMP", "Nikkei Asia", "Yonhap", "The Japan Times", "ABC", "News.com.au", "Yahoo News",
+                      "Yahoo", "MSN", "Breitbart News", "Breitbart", "ZeroHedge", "Business Insider",
+                      "Voice of America", "VOA", "RFE/RL", "Radio Free Europe/Radio Liberty", "Anadolu Agency",
+                      "Middle East Eye", "The National", "Channel News Asia", "CNA", "The Straits Times"],
+    "acronyms": ["UN", "US", "USA", "UK", "EU", "NATO", "IAEA", "ICC", "ICJ", "IMF", "WHO", "WTO", "OPEC",
+                 "ASEAN", "AU", "ECOWAS", "BRICS", "G7", "G20", "IDF", "IRGC", "ISIS", "RSF", "SAF", "M23",
+                 "PKK", "SDF", "DRC", "UAE", "DPRK", "PLA", "CIA", "FBI", "NSA", "MI6", "FSB", "GRU", "AI",
+                 "PM", "MP", "MPs", "OSCE", "UNSC", "UNHCR", "UNICEF", "WFP", "ICRC"],
+    "min_words": 3,
+    "min_chars": 15
+  },
+
   "phrase_exclusions": {
     "_comment": "Idioms removed from text before keyword matching, so e.g. 'heart attack' never counts as an attack.",
     "phrases": ["heart attack", "heart attacks", "panic attack", "panic attacks", "asthma attack",

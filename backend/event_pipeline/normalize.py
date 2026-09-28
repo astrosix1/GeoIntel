@@ -55,7 +55,7 @@ def stable_news_id(url, prefix='news'):
     return f"{prefix}_{digest}"
 
 
-def _truncate_words(text, limit):
+def truncate_words(text, limit):
     text = ' '.join(str(text).split())
     if len(text) <= limit:
         return text
@@ -90,7 +90,7 @@ def normalize_candidate(candidate):
     candidate['latitude'], candidate['longitude'] = lat, lon
 
     candidate['id'] = str(candidate['id'])[:MAX_ID_LEN]
-    candidate['title'] = _truncate_words(candidate['title'], MAX_TITLE_LEN)
+    candidate['title'] = truncate_words(candidate['title'], MAX_TITLE_LEN)
     candidate['country'] = ' '.join(str(candidate['country']).split())[:MAX_COUNTRY_LEN]
     if candidate.get('source_id') is not None:
         candidate['source_id'] = str(candidate['source_id'])[:MAX_SOURCE_ID_LEN]

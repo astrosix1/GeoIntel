@@ -8,16 +8,18 @@ connectors. See docs/EVENT_FILTERING.md for the full design.
 Stages run in order, and each one either keeps a candidate (possibly
 modifying it) or rejects it with a reason code recorded in the report:
 
-    normalize  -> required fields, coordinate sanity, column-length clamps
+    titles      -> clean the source title or synthesize one (titles.py)
+    normalize   -> required fields, coordinate sanity, column-length clamps
     batch_dedup -> one candidate per id within a batch
 
-Later phases add relevance, location, titles, cross-source dedup/merge and
+Later phases add relevance, location, cross-source dedup/merge and
 scoring as further stages. Stages are pure functions of the candidate (plus
 config), so each is testable without a database or network.
 """
 from dataclasses import dataclass, field
 
 from .normalize import normalize_candidate
+from .titles import choose_title
 from .report import PipelineReport, remember, recent_reports  # noqa: F401 (re-exported)
 
 META_KEY = '_meta'  # transient per-candidate context for stages; never persisted
@@ -28,6 +30,22 @@ class PipelineResult:
     kept: list = field(default_factory=list)
     rejected: list = field(default_factory=list)   # (reason, candidate)
     report: PipelineReport = None
+
+
+def _stage_titles(candidate, state):
+    meta = candidate.get(META_KEY) or {}
+    title, synthesized = choose_title(
+        candidate.get('title'),
+        outlet=meta.get('outlet'),
+        url=meta.get('url'),
+        fallbacks=meta.get('fallback_titles', ()),
+    )
+    if not title:
+        return 'no_usable_title'
+    candidate['title'] = title
+    meta['title_synthesized'] = synthesized
+    candidate[META_KEY] = meta
+    return None
 
 
 def _stage_normalize(candidate, state):
@@ -43,6 +61,7 @@ def _stage_batch_dedup(candidate, state):
 
 
 STAGES = (
+    ('titles', _stage_titles),
     ('normalize', _stage_normalize),
     ('batch_dedup', _stage_batch_dedup),
 )

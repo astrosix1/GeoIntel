@@ -15,6 +15,7 @@ import event_pipeline
 from event_pipeline.config import get_config
 from event_pipeline.keywords import has_keyword, find_keywords, strip_excluded_phrases
 from event_pipeline.normalize import stable_news_id, canonical_url
+from event_pipeline.titles import acled_title, slug_title, gdelt_title, first_sentence
 
 # Load environment variables
 load_dotenv()
@@ -226,7 +227,11 @@ class ACLEDConnector:
             return {
                 'id': f"acled_{event.get('data_id')}",
                 'type': crisis_type,
-                'title': event.get('event_id_cnty', 'Unknown Event'),
+                # event_id_cnty is an ID code ("UKR12345"), not a title — the
+                # pipeline's titles stage builds "{sub_event_type} in
+                # {location}, {admin1}: N killed" from ACLED's own fields.
+                'title': None,
+                '_meta': {'fallback_titles': [(acled_title(event), False)]},
                 'country': event.get('country', 'Unknown'),
                 'latitude': float(event.get('latitude', 0)),
                 'longitude': float(event.get('longitude', 0)),
@@ -1094,7 +1099,12 @@ class NewsBasedCrisisDetector:
             return {
                 'id': crisis_id,
                 'type': crisis_type,
-                'title': title[:200],
+                'title': title,  # cleaned (outlet/date/tags stripped) by the pipeline's titles stage
+                '_meta': {
+                    'outlet': source,
+                    'url': url,
+                    'fallback_titles': [(first_sentence(description_for_location), True)],
+                },
                 'country': country,   # actual country (e.g. "Iran")
                 'latitude': lat,      # exact city lat
                 'longitude': lon,     # exact city lon
@@ -1234,6 +1244,8 @@ class GDELTConnector:
     errors in this schema are a known pitfall.
     """
     _COL_EVENT_CODE = 26
+    _COL_EVENT_BASE_CODE = 27
+    _COL_EVENT_ROOT_CODE = 28
     _COL_QUAD_CLASS = 29
     _COL_GOLDSTEIN = 30
     _COL_NUM_SOURCES = 32
@@ -1373,7 +1385,24 @@ class GDELTConnector:
         return {
             'id': f"gdelt_{global_event_id}",
             'type': crisis_type,
-            'title': f"{fields[GDELTConnector._COL_ACTOR1_NAME] or 'Unknown actor'} — {crisis_type} event in {country}",
+            # GDELT has no headline. The titles stage tries the article URL's
+            # slug first (usually the real headline), then a CAMEO phrase
+            # built from the actors, event code and place.
+            'title': None,
+            '_meta': {
+                'url': source_url,
+                'fallback_titles': [
+                    (slug_title(source_url), True),
+                    (gdelt_title(
+                        fields[GDELTConnector._COL_ACTOR1_NAME],
+                        fields[GDELTConnector._COL_ACTOR2_NAME],
+                        fields[GDELTConnector._COL_EVENT_CODE],
+                        fields[GDELTConnector._COL_ACTION_GEO_FULLNAME],
+                        base_code=fields[GDELTConnector._COL_EVENT_BASE_CODE],
+                        root_code=fields[GDELTConnector._COL_EVENT_ROOT_CODE],
+                    ), False),
+                ],
+            },
             'country': country,
             'latitude': lat,
             'longitude': lon,
