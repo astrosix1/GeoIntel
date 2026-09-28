@@ -104,7 +104,8 @@ def test_process_batch_keeps_valid_rejects_invalid_and_dedups_ids():
         make_candidate(id='a', title='Same id with a different headline'),
         make_candidate(id='b', latitude=0, longitude=0),
         make_candidate(id='c', title=''),
-        make_candidate(id='d', _meta={'raw': 'transient'}),
+        make_candidate(id='d', title='Protesters rally against conscription in Lviv', type='civil_unrest',
+                       latitude=49.84, longitude=24.03, _meta={'raw': 'transient'}),
     ]
     result = event_pipeline.process_batch(candidates, 'NewsAPI')
 
@@ -114,7 +115,7 @@ def test_process_batch_keeps_valid_rejects_invalid_and_dedups_ids():
     assert reasons == ['duplicate_in_batch', 'invalid_coordinates', 'no_usable_title']
 
     summary = result.report.to_dict()
-    assert summary['totals'] == {'received': 5, 'kept': 2, 'rejected': 3}
+    assert summary['totals'] == {'received': 5, 'kept': 2, 'merged': 0, 'rejected': 3}
     assert summary['sources']['NewsAPI']['rejected']['invalid_coordinates'] == 1
     assert summary['sources']['NewsAPI']['severity_bands'] == {'high': 2}
 

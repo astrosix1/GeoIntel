@@ -6,7 +6,7 @@ import os
 import re
 from datetime import datetime, timedelta
 from collections import defaultdict
-from models import Crisis, News, Actor, Relationship, EconomicData, CrisisSnapshot, Session
+from models import Crisis, CrisisSource, News, Actor, Relationship, EconomicData, CrisisSnapshot, Session
 import json
 import logging
 from dotenv import load_dotenv
@@ -1255,6 +1255,8 @@ class DataAggregator:
             for econ_item in econ_data:
                 DataAggregator._upsert_economic(session, econ_item)
 
+            DataAggregator.expire_stale(session)
+
             session.commit()
             logger.info("Data sync completed successfully")
             logger.info(report.summary_line())
@@ -1341,15 +1343,98 @@ class DataAggregator:
     @staticmethod
     def _upsert_batch(session, candidates, source, report=None):
         """Run one connector's candidates through the event pipeline and
-        upsert whatever it keeps. Returns the PipelineResult."""
+        store each resulting event: update the same id, merge into a
+        matching active event already stored (same report URL, or the same
+        event per event_pipeline.dedup), or insert. Returns the
+        PipelineResult with .stored = {'inserted', 'updated', 'merged'}."""
         result = event_pipeline.process_batch(candidates, source, report=report)
-        for crisis_data in result.kept:
-            DataAggregator._upsert_crisis(session, crisis_data)
+        result.stored = {'inserted': 0, 'updated': 0, 'merged': 0}
+        now = datetime.utcnow()
+        for crisis_data, sources, meta in zip(result.kept, result.sources, result.metas):
+            try:
+                outcome = DataAggregator._store_event(session, crisis_data, sources, meta, now)
+                result.stored[outcome] += 1
+            except Exception as e:
+                logger.error(f"Error storing crisis {crisis_data.get('id')}: {e}")
         return result
 
     @staticmethod
+    def _store_event(session, crisis_data, sources, meta, now):
+        """Store one pipeline event. Returns 'inserted', 'updated' or 'merged'."""
+        from event_pipeline.dedup import find_existing, source_priority
+
+        existing = session.get(Crisis, crisis_data['id'])
+        if existing is not None:
+            # Same report seen again: refresh it (and revive it if expired).
+            for key, value in crisis_data.items():
+                setattr(existing, key, value)
+            outcome, row = 'updated', existing
+        else:
+            row = find_existing(session, crisis_data, meta, sources)
+            if row is None:
+                row = Crisis(**crisis_data)
+                session.add(row)
+                outcome = 'inserted'
+            else:
+                # Another report of an event we already have: fold it in
+                # without letting a weaker report overwrite a better one.
+                precision_rank = {'point': 4, 'city': 3, 'region': 2, 'country': 1}
+                if precision_rank.get(crisis_data.get('location_precision'), 0) > \
+                        precision_rank.get(row.location_precision, 0):
+                    for key in ('latitude', 'longitude', 'country', 'country_code',
+                                'location_precision', 'location_confidence'):
+                        if crisis_data.get(key) is not None:
+                            setattr(row, key, crisis_data[key])
+                if crisis_data.get('title') and not meta.get('title_synthesized') and \
+                        source_priority(crisis_data.get('source'), meta.get('outlet')) > source_priority(row.source):
+                    row.title = crisis_data['title']
+                if (crisis_data.get('severity') or 0) > (row.severity or 0):
+                    row.severity = crisis_data['severity']
+                if crisis_data.get('date_start') and row.date_start and crisis_data['date_start'] < row.date_start:
+                    row.date_start = crisis_data['date_start']
+                outcome = 'merged'
+
+        row.is_active = True
+        row.last_seen_at = now
+        known = {key for (key,) in session.query(CrisisSource.url_key).filter(CrisisSource.crisis_id == row.id)}
+        for record in sources:
+            if record['url_key'] not in known:
+                known.add(record['url_key'])
+                session.add(CrisisSource(crisis_id=row.id, **record))
+        row.source_count = max(len(known), 1)
+        return outcome
+
+    @staticmethod
+    def expire_stale(session, now=None):
+        """Deactivate (never delete) events no sync has reported for their
+        source's TTL (config/event_filters.json -> lifecycle). Curated,
+        sample, upcoming and human-verified rows are exempt. Rows from
+        before last_seen_at existed fall back to date_updated."""
+        from sqlalchemy import func, or_
+        cfg = get_config().get('lifecycle', {})
+        now = now or datetime.utcnow()
+        expired = 0
+        for prefix, days in cfg.get('ttl_days', {}).items():
+            cutoff = now - timedelta(days=days)
+            source_filter = Crisis.source.like(prefix + '%') if prefix.endswith('_') else Crisis.source == prefix
+            rows = (session.query(Crisis)
+                    .filter(Crisis.is_active == True,  # noqa: E712
+                            source_filter,
+                            ~Crisis.source.in_(cfg.get('exempt_sources', [])),
+                            or_(Crisis.status.is_(None), Crisis.status != 'upcoming'),
+                            or_(Crisis.is_verified.is_(None), Crisis.is_verified == False),  # noqa: E712
+                            func.coalesce(Crisis.last_seen_at, Crisis.date_updated, Crisis.date_start) < cutoff)
+                    .all())
+            for row in rows:
+                row.is_active = False
+            expired += len(rows)
+        if expired:
+            logger.info(f"Deactivated {expired} stale crises")
+        return expired
+
+    @staticmethod
     def _upsert_crisis(session, crisis_data):
-        """Insert or update crisis"""
+        """Insert or update a crisis by id (seed/sample data paths)."""
         try:
             existing = session.query(Crisis).filter(Crisis.id == crisis_data['id']).first()
 

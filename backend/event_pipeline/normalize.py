@@ -9,6 +9,7 @@ article and identical across the queries and languages that return it.
 """
 import hashlib
 import math
+from datetime import datetime, timezone
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
 # Crisis column limits (models.py) — writing past these fails on Postgres.
@@ -89,6 +90,13 @@ def normalize_candidate(candidate):
     if lat == 0 and lon == 0:  # the "no geo resolved" placeholder, never a real pin
         return 'invalid_coordinates'
     candidate['latitude'], candidate['longitude'] = lat, lon
+
+    # Timezone-aware datetimes (NewsAPI's "...Z") -> naive UTC, like every
+    # other date in the database, so they compare with stored rows.
+    for field in ('date_start', 'date_scheduled'):
+        value = candidate.get(field)
+        if isinstance(value, datetime) and value.tzinfo is not None:
+            candidate[field] = value.astimezone(timezone.utc).replace(tzinfo=None)
 
     candidate['id'] = str(candidate['id'])[:MAX_ID_LEN]
     if candidate.get('title'):

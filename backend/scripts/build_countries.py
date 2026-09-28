@@ -182,7 +182,10 @@ def main():
         topo = json.load(f)
     arcs = decode_arcs(topo)
 
-    countries = []
+    # Several features can share an id (Australia and the Ashmore and Cartier
+    # Islands are both 036) — group them so each code is one record, named
+    # after its largest feature.
+    grouped = {}
     for geometry in topo['objects']['countries']['geometries']:
         topo_name = geometry['properties']['name']
         if topo_name in SKIP_FEATURES:
@@ -190,20 +193,21 @@ def main():
         code = geometry.get('id') or PSEUDO_CODES.get(topo_name)
         if not code:
             continue
-        iso = pycountry.countries.get(numeric=code) if code.isdigit() else None
+        for poly in polygons_of(geometry, arcs):
+            if poly and poly[0]:
+                grouped.setdefault(code, []).append((ring_area_centroid(poly[0]), topo_name))
 
+    countries = []
+    for code, parts in grouped.items():
         # Centroid of the largest polygon's outer ring (so France's pin is in
         # France, not averaged with French Guiana).
-        largest = max(
-            (ring_area_centroid(poly[0]) for poly in polygons_of(geometry, arcs) if poly and poly[0]),
-            default=(0, (0.0, 0.0)),
-        )
-        lon, lat = largest[1]
+        (_, (lon, lat)), topo_name = max(parts, key=lambda p: p[0][0])
         lon = wrap_lon(lon)
+        iso = pycountry.countries.get(numeric=code) if code.isdigit() else None
 
         name = DISPLAY_NAMES.get(code) or (getattr(iso, 'common_name', None) if iso else None) \
             or (iso.name if iso else topo_name)
-        aliases = {name, topo_name}
+        aliases = {name} | {n for _, n in parts}
         if iso:
             aliases.update(filter(None, [iso.name, getattr(iso, 'official_name', None),
                                          getattr(iso, 'common_name', None)]))

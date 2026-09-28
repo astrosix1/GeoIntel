@@ -188,21 +188,6 @@
    "iso2": "AU",
    "iso3": "AUS",
    "iso3_aliases": [],
-   "aliases": [],
-   "demonyms": [
-    "Australian"
-   ],
-   "centroid": [
-    -25.5732,
-    134.3551
-   ]
-  },
-  {
-   "code": "036",
-   "name": "Australia",
-   "iso2": "AU",
-   "iso3": "AUS",
-   "iso3_aliases": [],
    "aliases": [
     "Ashmore and Cartier Is."
    ],
@@ -210,8 +195,8 @@
     "Australian"
    ],
    "centroid": [
-    -12.43,
-    123.5838
+    -25.5732,
+    134.3551
    ]
   },
   {

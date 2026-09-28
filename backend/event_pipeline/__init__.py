@@ -14,8 +14,10 @@ modifying it) or rejects it with a reason code recorded in the report:
     titles      -> clean the source title or synthesize one (titles.py)
     batch_dedup -> one candidate per id within a batch
 
-Later phases add cross-source dedup/merge and
-scoring as further stages. Stages are pure functions of the candidate (plus
+then the survivors are clustered (dedup.py) so each real-world event is one
+kept dict, with every merged report kept as provenance.
+
+Scoring is added as a further stage in phase 6. Stages are pure functions of the candidate (plus
 config), so each is testable without a database or network.
 """
 from dataclasses import dataclass, field
@@ -25,6 +27,7 @@ from .titles import choose_title
 from .relevance import check_relevance
 from .location import check_location
 from .titles import gdelt_title
+from .dedup import cluster_batch, source_record
 from .report import PipelineReport, remember, recent_reports  # noqa: F401 (re-exported)
 
 META_KEY = '_meta'  # transient per-candidate context for stages; never persisted
@@ -32,8 +35,11 @@ META_KEY = '_meta'  # transient per-candidate context for stages; never persiste
 
 @dataclass
 class PipelineResult:
-    kept: list = field(default_factory=list)
+    kept: list = field(default_factory=list)       # one clean crisis dict per event (cluster primary)
+    sources: list = field(default_factory=list)    # per kept event: crisis_sources dicts, primary first
+    metas: list = field(default_factory=list)      # per kept event: the primary's transient _meta
     rejected: list = field(default_factory=list)   # (reason, candidate)
+    merged: int = 0                                # reports folded into another report of the same event
     report: PipelineReport = None
 
 
@@ -90,11 +96,15 @@ STAGES = (
 
 def process_batch(candidates, source, report=None):
     """Run `candidates` (crisis dicts from one connector) through every
-    stage. Returns a PipelineResult whose `kept` dicts are ready for
-    DataAggregator._upsert_crisis (transient `_meta` removed)."""
+    stage, then cluster the survivors so each real-world event appears once
+    (dedup.cluster_batch). Returns a PipelineResult whose `kept` dicts are
+    ready for DataAggregator to store — transient `_meta` removed, pipeline
+    columns (country_code, location_precision, source_url, source_count)
+    filled in — with the provenance of every merged report in `sources`."""
     report = report or PipelineReport(label=source)
     result = PipelineResult(report=report)
     state = {}
+    survivors = []
 
     for candidate in candidates or []:
         if not candidate:
@@ -109,8 +119,26 @@ def process_batch(candidates, source, report=None):
             report.record_rejected(source, reason, candidate)
             result.rejected.append((reason, candidate))
             continue
-        candidate.pop(META_KEY, None)
-        report.record_kept(source, candidate)
-        result.kept.append(candidate)
+        survivors.append((candidate, candidate.pop(META_KEY, None) or {}))
+
+    for cluster in cluster_batch(survivors):
+        primary, meta = cluster[0]
+        sources, seen = [], set()
+        for candidate, member_meta in cluster:
+            record = source_record(candidate, member_meta)
+            if record['url_key'] not in seen:
+                seen.add(record['url_key'])
+                sources.append(record)
+        primary['country_code'] = meta.get('country_code')
+        primary['location_precision'] = meta.get('location_precision')
+        primary['source_url'] = meta.get('url')
+        primary['source_count'] = len(sources)
+        if len(cluster) > 1:
+            result.merged += len(cluster) - 1
+            report.record_merged(source, len(cluster) - 1)
+        report.record_kept(source, primary)
+        result.kept.append(primary)
+        result.sources.append(sources)
+        result.metas.append(meta)
 
     return result

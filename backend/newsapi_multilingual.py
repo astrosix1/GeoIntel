@@ -154,8 +154,8 @@ class MultilingualNewsConnector:
         Goes through the same event pipeline + upsert as the primary sync
         (DataAggregator._upsert_batch) — this used to db_session.add() rows
         directly, skipping every validation step and keeping only the first
-        version of any id. Returns the number of NEW crisis rows."""
-        from models import Crisis
+        version of any id. Returns the number of NEW crisis rows (reports
+        merged into an existing event don't count)."""
 
         total_added = 0
         report = event_pipeline.PipelineReport(label='multilingual')
@@ -170,12 +170,8 @@ class MultilingualNewsConnector:
                 crisis_dicts = self.detect_crises_from_articles(articles, lang_config['label'])
                 source = f"NEWS_API_{lang_config['label'].upper()}"
 
-                existing_ids = {
-                    row.id for row in db_session.query(Crisis.id)
-                    .filter(Crisis.id.in_([c['id'] for c in crisis_dicts])).all()
-                } if crisis_dicts else set()
                 result = DataAggregator._upsert_batch(db_session, crisis_dicts, source, report)
-                total_added += sum(1 for c in result.kept if c['id'] not in existing_ids)
+                total_added += result.stored['inserted']
 
                 if crisis_dicts:
                     logger.info(

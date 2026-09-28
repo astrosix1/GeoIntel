@@ -1,7 +1,7 @@
 """
 Database models for GeoIntel platform
 """
-from sqlalchemy import create_engine, Column, String, Float, Integer, DateTime, Text, Boolean, Index
+from sqlalchemy import create_engine, Column, String, Float, Integer, DateTime, Text, Boolean, Index, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -84,6 +84,26 @@ class Crisis(Base):
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)  # Human-verified
 
+    # Event quality pipeline (backend/event_pipeline/, docs/EVENT_FILTERING.md).
+    # source_url: full article/source URL (source_id is a 100-char external id).
+    # country_code: ISO 3166-1 numeric — the world-atlas topojson feature id
+    # the frontend's map uses — from config/countries.json.
+    # location_precision: point | city | region | country.
+    # source_count: distinct sources merged into this event (crisis_sources).
+    # last_seen_at: last sync that reported it; stale rows are deactivated.
+    source_url = Column(Text)
+    country_code = Column(String(3))
+    location_precision = Column(String(10))
+    source_count = Column(Integer, default=1)
+    last_seen_at = Column(DateTime)
+    global_impact = Column(Integer, default=0)  # 0-100 international significance (scoring.py)
+    scoring_factors = Column(Text)  # JSON breakdown of severity/global_impact
+
+    __table_args__ = (
+        Index('ix_crises_active_country_date', 'is_active', 'country_code', 'date_start'),
+        Index('ix_crises_last_seen_at', 'last_seen_at'),
+    )
+
     def to_dict(self):
         return {
             'id': self.id,
@@ -111,7 +131,36 @@ class Crisis(Base):
             },
             'source': self.source,
             'is_verified': self.is_verified,
+            'source_url': self.source_url,
+            'country_code': self.country_code,
+            'location_precision': self.location_precision,
+            'source_count': self.source_count or 1,
+            'global_impact': self.global_impact or 0,
         }
+
+
+class CrisisSource(Base):
+    """One report (article, ACLED/GDELT record) merged into a Crisis. The
+    event pipeline merges duplicate reports of the same event into a single
+    Crisis row instead of creating one row per report; this table keeps the
+    provenance, and Crisis.source_count is its row count."""
+    __tablename__ = 'crisis_sources'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    crisis_id = Column(String(50), nullable=False, index=True)
+    source = Column(String(100))          # ACLED, GDELT, NewsAPI, NEWS_API_<LANG>, ...
+    external_id = Column(String(100))     # the source's own id
+    url_key = Column(String(500), nullable=False)  # canonical URL, or "<source>:<external_id>"
+    url = Column(Text)
+    outlet = Column(String(100))
+    title = Column(String(300))
+    published_at = Column(DateTime)
+    added_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint('crisis_id', 'url_key', name='uq_crisis_sources_crisis_url'),
+        Index('ix_crisis_sources_url_key', 'url_key'),
+    )
 
 
 class CrisisSnapshot(Base):

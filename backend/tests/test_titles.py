@@ -199,9 +199,11 @@ def test_gdelt_row_prefers_url_slug_then_cameo(app_module):
         source_url='https://blueprint.ng/5-miners-killed-in-plateau-attack/'))
     without_slug = ds.GDELTConnector._parse_row(make_row(
         global_event_id='2', source_url='https://example.com/2559138'))
-    kept = _run([with_slug, without_slug], 'GDELT')
-    assert kept[0]['title'] == '5 Miners Killed in Plateau Attack'
-    assert kept[1]['title'] == 'Russia uses military force against Ukraine in Kyiv, Ukraine'
+    # Run separately: they are the same event, so together they'd merge.
+    [first] = _run([with_slug], 'GDELT')
+    [second] = _run([without_slug], 'GDELT')
+    assert first['title'] == '5 Miners Killed in Plateau Attack'
+    assert second['title'] == 'Russia uses military force against Ukraine in Kyiv, Ukraine'
 
 
 def test_news_article_title_is_cleaned(app_module):

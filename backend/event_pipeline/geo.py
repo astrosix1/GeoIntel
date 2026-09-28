@@ -69,6 +69,9 @@ def _countries():
             polys = [[ring(r) for r in poly] for poly in g['arcs']]
         else:
             continue
+        # Several features can share an id (Australia and the Ashmore and
+        # Cartier Islands are both 036): merge them, never overwrite.
+        polys = out.get(code, {}).get('polygons', []) + polys
         xs = [x for poly in polys for x, _ in poly[0]]
         ys = [y for poly in polys for _, y in poly[0]]
         out[code] = {'polygons': polys, 'bbox': (min(xs), min(ys), max(xs), max(ys))}

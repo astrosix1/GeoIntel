@@ -92,6 +92,33 @@
     "ambiguous_countries": ["georgia", "jordan", "chad", "jersey", "guinea", "niger", "turkey", "mali"]
   },
 
+  "dedup": {
+    "_comment": "event_pipeline/dedup.py. Two reports are the same event when they share a canonical URL, or share a country, a type family and a time window AND either: both are city/point-precise within city_distance_km with title similarity >= city_similarity; or title similarity >= any_similarity; or one title is synthesized and they are within same_place_km with similarity >= same_place_synthesized_similarity. Similarity is weighted Jaccard over title words (places, countries and demonyms weigh double).",
+    "window_hours": 48,
+    "db_lookback_hours": 72,
+    "city_distance_km": 50,
+    "city_similarity": 0.35,
+    "any_similarity": 0.6,
+    "same_place_km": 10,
+    "same_place_synthesized_similarity": 0.2,
+    "type_families": {
+      "armed_conflict": ["conflict", "military", "proxy", "terror", "cyber", "infrastructure"],
+      "unrest": ["civil_unrest", "leadership_change"],
+      "political": ["diplomatic", "alliance", "economic", "trade_war", "sanctions", "election"],
+      "humanitarian": ["migration", "resource"]
+    },
+    "stopwords": ["a", "an", "the", "of", "in", "on", "at", "to", "for", "and", "or", "but", "by", "with",
+                  "from", "as", "is", "are", "was", "were", "be", "been", "it", "its", "this", "that",
+                  "after", "amid", "over", "into", "near", "says", "said", "say", "new", "report",
+                  "reports", "reported", "involving", "uses", "against", "latest", "update", "news"]
+  },
+
+  "lifecycle": {
+    "_comment": "Active rows not reported by any sync for ttl_days (by source prefix) are deactivated (is_active=False, never deleted). Rows from exempt_sources, status 'upcoming', or human-verified are never expired.",
+    "ttl_days": {"GDELT": 3, "NewsAPI": 7, "NEWS_API_": 7, "ACLED": 30},
+    "exempt_sources": ["CURATED", "Sample Data", "MANUAL"]
+  },
+
   "gdelt_rules": {
     "_comment": "event_pipeline/relevance.py check_gdelt(). Codes are CAMEO base codes matched by prefix. A 'geopolitical' actor has a Type1Code in geopolitical_actor_types, or is a bare state (actor code == its country code, e.g. RUS). 'Interstate' means both actors are geopolitical and from different countries.",
     "require_root_event": true,
