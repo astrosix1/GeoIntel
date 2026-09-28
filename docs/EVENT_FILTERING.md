@@ -16,6 +16,31 @@ The globe and sidebar are flooded with events that are misplaced, off-topic, dup
 
 **Outcome:** every candidate event passes through one deterministic, configurable, unit-tested pipeline that rejects, relocates, merges and scores events. Each decision gets a reason code, reported per sync.
 
+## Status: implemented (phases 1–7)
+
+All seven phases below are implemented (`backend/event_pipeline/`). The pipeline order as built is **normalize → relevance → location → titles → batch dedup**, then clustering and scoring of each batch.
+
+**Changes from the plan, found while testing against live data**
+- **Titles:** the minimum title length is 3 words / 15 characters, not 4 / 20. The stricter limit dropped the curated sample titles.
+- **News actor signal:** a military-action term (missile, air strike, shelling, ...) counts as an actor signal, so "Missile strike on Kyiv kills civilians" is kept.
+- **GDELT domestic events:**
+  - they need an actor type that fits the event family (armed groups for assault and fighting, political targets for arrests), set in `domestic_actor_types`;
+  - a bare country code only counts as that state when the actor is *named* as the country; GDELT also codes place names like CADIZ and MANCHESTER, and the publisher's own country, as states.
+- **GDELT titles:** the CAMEO-phrased fallback is built in the titles stage, so it names the place the location stage settled on.
+- **Scoring:** `global_impact` gets a mass-casualty bonus (+15 for 100+ deaths, +5 for 25+), so a local massacre isn't scored "low".
+- **Map data:** features that share an id (Australia and the Ashmore and Cartier Islands are both `036`) are merged in `geo.py` and in the country table.
+
+**Measured on one live GDELT hour**
+- Before: 1,256 events kept, 29% critical.
+- After: 23–45 events kept, with 11–34 further reports merged into them and 0 critical.
+
+**Operating it**
+- Tune everything in `backend/config/event_filters.json`.
+- Watch `GET /api/admin/pipeline-report`.
+- Dry-run changes with `backend/scripts/preview_pipeline.py`.
+- Clean pre-pipeline rows with `backend/scripts/reprocess_crises.py` (dry run by default, `--apply` to write).
+- Regenerate the country table with `backend/scripts/build_countries.py`.
+
 ---
 
 ## Architecture

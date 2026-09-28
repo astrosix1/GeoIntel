@@ -302,7 +302,7 @@ def slug_title(url):
     segments = [s for s in path.split('/') if s]
     for segment in reversed(segments[-2:]):
         segment = _SLUG_EXT_RE.sub('', segment)
-        words = [w for w in re.split(r'[-_+]+', segment) if w]
+        words = [w for w in re.split(r'[-_+.]+', segment) if w]   # "26588399.new-google-..." too
         words = [
             w for w in words
             if not (w.isdigit() and len(w) >= 4)                                    # ids, years

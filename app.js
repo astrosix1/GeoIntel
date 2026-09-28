@@ -77,6 +77,107 @@ function getDomainForType(type) {
   return typeToDomainsMap[type] || 'information';
 }
 
+// ── Event scores, bands and normalization ──────────────────────────────────
+// The backend's event pipeline (backend/event_pipeline/, docs/EVENT_FILTERING.md)
+// gives every event two 0-100 scores: `severity` (local intensity) and
+// `global_impact` (international significance), plus the band of each. These
+// thresholds mirror event_pipeline/scoring.py — the one band definition used
+// everywhere in this file instead of the seven hard-coded >80/>60 copies.
+const SCORE_BANDS = { critical: 80, high: 60, elevated: 35 };
+const BAND_COLORS = { critical: '#ff3b3b', high: '#ff8833', elevated: '#ffd93d', low: '#7f93b2' };
+const BAND_PRINT_COLORS = { critical: '#c0392b', high: '#e67e22', elevated: '#f39c12', low: '#5d6d7e' };
+
+function scoreBand(score) {
+  const v = Number(score) || 0;
+  if (v >= SCORE_BANDS.critical) return 'critical';
+  if (v >= SCORE_BANDS.high) return 'high';
+  if (v >= SCORE_BANDS.elevated) return 'elevated';
+  return 'low';
+}
+function bandColor(score) { return BAND_COLORS[scoreBand(score)]; }
+// International significance; falls back to severity for events from an
+// older backend that doesn't send global_impact yet.
+function impactOf(c) { return c.global_impact ?? c.severity ?? 0; }
+
+// Country filter: match on the ISO numeric code the backend sends
+// (country_code == the topojson feature id), falling back to the name for
+// events without one — name strings differ ("UK" vs "United Kingdom").
+function matchesCountry(c) {
+  if (!countryFilter) return true;
+  if (countryFilterCode && c.country_code) return c.country_code === countryFilterCode;
+  return c.country === countryFilter;
+}
+
+// One mapping from the API's crisis JSON to the shape this file uses — shared
+// by the initial load, deep links and live websocket pushes (the websocket
+// path used to insert raw API objects, and every new backend field was
+// silently dropped by the old hand-copied field lists). Returns null for an
+// event with no usable coordinates instead of pinning it at 0,0.
+function normalizeCrisis(c, extra = {}) {
+  if (!c || !c.id) return null;
+  const lat = Number(c.lat), lon = Number(c.lon);
+  if (c.lat == null || c.lon == null || !Number.isFinite(lat) || !Number.isFinite(lon) || (lat === 0 && lon === 0)) {
+    return null;
+  }
+  return {
+    id: c.id,
+    type: c.type,
+    title: c.title || '(untitled event)',
+    country: c.country || '',
+    country_code: c.country_code || null,
+    lat, lon,
+    severity: c.severity ?? 0,
+    global_impact: c.global_impact ?? c.severity ?? 0,
+    severity_band: c.severity_band || scoreBand(c.severity),
+    impact_band: c.impact_band || scoreBand(c.global_impact ?? c.severity),
+    confidence: c.confidence,
+    location_confidence: c.location_confidence,
+    location_precision: c.location_precision || null,
+    source: c.source || null,
+    source_url: c.source_url || null,
+    source_count: c.source_count || 1,
+    date: c.date || 'Recent',
+    date_start: c.date,
+    analysis: c.analysis || '',
+    impact: c.impact || '',
+    stakeholders: Array.isArray(c.stakeholders) ? c.stakeholders : [],
+    domains: c.domains || { military: 50, economic: 50, political: 50, environment: 50, technology: 50, information: 50 },
+    forecasts: [],
+    cascade: [],
+    causal: [],
+    analogy: null,
+    is_verified: c.is_verified || false,
+    status: c.status || 'active',
+    date_scheduled: c.date_scheduled || null,
+    ...extra,
+  };
+}
+
+// Last line of defence against duplicate rows: the backend merges duplicate
+// reports into one event, so ids should already be unique.
+function dedupeById(crises) {
+  const seen = new Set();
+  return crises.filter(c => c && !seen.has(c.id) && seen.add(c.id));
+}
+
+// Severity (local intensity) badge plus a global-impact marker. The number is
+// severity; the ◆ marker shows international significance so "deadly but
+// local" and "internationally critical" read differently at a glance.
+function scoreBadges(crisis) {
+  const sevCol = bandColor(crisis.severity);
+  const imp = impactOf(crisis);
+  const impCol = bandColor(imp);
+  return `<span class="sev-badge" title="Severity (local intensity): ${crisis.severity}/100" `
+    + `style="background:${sevCol}22;color:${sevCol};border:1px solid ${sevCol}55">${crisis.severity}</span>`
+    + `<span class="impact-mark" title="Global impact: ${imp}/100 (${scoreBand(imp)})" style="color:${impCol}">◆${imp}</span>`;
+}
+
+// "3 sources" chip for events the backend merged from several reports.
+function sourcesChip(crisis) {
+  const n = crisis.source_count || 1;
+  return n > 1 ? `<span class="src-chip" title="${n} independent reports merged into this event">${n} sources</span>` : '';
+}
+
 // Filter crises by year (2020-2026)
 function filterByDateRange(crises, year) {
   const startDate = new Date(year, 0, 1);
@@ -132,6 +233,7 @@ let showAir   = false; // air cargo corridors
 let showRail  = false; // rail freight corridors
 let highlightedCountry = null; // { name, feature }
 let countryFilter = null;      // country name string — when set, pins + list filter to this country
+let countryFilterCode = null;  // its topojson id (ISO numeric) — matched against crisis.country_code
 
 // Pin fade animation state
 const PIN_FADE_STEP = 0.06;             // opacity change per frame (~17 frames = 280ms)
@@ -349,310 +451,6 @@ const ROUTES_BY_ID = new Map(ALL_ROUTES.map(r => [r.id, r]));
 // Infinite scroll state
 let crisisDisplayLimit = 90;  // Show all available crises by default
 let crisisDisplayOffset = 0;
-
-// City-level coordinates mapping
-const CITY_COORDS = {
-  // NORTH AMERICA
-  'United States': [
-    {name: 'New York', lat: 40.7128, lon: -74.0060},
-    {name: 'Los Angeles', lat: 34.0522, lon: -118.2437},
-    {name: 'Washington DC', lat: 38.9072, lon: -77.0369},
-    {name: 'Chicago', lat: 41.8781, lon: -87.6298},
-    {name: 'Houston', lat: 29.7604, lon: -95.3698},
-    {name: 'Dallas', lat: 32.7767, lon: -96.7970},
-    {name: 'Miami', lat: 25.7617, lon: -80.1918},
-    {name: 'Phoenix', lat: 33.4484, lon: -112.0742},
-    {name: 'Philadelphia', lat: 39.9526, lon: -75.1652},
-    {name: 'San Francisco', lat: 37.7749, lon: -122.4194},
-    {name: 'Seattle', lat: 47.6062, lon: -122.3321},
-    {name: 'Denver', lat: 39.7392, lon: -104.9903},
-    {name: 'Atlanta', lat: 33.7490, lon: -84.3880},
-    {name: 'Boston', lat: 42.3601, lon: -71.0589},
-  ],
-  'Canada': [
-    {name: 'Toronto', lat: 43.6532, lon: -79.3832},
-    {name: 'Vancouver', lat: 49.2827, lon: -123.1207},
-    {name: 'Montreal', lat: 45.5017, lon: -73.5673},
-  ],
-  'Mexico': [
-    {name: 'Mexico City', lat: 19.4326, lon: -99.1332},
-    {name: 'Guadalajara', lat: 20.6596, lon: -103.2494},
-  ],
-
-  // SOUTH AMERICA
-  'Brazil': [
-    {name: 'São Paulo', lat: -23.5505, lon: -46.6333},
-    {name: 'Rio de Janeiro', lat: -22.9068, lon: -43.1729},
-    {name: 'Brasília', lat: -15.7942, lon: -47.8822},
-  ],
-  'Argentina': [
-    {name: 'Buenos Aires', lat: -34.6037, lon: -58.3816},
-    {name: 'Córdoba', lat: -31.4135, lon: -64.1811},
-  ],
-  'Colombia': [
-    {name: 'Bogotá', lat: 4.7110, lon: -74.0721},
-    {name: 'Medellín', lat: 6.2442, lon: -75.5812},
-  ],
-  'Peru': [
-    {name: 'Lima', lat: -12.0464, lon: -77.0428},
-  ],
-  'Chile': [
-    {name: 'Santiago', lat: -33.8688, lon: -51.2093},
-  ],
-  'Venezuela': [
-    {name: 'Caracas', lat: 10.4806, lon: -66.9036},
-  ],
-
-  // EUROPE
-  'United Kingdom': [
-    {name: 'London', lat: 51.5074, lon: -0.1278},
-    {name: 'Manchester', lat: 53.4808, lon: -2.2426},
-    {name: 'Edinburgh', lat: 55.9533, lon: -3.1883},
-  ],
-  'France': [
-    {name: 'Paris', lat: 48.8566, lon: 2.3522},
-    {name: 'Marseille', lat: 43.2965, lon: 5.3698},
-    {name: 'Lyon', lat: 45.7640, lon: 4.8357},
-  ],
-  'Germany': [
-    {name: 'Berlin', lat: 52.5200, lon: 13.4050},
-    {name: 'Munich', lat: 48.1351, lon: 11.5820},
-    {name: 'Hamburg', lat: 53.5511, lon: 9.9937},
-  ],
-  'Italy': [
-    {name: 'Rome', lat: 41.9028, lon: 12.4964},
-    {name: 'Milan', lat: 45.4642, lon: 9.1900},
-  ],
-  'Spain': [
-    {name: 'Madrid', lat: 40.4168, lon: -3.7038},
-    {name: 'Barcelona', lat: 41.3851, lon: 2.1734},
-  ],
-  'Ukraine': [
-    {name: 'Kyiv', lat: 50.4501, lon: 30.5234},
-    {name: 'Kharkiv', lat: 50.0038, lon: 36.2304},
-    {name: 'Odesa', lat: 46.4856, lon: 30.7326},
-  ],
-  'Poland': [
-    {name: 'Warsaw', lat: 52.2297, lon: 21.0122},
-    {name: 'Kraków', lat: 50.0647, lon: 19.9450},
-  ],
-  'Netherlands': [
-    {name: 'Amsterdam', lat: 52.3676, lon: 4.9041},
-  ],
-  'Greece': [
-    {name: 'Athens', lat: 37.9838, lon: 23.7275},
-  ],
-
-  // MIDDLE EAST & CENTRAL ASIA
-  'Iran': [
-    {name: 'Tehran', lat: 35.6892, lon: 51.3890},
-    {name: 'Isfahan', lat: 32.6546, lon: 51.6680},
-    {name: 'Tabriz', lat: 38.0808, lon: 46.2919},
-    {name: 'Shiraz', lat: 29.6399, lon: 52.5347},
-    {name: 'Qom', lat: 34.6413, lon: 50.8759},
-    {name: 'Mashhad', lat: 36.2605, lon: 59.5007},
-    {name: 'Ahvaz', lat: 31.3183, lon: 48.6706},
-    {name: 'Rasht', lat: 37.2808, lon: 49.5832},
-    {name: 'Yazd', lat: 31.8974, lon: 54.3569},
-  ],
-  'Iraq': [
-    {name: 'Baghdad', lat: 33.3128, lon: 44.3615},
-    {name: 'Basra', lat: 30.4958, lon: 47.8079},
-  ],
-  'Israel': [
-    {name: 'Tel Aviv', lat: 32.0853, lon: 34.7818},
-    {name: 'Jerusalem', lat: 31.7683, lon: 35.2137},
-    {name: 'Haifa', lat: 32.8191, lon: 34.9937},
-    {name: 'Beer Sheva', lat: 31.2461, lon: 34.7915},
-    {name: 'Ashdod', lat: 31.8070, lon: 34.6463},
-    {name: 'Petah Tikva', lat: 32.0864, lon: 34.8864},
-  ],
-  'Saudi Arabia': [
-    {name: 'Riyadh', lat: 24.7136, lon: 46.6753},
-    {name: 'Jeddah', lat: 21.5169, lon: 39.1925},
-  ],
-  'United Arab Emirates': [
-    {name: 'Dubai', lat: 25.2048, lon: 55.2708},
-    {name: 'Abu Dhabi', lat: 24.4539, lon: 54.3773},
-  ],
-  'Turkey': [
-    {name: 'Istanbul', lat: 41.0082, lon: 28.9784},
-    {name: 'Ankara', lat: 39.9334, lon: 32.8597},
-  ],
-  'Syria': [
-    {name: 'Damascus', lat: 33.5138, lon: 36.2765},
-    {name: 'Aleppo', lat: 36.2021, lon: 37.1343},
-  ],
-  'Jordan': [
-    {name: 'Amman', lat: 31.9454, lon: 35.9284},
-  ],
-  'Lebanon': [
-    {name: 'Beirut', lat: 33.8547, lon: 35.4758},
-  ],
-  'Pakistan': [
-    {name: 'Islamabad', lat: 33.6844, lon: 73.0479},
-    {name: 'Karachi', lat: 24.8607, lon: 67.0011},
-  ],
-  'Afghanistan': [
-    {name: 'Kabul', lat: 34.5553, lon: 69.2075},
-  ],
-  'Kazakhstan': [
-    {name: 'Almaty', lat: 43.2380, lon: 76.9502},
-    {name: 'Astana', lat: 51.1694, lon: 71.4491},
-  ],
-
-  // ASIA
-  'Russia': [
-    {name: 'Moscow', lat: 55.7558, lon: 37.6173},
-    {name: 'St. Petersburg', lat: 59.9311, lon: 30.3609},
-    {name: 'Vladivostok', lat: 43.1056, lon: 131.8735},
-    {name: 'Novosibirsk', lat: 55.0415, lon: 82.9346},
-  ],
-  'China': [
-    {name: 'Beijing', lat: 39.9042, lon: 116.4074},
-    {name: 'Shanghai', lat: 31.2304, lon: 121.4737},
-    {name: 'Hong Kong', lat: 22.3193, lon: 114.1694},
-    {name: 'Shenzhen', lat: 22.5431, lon: 114.0579},
-    {name: 'Chongqing', lat: 29.4316, lon: 106.9123},
-    {name: 'Xi\'an', lat: 34.3416, lon: 109.5149},
-    {name: 'Wuhan', lat: 30.5928, lon: 114.3055},
-    {name: 'Guangzhou', lat: 23.1291, lon: 113.2644},
-    {name: 'Chengdu', lat: 30.5728, lon: 104.0668},
-    {name: 'Hangzhou', lat: 30.2875, lon: 120.1551},
-  ],
-  'India': [
-    {name: 'New Delhi', lat: 28.6139, lon: 77.2090},
-    {name: 'Mumbai', lat: 19.0760, lon: 72.8777},
-    {name: 'Bangalore', lat: 12.9716, lon: 77.5946},
-    {name: 'Kolkata', lat: 22.5726, lon: 88.3639},
-  ],
-  'Japan': [
-    {name: 'Tokyo', lat: 35.6762, lon: 139.6503},
-    {name: 'Osaka', lat: 34.6937, lon: 135.5023},
-  ],
-  'South Korea': [
-    {name: 'Seoul', lat: 37.5665, lon: 126.9780},
-  ],
-  'North Korea': [
-    {name: 'Pyongyang', lat: 39.0193, lon: 125.7581},
-  ],
-  'Vietnam': [
-    {name: 'Hanoi', lat: 21.0285, lon: 105.8542},
-    {name: 'Ho Chi Minh City', lat: 10.7769, lon: 106.6869},
-  ],
-  'Thailand': [
-    {name: 'Bangkok', lat: 13.7563, lon: 100.5018},
-  ],
-  'Philippines': [
-    {name: 'Manila', lat: 14.5995, lon: 120.9842},
-  ],
-  'Indonesia': [
-    {name: 'Jakarta', lat: -6.2088, lon: 106.8456},
-  ],
-  'Myanmar': [
-    {name: 'Yangon', lat: 16.8661, lon: 96.1951},
-    {name: 'Naypyidaw', lat: 19.7554, lon: 96.0794},
-  ],
-  'Malaysia': [
-    {name: 'Kuala Lumpur', lat: 3.1390, lon: 101.6869},
-  ],
-  'Singapore': [
-    {name: 'Singapore', lat: 1.3521, lon: 103.8198},
-  ],
-
-  // AFRICA
-  'Egypt': [
-    {name: 'Cairo', lat: 30.0444, lon: 31.2357},
-    {name: 'Alexandria', lat: 31.2001, lon: 29.9187},
-  ],
-  'Nigeria': [
-    {name: 'Lagos', lat: 6.5244, lon: 3.3792},
-    {name: 'Abuja', lat: 9.0765, lon: 7.3986},
-  ],
-  'South Africa': [
-    {name: 'Johannesburg', lat: -26.2023, lon: 28.0436},
-    {name: 'Cape Town', lat: -33.9249, lon: 18.4241},
-    {name: 'Pretoria', lat: -25.7461, lon: 28.2293},
-  ],
-  'Ethiopia': [
-    {name: 'Addis Ababa', lat: 9.0320, lon: 38.7469},
-  ],
-  'Kenya': [
-    {name: 'Nairobi', lat: -1.2864, lon: 36.8172},
-  ],
-  'Libya': [
-    {name: 'Tripoli', lat: 32.8872, lon: 13.1913},
-  ],
-  'Sudan': [
-    {name: 'Khartoum', lat: 15.5007, lon: 32.5599},
-  ],
-  'Morocco': [
-    {name: 'Casablanca', lat: 33.5731, lon: -7.5898},
-    {name: 'Rabat', lat: 34.0209, lon: -6.8416},
-  ],
-  'Tunisia': [
-    {name: 'Tunis', lat: 36.8065, lon: 10.1686},
-  ],
-  'Algeria': [
-    {name: 'Algiers', lat: 36.7538, lon: 3.0588},
-  ],
-  'Angola': [
-    {name: 'Luanda', lat: -8.8383, lon: 13.2344},
-  ],
-  'Mozambique': [
-    {name: 'Maputo', lat: -23.8637, lon: 35.3300},
-  ],
-  'Zimbabwe': [
-    {name: 'Harare', lat: -17.8252, lon: 31.0335},
-  ],
-
-  // OCEANIA
-  'Australia': [
-    {name: 'Sydney', lat: -33.8688, lon: 151.2093},
-    {name: 'Melbourne', lat: -37.8136, lon: 144.9631},
-    {name: 'Brisbane', lat: -27.4698, lon: 153.0251},
-  ],
-  'New Zealand': [
-    {name: 'Auckland', lat: -37.0882, lon: 174.8853},
-    {name: 'Wellington', lat: -41.2865, lon: 174.7762},
-  ],
-};
-
-function getRandomCityCoords(country) {
-  // Normalize country names (handle various formats)
-  const countryNormalized = {
-    'Us': 'United States',
-    'USA': 'United States',
-    'UK': 'United Kingdom',
-    'GB': 'United Kingdom',
-    'KR': 'South Korea',
-    'NK': 'North Korea',
-    'UAE': 'United Arab Emirates',
-    'SA': 'Saudi Arabia',
-    'ROK': 'South Korea',
-    'DPRK': 'North Korea',
-    'PRC': 'China',
-    'HK': 'Hong Kong',
-  }[country] || country;
-
-  let cities = CITY_COORDS[countryNormalized];
-
-  // If country not found, try to pick a reasonable regional fallback
-  if (!cities) {
-    if (countryNormalized.includes('Europe') || countryNormalized === 'European Union') {
-      cities = CITY_COORDS['Germany']; // Central Europe default
-    } else if (countryNormalized.includes('Africa')) {
-      cities = CITY_COORDS['Nigeria']; // Central Africa default
-    } else if (countryNormalized.includes('Asia')) {
-      cities = CITY_COORDS['India']; // South Asia default
-    } else {
-      cities = CITY_COORDS['United States']; // Global default
-    }
-  }
-
-  if (!cities) return null;
-  return cities[Math.floor(Math.random() * cities.length)];
-}
 
 // Layer toggles
 let showArcs  = false;
@@ -874,8 +672,8 @@ function routeRiskLevel(waypoints) {
       }
     }
   }
-  if (maxSev > 80 || nearby >= 5) return 3; // critical
-  if (maxSev > 60 || nearby >= 3) return 2; // elevated
+  if (scoreBand(maxSev) === 'critical' || nearby >= 5) return 3; // critical
+  if (scoreBand(maxSev) === 'high' || nearby >= 3) return 2;     // elevated
   if (nearby >= 1)                return 1; // caution
   return 0;                                 // clear
 }
@@ -1212,8 +1010,8 @@ function drawFlatMap() {
 
   // Crisis pins — same filters as drawPins() so pin counts match
   const pool = CRISES.filter(c => {
-    if (minSeverityFilter > 0 && (c.severity || 0) < minSeverityFilter) return false;
-    if (countryFilter && c.country !== countryFilter) return false;
+    if (minSeverityFilter > 0 && impactOf(c) < minSeverityFilter) return false;
+    if (!matchesCountry(c)) return false;
     if (activeType !== 'all' && c.type !== activeType) return false;
     if (activeDomain !== 'all' && getDomainForType(c.type) !== activeDomain) return false;
     const d = new Date(c.date_start || c.date);
@@ -1675,9 +1473,13 @@ function drawPins() {
   pool = pool.filter(c =>
     (activeType === 'all' || c.type === activeType) &&
     (activeDomain === 'all' || getDomainForType(c.type) === activeDomain) &&
-    (c.location_confidence ?? 60) >= 60 &&
-    (!countryFilter || c.country === countryFilter) &&
-    (minSeverityFilter === 0 || (c.severity || 0) >= minSeverityFilter)
+    // Country-level events (location_precision 'country') have a lower
+    // location_confidence but are drawn with their own hollow marker below,
+    // so they're kept; anything else still needs a confident location.
+    (c.location_precision === 'country' || (c.location_confidence ?? 60) >= 60) &&
+    c.lat != null && c.lon != null &&
+    matchesCountry(c) &&
+    (minSeverityFilter === 0 || impactOf(c) >= minSeverityFilter)
   );
 
   // ── Project every candidate, then keep only the front-facing hemisphere ───────
@@ -1696,9 +1498,9 @@ function drawPins() {
   let visible = pool
     .map(c => ({
       c,
-      lat: c.lat || 0,
-      lon: c.lon || 0,
-      p: project(c.lat || 0, c.lon || 0),
+      lat: c.lat,
+      lon: c.lon,
+      p: project(c.lat, c.lon),
       city: c.country
     }))
     .filter(({p}) => p.z > 0)            // hide pins behind the sphere
@@ -1706,55 +1508,13 @@ function drawPins() {
     .slice(-maxDisplayLimit);            // keep the LAST N = highest-z = most centred pins
                                          // (if fewer than N are visible, all are kept)
 
-  // Group by rounded lat/lon (0.1° buckets, ~11km) — catches events placed at the exact same coords
-  const eventsByCoord = {};
-  visible.forEach(item => {
-    const key = `${(item.lat).toFixed(1)},${(item.lon).toFixed(1)}`;
-    if (!eventsByCoord[key]) eventsByCoord[key] = [];
-    eventsByCoord[key].push(item);
-  });
-
-  // Circular spread: arrange stacked pins in a ring around the real point
-  const connectorLines = [];
-  visible = visible.map(({c, p, city, lat, lon}) => {
-    const key = `${lat.toFixed(1)},${lon.toFixed(1)}`;
-    const group     = eventsByCoord[key];
-    const idx       = group.findIndex(g => g.c.id === c.id);
-    const total     = group.length;
-
-    let sx = p.sx, sy = p.sy;
-
-    if (total > 1) {
-      // Ring radius: 20 px base + 4 px per extra pin, capped at 55 px
-      const ringR  = Math.min(55, 20 + (total - 1) * 4);
-      const angle  = (idx / total) * Math.PI * 2 - Math.PI / 2; // start at top
-      sx = p.sx + Math.cos(angle) * ringR;
-      sy = p.sy + Math.sin(angle) * ringR;
-      connectorLines.push({ x1: p.sx, y1: p.sy, x2: sx, y2: sy, confidence: c.location_confidence ?? 75 });
-    }
-
-    return { c, p: {...p, sx, sy}, city, _alreadySpread: total > 1 };
-  });
-
-  // Draw connector lines first (behind pins)
-  connectorLines.forEach(({x1, y1, x2, y2, confidence}) => {
-    const alpha = 0.15 + (confidence / 100) * 0.3;  // Brighter = more confidence
-    ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
-    ctx.lineWidth = 0.8;
-    ctx.setLineDash([2, 3]);
-    ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
-    ctx.stroke();
-    ctx.setLineDash([]);
-  });
+  // Pins stay at their true coordinates. (Co-located pins used to be fanned
+  // out in a ring up to 55px wide, which at normal zoom pushed pins visibly
+  // into neighbouring countries; the backend now merges duplicate reports
+  // into one event, and genuinely distinct co-located events are grouped by
+  // the cluster bubble below.)
 
   // ── CLUSTERING — merge nearby pins when zoomed out ───────────────────────────
-  // Pins already pulled apart into a ring above (_alreadySpread — exact/
-  // near-duplicate coordinates) are exempt: they were deliberately made
-  // individually visible, and re-merging them into an anonymous "N" blob
-  // here defeated that entirely.
-  //
   // The cluster radius itself shrinks as you zoom in (instead of a fixed
   // 38px that only ever got fully switched off past a hard zoom>=1.4
   // cutoff), so decluttering fades out smoothly — the more zoomed in you
@@ -1767,11 +1527,10 @@ function drawPins() {
     const clusters = [];
     visible.forEach((item, i) => {
       if (assigned.has(i)) return;
-      if (item._alreadySpread) { assigned.add(i); clusters.push([item]); return; }
       const group = [item];
       assigned.add(i);
       visible.forEach((other, j) => {
-        if (assigned.has(j) || other._alreadySpread) return;
+        if (assigned.has(j)) return;
         const d = Math.hypot(item.p.sx - other.p.sx, item.p.sy - other.p.sy);
         if (d < CLUSTER_DIST) { group.push(other); assigned.add(j); }
       });
@@ -1783,8 +1542,8 @@ function drawPins() {
       // Centroid
       const cx2 = group.reduce((s, g) => s + g.p.sx, 0) / group.length;
       const cy2 = group.reduce((s, g) => s + g.p.sy, 0) / group.length;
-      const maxSev = Math.max(...group.map(g => g.c.severity || 0));
-      const col = maxSev > 80 ? '#ff3b3b' : maxSev > 60 ? '#ff8833' : '#ffd93d';
+      // Cluster colour = the most internationally significant event in it.
+      const col = bandColor(Math.max(...group.map(g => impactOf(g.c))));
       const cr = 14 + Math.min(group.length, 20) * 0.6;
 
       ctx.save();
@@ -1841,13 +1600,23 @@ function drawPins() {
     const r2        = isHovered || isActive ? baseR + 3 : baseR;
 
     const isUpcoming = c.status === 'upcoming';
+    const isCountryLevel = c.location_precision === 'country';
 
     ctx.save();
     ctx.globalAlpha = fadeOpacity;
     ctx.shadowColor = col;
     ctx.shadowBlur  = isActive ? 22 : isHovered ? 14 : 8;
 
-    if (isUpcoming) {
+    if (isCountryLevel && !isUpcoming) {
+      // Located to the country only (placed at its centre): a larger, faint,
+      // hollow ring — deliberately unlike a precise pin, so it never reads
+      // as "it happened exactly here".
+      ctx.shadowBlur  = 0;
+      ctx.fillStyle   = col + '22';
+      ctx.strokeStyle = col + 'aa';
+      ctx.lineWidth   = 1.2;
+      ctx.beginPath(); ctx.arc(sx, sy, r2 * 1.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    } else if (isUpcoming) {
       // Scheduled-but-not-yet-happened events (elections, referendums) read
       // as "known in advance" rather than "detected" — a dashed outline
       // ring with a small solid centre dot, instead of the full glow-filled
@@ -1896,7 +1665,8 @@ function drawPins() {
 
   // Draw fading-out pins (from the previous year, exiting the scene)
   fadingOutPins.forEach(({ c, opacity }) => {
-    const p = project(c.lat || 0, c.lon || 0);
+    if (c.lat == null || c.lon == null) return;
+    const p = project(c.lat, c.lon);
     if (p.z <= 0) return;
     const col = TYPE_META[c.type]?.color || '#fff';
     ctx.save();
@@ -1929,6 +1699,7 @@ function drawCrisisHeatmap() {
   const filteredCrises = filterByDateRange(CRISES, currentYear).filter(c => {
     return (activeType === 'all' || c.type === activeType) &&
       (activeDomain === 'all' || getDomainForType(c.type) === activeDomain) &&
+      c.location_precision !== 'country' &&
       (c.location_confidence ?? 70) >= 75;
   });
   if (filteredCrises.length === 0) return;
@@ -2229,7 +2000,7 @@ function getFilteredCrises() {
       if (c.status === 'upcoming' || c.status === 'resolved') return false;
       const typeMatch = activeType === 'all' || c.type === activeType;
       const domainMatch = activeDomain === 'all' || getDomainForType(c.type) === activeDomain;
-      const countryMatch = !countryFilter || c.country === countryFilter;
+      const countryMatch = matchesCountry(c);
       return typeMatch && domainMatch && countryMatch;
     })
     .filter(c => c.title.toLowerCase().includes(q) || c.country.toLowerCase().includes(q));
@@ -2239,7 +2010,9 @@ function updateEventsList() {
   const list = document.getElementById('eventsList');
   list.innerHTML = '';
 
-  const filtered = getFilteredCrises();
+  // The critical toggle (alert badge) narrows the list too, so "showing
+  // critical only" means the same thing for pins and rows.
+  const filtered = getFilteredCrises().filter(c => minSeverityFilter === 0 || impactOf(c) >= minSeverityFilter);
   // Cap what actually renders as DOM rows — filtered itself stays uncapped
   // (Export and the count badge both need the real total, not just what's
   // currently visible). crisisDisplayLimit is the same counter the globe's
@@ -2259,15 +2032,15 @@ function updateEventsList() {
     el.className = 'evt-item' + (crisis.id === selected?.id ? ' sel' : '');
     el.dataset.id = crisis.id;
     const tm = TYPE_META[crisis.type] || {};
-    const sevCol = crisis.severity > 80 ? '#ff3b3b' : crisis.severity > 60 ? '#ff8833' : '#ffd93d';
     el.style.display = 'flex'; el.style.alignItems = 'flex-start'; el.style.gap = '6px';
     el.innerHTML = `
       <div style="flex:1;min-width:0;">
       <div class="evt-name">${escapeHtml(crisis.title)}</div>
       <div class="evt-sub">
-        <span class="sev-badge" style="background:${sevCol}22;color:${sevCol};border:1px solid ${sevCol}55">${crisis.severity}</span>
+        ${scoreBadges(crisis)}
         <span style="color:${tm.color || '#888'}">${tm.name || ''}</span>
-        · ${escapeHtml(crisis.country)}
+        · ${escapeHtml(crisis.country)}${crisis.location_precision === 'country' ? ' <span class="prec-chip" title="Located to the country only">country-level</span>' : ''}
+        ${sourcesChip(crisis)}
       </div>
       </div>
       <button class="bookmark-btn ${bookmarks.has(crisis.id) ? 'on' : ''}" data-bid="${crisis.id}" title="Bookmark">★</button>
@@ -2534,7 +2307,7 @@ document.addEventListener('mousemove', e => {
         .sort((a, b) => b.severity - a.severity)
         .slice(0, 3);
       const threatHtml = threats.length
-        ? threats.map(c => `<div style="color:${c.severity>80?'#ff3b3b':c.severity>60?'#ff8833':'#ffd93d'};margin-top:3px">⚠ ${escapeHtml(c.title)} (${escapeHtml(c.country)})</div>`).join('')
+        ? threats.map(c => `<div style="color:${bandColor(c.severity)};margin-top:3px">⚠ ${escapeHtml(c.title)} (${escapeHtml(c.country)})</div>`).join('')
         : '<div style="color:var(--dim);margin-top:3px">No active threats nearby</div>';
       tip.innerHTML = `
         <div style="font-weight:700;color:#ffd93d;margin-bottom:4px">${modeIcon} ${closest.label}</div>
@@ -2669,12 +2442,14 @@ canvas.addEventListener('click', e => {
         // Second click on same country → clear filter
         highlightedCountry = null;
         countryFilter = null;
+        countryFilterCode = null;
         tip.style.display = 'none';
       } else {
         highlightedCountry = { name, feature: found };
         countryFilter = name;
+        countryFilterCode = found.id != null ? String(found.id) : null;
         // Count crises in this country
-        const cnt = CRISES.filter(c => c.country === name).length;
+        const cnt = CRISES.filter(matchesCountry).length;
         tip.innerHTML = `🔍 <strong>${name}</strong> &nbsp;·&nbsp; ${cnt} event${cnt !== 1 ? 's' : ''} &nbsp;<span style="color:var(--dim);font-weight:400;font-size:9px">click again to clear</span>`;
         tip.style.display = 'block';
       }
@@ -2682,6 +2457,7 @@ canvas.addEventListener('click', e => {
       // Click on ocean → clear filter
       highlightedCountry = null;
       countryFilter = null;
+      countryFilterCode = null;
       tip.style.display = 'none';
     }
     updateEventsList();
@@ -2802,7 +2578,9 @@ document.addEventListener('fullscreenchange', () => {
 
 // Alert badge — count critical crises and wire up click-to-filter
 function updateAlertBadge() {
-  const critical = CRISES.filter(c => (c.severity || 0) >= 80);
+  // Critical = internationally critical (global_impact), counted over what
+  // the current filters show — not raw severity over every loaded event.
+  const critical = getFilteredCrises().filter(c => scoreBand(impactOf(c)) === 'critical');
   const badge = document.getElementById('alertBadge');
   if (!badge) return;
   if (critical.length > 0) {
@@ -2813,11 +2591,13 @@ function updateAlertBadge() {
   }
 }
 document.getElementById('alertBadge').addEventListener('click', () => {
-  minSeverityFilter = minSeverityFilter === 80 ? 0 : 80;
+  minSeverityFilter = minSeverityFilter === SCORE_BANDS.critical ? 0 : SCORE_BANDS.critical;
   const badge = document.getElementById('alertBadge');
-  badge.style.background = minSeverityFilter === 80 ? '#fff' : '#ff3b3b';
-  badge.style.color      = minSeverityFilter === 80 ? '#ff3b3b' : '#fff';
-  badge.title = minSeverityFilter === 80 ? 'Showing critical only — click to clear' : 'Critical crises — click to filter';
+  const on = minSeverityFilter > 0;
+  badge.style.background = on ? '#fff' : '#ff3b3b';
+  badge.style.color      = on ? '#ff3b3b' : '#fff';
+  badge.title = on ? 'Showing internationally critical events only — click to clear'
+                   : 'Internationally critical events (global impact ≥ 80) — click to filter';
   updateEventsList(); drawGlobe();
 });
 
@@ -2896,26 +2676,11 @@ async function applyDeepLink() {
   }
 
   // Transform to frontend format (same mapping as loadRealData)
-  crisis = {
-    id: raw.id,
-    type: raw.type,
-    title: raw.title,
-    country: raw.country,
-    lat: raw.lat,
-    lon: raw.lon,
-    severity: raw.severity,
-    confidence: raw.confidence,
-    location_confidence: raw.location_confidence,
-    date: raw.date || 'Historical',
-    date_start: raw.date,
-    analysis: raw.analysis || '',
-    impact: raw.impact || '',
-    stakeholders: Array.isArray(raw.stakeholders) ? raw.stakeholders : [],
-    domains: raw.domains || { military:50, economic:50, political:50, environment:50, technology:50, information:50 },
-    forecasts: [], cascade: [], causal: [], analogy: null,
-    is_verified: raw.is_verified || false,
-    _shared: true,
-  };
+  crisis = normalizeCrisis(raw, { date: raw.date || 'Historical', _shared: true });
+  if (!crisis) {
+    showToast(`⚠️ Shared crisis has no location`, 3500);
+    return;
+  }
 
   selectCrisis(crisis);
   if (crisis.lat != null && crisis.lon != null) flyToLatLon(crisis.lat, crisis.lon);
@@ -2951,7 +2716,6 @@ function updateWatchlist() {
   }
   saved.forEach(crisis => {
     const tm = TYPE_META[crisis.type] || {};
-    const sevCol = crisis.severity > 80 ? '#ff3b3b' : crisis.severity > 60 ? '#ff8833' : '#ffd93d';
     const el = document.createElement('div');
     el.className = 'evt-item' + (crisis.id === selected?.id ? ' sel' : '');
     el.style.cssText = 'display:flex;align-items:flex-start;gap:6px;';
@@ -2959,9 +2723,10 @@ function updateWatchlist() {
       <div style="flex:1;min-width:0;">
         <div class="evt-name">${escapeHtml(crisis.title)}</div>
         <div class="evt-sub">
-          <span class="sev-badge" style="background:${sevCol}22;color:${sevCol};border:1px solid ${sevCol}55">${crisis.severity}</span>
+          ${scoreBadges(crisis)}
           <span style="color:${tm.color||'#888'}">${tm.name||''}</span>
           · ${escapeHtml(crisis.country)}
+          ${sourcesChip(crisis)}
         </div>
       </div>
       <button class="bookmark-btn on" data-bid="${crisis.id}" title="Remove">★</button>
@@ -3351,30 +3116,7 @@ async function loadRealData() {
       throw new Error(`Failed to load crises: ${crisisResult.error}`);
     }
     if (crisisResult.crises && Array.isArray(crisisResult.crises)) {
-      let transformedCrises = crisisResult.crises.map(c => ({
-        id: c.id,
-        type: c.type,
-        title: c.title,
-        country: c.country,
-        lat: c.lat,
-        lon: c.lon,
-        severity: c.severity,
-        confidence: c.confidence,
-        location_confidence: c.location_confidence,
-        date: c.date || 'Recent',
-        date_start: c.date,
-        analysis: c.analysis || '',
-        impact: c.impact || '',
-        stakeholders: Array.isArray(c.stakeholders) ? c.stakeholders : [],
-        domains: c.domains || { military: 50, economic: 50, political: 50, environment: 50, technology: 50, information: 50 },
-        forecasts: [],
-        cascade: [],
-        causal: [],
-        analogy: null,
-        is_verified: c.is_verified || false,
-        status: c.status || 'active',
-        date_scheduled: c.date_scheduled || null,
-      }));
+      const transformedCrises = dedupeById(crisisResult.crises.map(c => normalizeCrisis(c)));
       CRISES = filterRecentEvents(transformedCrises, 720);
       setTimeout(applyDeepLink, 50);
     }
@@ -3466,7 +3208,8 @@ function connectToEventStream() {
     });
 
     socket.on('new_crisis', (data) => {
-      const crisis = data.crisis;
+      const crisis = normalizeCrisis(data.crisis);
+      if (!crisis) return;
       showBreakingAlert(crisis);
       const idx = CRISES.findIndex(c => c.id === crisis.id);
       if (idx >= 0) CRISES[idx] = crisis;
@@ -4220,7 +3963,7 @@ function flyToLatLon(lat, lon) {
     dropdown.innerHTML = '';
     results.forEach((crisis, i) => {
       const tm      = TYPE_META[crisis.type] || { color: '#888', name: 'Unknown' };
-      const sevCol  = crisis.severity > 80 ? '#ff3b3b' : crisis.severity > 60 ? '#ff8833' : '#ffd93d';
+      const sevCol  = bandColor(crisis.severity);
       const year    = new Date(crisis.date_start || crisis.date).getFullYear() || '';
       const row     = document.createElement('div');
       row.className = 'search-result';
@@ -4347,8 +4090,10 @@ function exportBriefing() {
   el('pb-footer-date').textContent   = `Generated ${now} by GeoIntel`;
   el('pb-title').textContent         = c.title;
 
-  const sevColor = c.severity > 80 ? '#c0392b' : c.severity > 60 ? '#e67e22' : '#f39c12';
-  el('pb-sev').innerHTML   = `<span style="color:${sevColor};font-weight:700">${c.severity}/100</span>`;
+  const sevColor = BAND_PRINT_COLORS[scoreBand(c.severity)];
+  const impColor = BAND_PRINT_COLORS[scoreBand(impactOf(c))];
+  el('pb-sev').innerHTML   = `<span style="color:${sevColor};font-weight:700">${c.severity}/100</span>`
+    + ` <span style="color:#666">· global impact</span> <span style="color:${impColor};font-weight:700">${impactOf(c)}/100</span>`;
   el('pb-conf').textContent = `${c.confidence}%`;
   el('pb-type').textContent    = tm.name;
   el('pb-country').textContent = c.country;

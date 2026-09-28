@@ -583,6 +583,30 @@ body {
   filter: brightness(1.15);
   box-shadow: 0 0 10px currentColor;
 }
+/* Global-impact marker next to the severity badge (see scoreBadges() in app.js) */
+.impact-mark {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+/* "N sources" — events merged from several independent reports */
+.src-chip,
+.prec-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: var(--r-xs);
+  font-size: 9.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text3);
+  border: 1px solid currentColor;
+  opacity: 0.8;
+}
+.prec-chip {
+  border-style: dashed;
+}
 
 /* ── Section label ── */
 /* Used as the caption ("STAKEHOLDERS", "ANALYSIS", etc.) on nearly every
