@@ -231,7 +231,12 @@ class ACLEDConnector:
                 # pipeline's titles stage builds "{sub_event_type} in
                 # {location}, {admin1}: N killed" from ACLED's own fields.
                 'title': None,
-                '_meta': {'fallback_titles': [(acled_title(event), False)]},
+                '_meta': {
+                    'kind': 'acled',
+                    'fallback_titles': [(acled_title(event), False)],
+                    'acled': {k: event.get(k) for k in (
+                        'event_type', 'sub_event_type', 'fatalities', 'actor1', 'actor2')},
+                },
                 'country': event.get('country', 'Unknown'),
                 'latitude': float(event.get('latitude', 0)),
                 'longitude': float(event.get('longitude', 0)),
@@ -1101,8 +1106,10 @@ class NewsBasedCrisisDetector:
                 'type': crisis_type,
                 'title': title,  # cleaned (outlet/date/tags stripped) by the pipeline's titles stage
                 '_meta': {
+                    'kind': 'news',
                     'outlet': source,
                     'url': url,
+                    'text': title + ' ' + description_for_location,
                     'fallback_titles': [(first_sentence(description_for_location), True)],
                 },
                 'country': country,   # actual country (e.g. "Iran")
@@ -1243,6 +1250,13 @@ class GDELTConnector:
     file during development, not just the public docs, since off-by-one
     errors in this schema are a known pitfall.
     """
+    _COL_ACTOR1_CODE = 5
+    _COL_ACTOR1_COUNTRY = 7
+    _COL_ACTOR1_TYPE = 12
+    _COL_ACTOR2_CODE = 15
+    _COL_ACTOR2_COUNTRY = 17
+    _COL_ACTOR2_TYPE = 22
+    _COL_IS_ROOT_EVENT = 25
     _COL_EVENT_CODE = 26
     _COL_EVENT_BASE_CODE = 27
     _COL_EVENT_ROOT_CODE = 28
@@ -1381,6 +1395,11 @@ class GDELTConnector:
         stakeholders = NewsBasedCrisisDetector._find_stakeholders(actor_text)
 
         source_url = fields[GDELTConnector._COL_SOURCE_URL]
+        headline = slug_title(source_url)
+        try:
+            num_articles = int(float(fields[GDELTConnector._COL_NUM_ARTICLES]))
+        except (ValueError, IndexError):
+            num_articles = 0
 
         return {
             'id': f"gdelt_{global_event_id}",
@@ -1390,9 +1409,24 @@ class GDELTConnector:
             # built from the actors, event code and place.
             'title': None,
             '_meta': {
+                'kind': 'gdelt',
                 'url': source_url,
+                'headline': headline,
+                'gdelt': {
+                    'is_root_event': fields[GDELTConnector._COL_IS_ROOT_EVENT],
+                    'event_code': fields[GDELTConnector._COL_EVENT_CODE],
+                    'base_code': fields[GDELTConnector._COL_EVENT_BASE_CODE],
+                    'num_sources': num_sources,
+                    'num_articles': num_articles,
+                    'actor1_code': fields[GDELTConnector._COL_ACTOR1_CODE],
+                    'actor1_country': fields[GDELTConnector._COL_ACTOR1_COUNTRY],
+                    'actor1_type': fields[GDELTConnector._COL_ACTOR1_TYPE],
+                    'actor2_code': fields[GDELTConnector._COL_ACTOR2_CODE],
+                    'actor2_country': fields[GDELTConnector._COL_ACTOR2_COUNTRY],
+                    'actor2_type': fields[GDELTConnector._COL_ACTOR2_TYPE],
+                },
                 'fallback_titles': [
-                    (slug_title(source_url), True),
+                    (headline, True),
                     (gdelt_title(
                         fields[GDELTConnector._COL_ACTOR1_NAME],
                         fields[GDELTConnector._COL_ACTOR2_NAME],

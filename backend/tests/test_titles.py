@@ -18,10 +18,13 @@ from event_pipeline.titles import (
 
 def make_row(global_event_id='1000001', source_url='https://example.com/article'):
     """Minimal GDELT export row (see make_row in test_gdelt.py for the
-    column layout): UNITED STATES vs RUSSIA, CAMEO 190, Kyiv."""
+    column layout): an interstate root event, UNITED STATES vs RUSSIA, CAMEO
+    190, Kyiv — one that passes the relevance rules."""
     fields = [''] * 61
     fields[0] = global_event_id
-    fields[6], fields[16] = 'UNITED STATES', 'RUSSIA'
+    fields[5], fields[7], fields[6] = 'USA', 'USA', 'UNITED STATES'
+    fields[15], fields[17], fields[16] = 'RUS', 'RUS', 'RUSSIA'
+    fields[25] = '1'
     fields[26], fields[29], fields[30] = '190', '4', '-8.0'
     fields[32], fields[33] = '3', '5'
     fields[52], fields[56], fields[57] = 'Kyiv, Kyiv, Ukraine', '50.4501', '30.5234'

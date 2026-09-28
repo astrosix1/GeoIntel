@@ -310,7 +310,9 @@ def slug_title(url):
         ]
         while words and words[0].lower() in _SLUG_DROP_LEADING:
             words.pop(0)
-        alpha = [w for w in words if re.search(r'[a-z]', w, re.IGNORECASE)]
+        # Only purely alphabetic tokens count as words, so hash fragments
+        # ("article-9cdd-4dc8-98c1") never pass as a headline.
+        alpha = [w for w in words if w.isalpha()]
         if len(alpha) >= 4 and len(alpha) >= 0.6 * len(words):
             return headline_case(' '.join(words).lower(), from_slug=True)
     return None

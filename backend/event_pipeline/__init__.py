@@ -10,9 +10,10 @@ modifying it) or rejects it with a reason code recorded in the report:
 
     titles      -> clean the source title or synthesize one (titles.py)
     normalize   -> required fields, coordinate sanity, column-length clamps
+    relevance   -> geopolitical-event and outlet checks per source (relevance.py)
     batch_dedup -> one candidate per id within a batch
 
-Later phases add relevance, location, cross-source dedup/merge and
+Later phases add location, cross-source dedup/merge and
 scoring as further stages. Stages are pure functions of the candidate (plus
 config), so each is testable without a database or network.
 """
@@ -20,6 +21,7 @@ from dataclasses import dataclass, field
 
 from .normalize import normalize_candidate
 from .titles import choose_title
+from .relevance import check_relevance
 from .report import PipelineReport, remember, recent_reports  # noqa: F401 (re-exported)
 
 META_KEY = '_meta'  # transient per-candidate context for stages; never persisted
@@ -52,6 +54,10 @@ def _stage_normalize(candidate, state):
     return normalize_candidate(candidate)
 
 
+def _stage_relevance(candidate, state):
+    return check_relevance(candidate, candidate.get(META_KEY) or {})
+
+
 def _stage_batch_dedup(candidate, state):
     seen = state.setdefault('seen_ids', set())
     if candidate['id'] in seen:
@@ -63,6 +69,7 @@ def _stage_batch_dedup(candidate, state):
 STAGES = (
     ('titles', _stage_titles),
     ('normalize', _stage_normalize),
+    ('relevance', _stage_relevance),
     ('batch_dedup', _stage_batch_dedup),
 )
 
