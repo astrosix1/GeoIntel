@@ -80,6 +80,7 @@ class Crisis(Base):
     # Source tracking
     source = Column(String(100))  # ACLED, NEWS_API, MANUAL, etc
     source_id = Column(String(100))  # ID in external system
+    source_url = Column(String(500))  # Real link to the original source article/record, when known
 
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)  # Human-verified
@@ -110,6 +111,7 @@ class Crisis(Base):
                 'information': self.information_score,
             },
             'source': self.source,
+            'source_url': self.source_url,
             'is_verified': self.is_verified,
         }
 

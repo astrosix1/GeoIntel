@@ -4,6 +4,7 @@ Data source connectors for real-world geopolitical data
 import requests
 import os
 import re
+import hashlib
 from datetime import datetime, timedelta
 from collections import defaultdict
 from models import Crisis, News, Actor, Relationship, EconomicData, CrisisSnapshot, Session
@@ -203,6 +204,30 @@ class ACLEDConnector:
             return ACLEDConnector._get_sample_crises()
 
     @staticmethod
+    def _build_title(event, country):
+        """Real, human-readable title from ACLED's own real, well-documented
+        event fields (actor1/actor2/event_type — the same fields already
+        trusted elsewhere in _parse_event for stakeholders/crisis_type, not
+        newly assumed here). Was event.get('event_id_cnty', 'Unknown
+        Event') — a real field, but a code/id string ("ETH12345"-style),
+        not a headline. Note: this app has had no live ACLED credentials
+        configured all session (real access requires a Research-tier
+        license — see the connector's own module docstring), so this
+        couldn't be verified against a real live ACLED response the way
+        GDELT's equivalent fix was; actor1/event_type/country are
+        real, stable, public ACLED schema fields already read successfully
+        elsewhere in this function, not a guess, but revisit this once
+        real credentials make live verification possible."""
+        actor1 = (event.get('actor1') or '').strip()
+        actor2 = (event.get('actor2') or '').strip()
+        event_type = (event.get('event_type') or 'Event').strip()
+        if actor1 and actor2:
+            return f"{event_type}: {actor1} vs {actor2}"
+        if actor1:
+            return f"{event_type}: {actor1} in {country}"
+        return f"{event_type} in {country}"
+
+    @staticmethod
     def _parse_event(event):
         """Convert ACLED event to Crisis object"""
         try:
@@ -230,12 +255,13 @@ class ACLEDConnector:
                 event.get('notes'),
             ]))
             stakeholders = NewsBasedCrisisDetector._find_stakeholders(actor_text)
+            country = event.get('country', 'Unknown')
 
             return {
                 'id': f"acled_{event.get('data_id')}",
                 'type': crisis_type,
-                'title': event.get('event_id_cnty', 'Unknown Event'),
-                'country': event.get('country', 'Unknown'),
+                'title': ACLEDConnector._build_title(event, country),
+                'country': country,
                 'latitude': float(event.get('latitude', 0)),
                 'longitude': float(event.get('longitude', 0)),
                 'severity': severity,
@@ -1004,8 +1030,9 @@ class NewsBasedCrisisDetector:
 
     # Lazily-built, cached (pattern, city_name) list for LOCATION_MAP —
     # compiled once (not per-article) since this runs against every
-    # article in every sync. See _find_earliest_city for why word-boundary
-    # regex + earliest-position matching replaced a plain substring check.
+    # article in every sync. See _find_most_mentioned_city for why
+    # word-boundary regex + mention-frequency matching replaced a plain
+    # substring/first-match check.
     _location_patterns = None
 
     @staticmethod
@@ -1018,22 +1045,32 @@ class NewsBasedCrisisDetector:
         return NewsBasedCrisisDetector._location_patterns
 
     @staticmethod
-    def _find_earliest_city(text):
+    def _find_most_mentioned_city(text):
         """
-        Return the LOCATION_MAP city name that appears earliest in `text`,
-        or None. Word-boundary matched (not a plain substring check) so a
-        short city name can't match inside an unrelated longer word, and
-        picks whichever mentioned city occurs FIRST in the text rather than
-        whichever happens to be defined first in LOCATION_MAP — dict-order
-        matching was arbitrary and let an unrelated city anywhere in the
-        article outrank the article's actual subject.
+        Return the LOCATION_MAP city mentioned most often in `text`, or
+        None (ties broken by earliest position). Word-boundary matched (not
+        a plain substring check) so a short city name can't match inside an
+        unrelated longer word.
+
+        Was "first city mentioned wins" — real, confirmed bug: a headline
+        like "Washington warns Beijing over Taiwan Strait deployment" pinned
+        in Washington (mentioned first) even though the event was about
+        Taiwan. A story is usually ABOUT the place it references repeatedly,
+        not a place named once in passing, so frequency is a real (if
+        still imperfect) relevance signal a plain first-match can't give —
+        the AI-extraction path (_extract_incident_location) already does
+        real relevance weighting when ANTHROPIC_API_KEY is set; this is
+        the fallback used when it isn't.
         """
-        best = None  # (position, city_name)
+        counts = {}  # city_name -> (mention_count, earliest_position)
         for pattern, city_name in NewsBasedCrisisDetector._get_location_patterns():
-            match = pattern.search(text)
-            if match and (best is None or match.start() < best[0]):
-                best = (match.start(), city_name)
-        return best[1] if best else None
+            matches = list(pattern.finditer(text))
+            if matches:
+                counts[city_name] = (len(matches), matches[0].start())
+        if not counts:
+            return None
+        best_city, _ = min(counts.items(), key=lambda kv: (-kv[1][0], kv[1][1]))
+        return best_city
 
     # Lazily-built, cached (pattern, actor_id) list from the real Actor
     # roster — rebuilt once per process, same reasoning as
@@ -1059,7 +1096,7 @@ class NewsBasedCrisisDetector:
     def _find_stakeholders(text):
         """
         Real actor ids whose full name (from the curated Actor roster)
-        appears in `text`, word-boundary matched like _find_earliest_city.
+        appears in `text`, word-boundary matched like _find_most_mentioned_city.
         Returns [] when nothing matches confidently — Crisis.stakeholders
         had zero writers before this, so any populated value here must be
         a real, traceable match, never a guessed/default actor list.
@@ -1212,8 +1249,8 @@ class NewsBasedCrisisDetector:
                 # title+description text if the title alone names no known
                 # city.
                 matched_city = (
-                    NewsBasedCrisisDetector._find_earliest_city(title.lower())
-                    or NewsBasedCrisisDetector._find_earliest_city(text_lower)
+                    NewsBasedCrisisDetector._find_most_mentioned_city(title.lower())
+                    or NewsBasedCrisisDetector._find_most_mentioned_city(text_lower)
                 )
                 if matched_city:
                     coords = NewsBasedCrisisDetector.LOCATION_MAP[matched_city]
@@ -1236,22 +1273,47 @@ class NewsBasedCrisisDetector:
                 'crisis': 60, 'tension': 40,
             }
 
-            severity = 50  # Base severity
-            for keyword, weight in severity_keywords.items():
-                if keyword in text_lower:
-                    severity = max(severity, weight)
+            # Average of every matched keyword's weight, not the max of a
+            # single one — a lone incidental match (e.g. "war" inside
+            # "trade war") used to unilaterally justify severity 80
+            # regardless of context; a single match is now capped at a
+            # moderate ceiling, and only reaches a matched keyword's full
+            # weight once multiple distinct crisis-relevant terms actually
+            # co-occur (real escalation signal, not one scary word).
+            matched_weights = [w for kw, w in severity_keywords.items() if kw in text_lower]
+            if not matched_weights:
+                severity = 50  # Base severity
+            else:
+                avg_weight = round(sum(matched_weights) / len(matched_weights))
+                severity = avg_weight if len(matched_weights) >= 2 else min(60, avg_weight)
 
-            # Create unique ID
-            crisis_id = f"news_{source.lower().replace(' ', '_')}_{published[:10]}"
+            # Create unique ID — includes a short hash of the real article
+            # URL, not just (source, date). Confirmed real bug: the old
+            # scheme (source+date only) meant any two distinct qualifying
+            # stories from the same outlet on the same day collided on the
+            # same id, so _upsert_crisis()'s update-if-exists path silently
+            # overwrote the first story with the second — real data loss,
+            # not just duplication.
+            url_hash = hashlib.sha1(url.encode('utf-8')).hexdigest()[:10] if url else 'nourl'
+            crisis_id = f"news_{source.lower().replace(' ', '_')}_{published[:10]}_{url_hash}"
 
             # Real actor ids mentioned by name in the article — [] when
             # nothing matches, never a guessed default (see _find_stakeholders).
             stakeholders = NewsBasedCrisisDetector._find_stakeholders(title + ' ' + description)
 
+            # Real title, source-name suffix stripped, or None when it's
+            # unusable (date-only/archive-page title) — see
+            # _clean_article_title. Applied only to the stored title, not
+            # to text_lower above, so relevance/location matching against
+            # the raw text is unaffected.
+            clean_title = _clean_article_title(title, source_name=source)
+            if clean_title is None:
+                return None
+
             return {
                 'id': crisis_id,
                 'type': crisis_type,
-                'title': title[:200],
+                'title': clean_title[:200],
                 'country': country,   # actual country (e.g. "Iran")
                 'latitude': lat,      # exact city lat
                 'longitude': lon,     # exact city lon
@@ -1376,6 +1438,225 @@ GDELT_TYPE_MAP = {
     '20': 'conflict',      # USE UNCONVENTIONAL MASS VIOLENCE
 }
 
+# Real CAMEO root-verb phrasing (the standard, published CAMEO taxonomy —
+# not invented), used to build a more specific auto-title than the old
+# "{actor1} — {crisis_type} event in {country}" pattern — e.g. "Russia
+# fights Ukraine" instead of "UNITED STATES — conflict event in Israel".
+# {a2} is filled with either the real Actor2Name or, when GDELT didn't
+# resolve one (common for PROTEST-type events with no clear counterparty),
+# the country name — see GDELTConnector._build_title.
+GDELT_EVENT_VERB = {
+    '10': 'demands action from {a2}',
+    '11': 'criticizes {a2}',
+    '12': 'rejects {a2}',
+    '13': 'threatens {a2}',
+    '14': 'protests against {a2}',
+    '15': 'shows military force near {a2}',
+    '16': 'reduces relations with {a2}',
+    '17': 'pressures {a2}',
+    '18': 'attacks {a2}',
+    '19': 'fights {a2}',
+    '20': 'uses mass violence against {a2}',
+}
+
+
+# URL substrings that reliably signal content outside this tool's purpose
+# (real-world geopolitical crises) — GDELT's automated CAMEO extraction
+# regularly misclassifies entertainment/sports/celebrity writing as
+# conflict, since that kind of prose is full of words like "attack",
+# "battle", and "clash" used non-literally (a concert review's "blistering
+# assault of guitar riffs", a sports recap's "battle for the title").
+# Confirmed directly against this app's live data before picking this list
+# — e.g. a Deep Purple album/tour announcement (URL had no "/music/" path
+# segment, just these slug words) generated 74 separate fabricated
+# "country X fights country Y" crisis records, one for seemingly every
+# pair of countries on the tour's stop list; a celebrity gossip URL
+# generated 16 more. Path segments are the safe, unambiguous signal (a
+# real armed-conflict story is never filed under an outlet's /celebrity/
+# or /entertainment/ section); the handful of added slug words come
+# directly from the Deep Purple case and are similarly safe — none of them
+# plausibly appear in a real conflict/crisis headline.
+GDELT_OFFTOPIC_URL_SIGNALS = (
+    '/entertainment/', '/celebrity/', '/tvshowbiz/', '/showbiz/', '/gossip/',
+    '/music/', '/movies/', '/film/', '/gaming/', '/sports/', '/sport/',
+    '/lifestyle/', '/arts-and-entertainment/',
+    'album', 'box-set', 'world-tour', 'setlist',
+    # Added from real, confirmed-live false positives (not guessed): a
+    # wrestlezone.com pro-wrestling story and a hindustantimes.com
+    # /astrology/horoscope/ page both cleared every existing gate and
+    # became live Crisis rows — 'wrestl' and 'astrology'/'horoscope'
+    # weren't covered by any signal above.
+    'astrology', 'horoscope', 'wrestl',
+)
+
+# Local crime-blotter stories ("woman charged in bus crash," "seven
+# arrested on drug charges") aren't geopolitical crises either, but —
+# unlike the signals above — this one's genuinely ambiguous: the same
+# "/crime/" path or "arrested"/"indicted" wording could just as easily be
+# a real war-crimes or state-violence story this tool should keep. Per
+# explicit instruction: log a real, visible flag when one of these matches
+# (searchable in the sync logs) rather than silently rejecting the row —
+# a deliberately softer, reversible signal, not a filter.
+GDELT_POSSIBLY_OFFTOPIC_SIGNALS = (
+    '/crime/', 'arrested', 'indicted', 'mugshot', 'sentenced-to',
+    'charged-with-murder', 'charged-with-manslaughter',
+)
+
+# GDELT sometimes explodes ONE real article into dozens of crisis rows —
+# one per permutation of the countries/entities it mentions — rather than
+# one row per genuinely distinct real event (confirmed directly: a single
+# non-political article produced 74 rows, each a different "country X
+# fights country Y" pairing invented from a tour itinerary). A real,
+# on-topic story covering an actual multi-country situation (a regional
+# conflict spilling across several neighbors) can legitimately produce
+# several real distinct rows from one article too, so this caps rather
+# than collapses to 1 — high enough to keep real multi-country coverage,
+# low enough that one misfired article can't flood the map with dozens of
+# near-duplicate pins citing the same single source. Lowered from 6 to 2
+# after confirming live (4,123 adjacent-GlobalEventID pairs sharing an
+# identical source_url) that 6 near-duplicate pins per single article was
+# still real, visible clutter — a real multi-country story only rarely
+# needs more than 2 distinct rows to be represented.
+GDELT_MAX_CRISES_PER_SOURCE_URL = 2
+
+# A second, broader fan-out cap alongside the one above: the SAME real
+# event is very often covered by many different outlets (different
+# source_urls, so the cap above doesn't help) and GDELT frequently resolves
+# unrelated real events to the same coarse country-centroid/capital point.
+# Confirmed live: one real event (a UN General Assembly speech) produced
+# 574 crisis rows across 217 distinct source_urls in a single day; 202
+# separate rows shared the exact same Washington DC coordinate on one day.
+# Grouping by (country, calendar day, coordinate rounded to 1 decimal
+# degree — roughly 11km, coarse enough to catch a shared country-centroid/
+# capital point without merging two real cities in the same country) and
+# keeping only the highest-severity handful per cluster directly targets
+# both patterns — the same "cap fan-out, keep the highest-severity rows"
+# shape as the per-URL cap above, just a coarser grouping key.
+GDELT_MAX_CRISES_PER_EVENT_CLUSTER = 5
+
+# GDELT's QuadClass/CAMEO-code gate has no text-relevance check at all (unlike
+# NewsBasedCrisisDetector.CRISIS_KEYWORDS for the NewsAPI path) — a CAMEO
+# classifier mis-tags ordinary commercial disputes as conflict language just
+# as readily as real ones (confirmed live: a Qualcomm/Apple patent-licensing
+# story was CAMEO-coded as coercion between "COMPANIES" and "CHINA"). Fixed
+# by using real, already-fetched-for-nothing data GDELT provides in every
+# row: Actor1Type1Code/Actor2Type1Code (CAMEO/PLOVER actor-role codes).
+# Verified directly against a live GDELT sample (335 real QuadClass 3/4
+# rows) rather than assumed: a real state actor referenced by its own
+# name/country code (e.g. "CANADA", "TURKEY") has NO type code populated at
+# all — type codes are for role categories layered on top of or instead of
+# a bare state actor — so a positive allow-list of GOV/MIL/etc. would have
+# rejected the majority of genuinely real state-vs-state rows (400 of 670
+# actor-type slots in the sample were blank). The one type code that
+# reliably marks a NON-geopolitical actor regardless of what's on the other
+# side is BUS/MNC (a business/corporate entity) — confirmed responsible for
+# ~9% of the sample (29/335 rows) including every business-dispute example
+# found, with zero observed false positives against real government/police/
+# military/rebel-coded rows.
+GDELT_NONSTATE_ACTOR_TYPES = {'BUS', 'MNC'}
+
+# A second, independent actor-quality signal: generic role-nouns used as
+# the actor *name* itself (not caught by GDELT_NONSTATE_ACTOR_TYPES above,
+# since the actor *type* field is blank for these rows — only the name
+# string is generic). Verified against a live 254-row QuadClass-3/4 sample:
+# every one of 8 rows naming "Company"/"Companies"/"Business" as an actor
+# was real noise (a home-security product review, a seafood plant closure,
+# a community business gala, a utility regulatory filing) — zero real
+# geopolitical false positives.
+#
+# Extended in Phase 22's follow-up investigation after live sampling ~20
+# candidate generic-noun "actors" (11 real examples each, via each row's
+# actual source_url): 'attorney'/'prison'/'judge'/'criminal' were the only
+# four with ZERO real geopolitical hits across all samples — exclusively
+# routine local crime/legal-process coverage (misdemeanor prosecutions,
+# court sentencings, custody disputes, fraud arraignments; several
+# "criminal" rows weren't even news articles, just court-document-database
+# or tag-aggregator pages). Every other candidate sampled (police,
+# government, school, authorities, residents, media, community, congress,
+# administration, military, governor, voter, student, gang, worker,
+# university) turned up at least one confirmed real, sometimes significant
+# geopolitical story in the same sampling (an Ebola outbreak in Congo, a
+# Trump-Xi meeting, Israel-Qatar tension, Taiwan-Tuvalu diplomacy, Haiti
+# gang violence/OAS deployment, India worker abductions, a Colombia
+# health-worker-violence story) — those are deliberately left untouched,
+# the same "don't over-reach past what's actually confirmed noisy" lesson
+# already learned from the reverted 'AGR' actor-TYPE exclusion (a 2-of-3
+# false-positive rate against real news) and from keeping
+# "police"/"military"/"authorities"/"residents" out of this set originally.
+GDELT_GENERIC_ACTOR_NAMES = {
+    'company', 'companies', 'business', 'corporation',
+    'attorney', 'prison', 'judge', 'criminal',
+}
+
+# The self-referential check above (actor1_name_raw == actor2_name_raw)
+# only catches an EXACT string match — it misses a self-referential pair
+# where GDELT extracted the demonym/adjectival form for one side and the
+# plain country name for the other (e.g. "Philippine criticizes
+# Philippines", "Japanese fights Japan" at severity 100). Confirmed live
+# via a full-DB scan: real, repeated pairs including 'Africa'/'South
+# Africa' (n=35 — not a demonym but a confirmed GDELT truncation quirk;
+# Actor2Name in every one of these rows is literally "South Africa", so
+# it's genuinely self-referential, just via truncation rather than an
+# adjectival form). Deliberately a small, curated, exact-match map, NOT a
+# general substring-containment rule — a substring rule would have real
+# false-positive risk this session already learned to avoid (e.g. "Korea"
+# legitimately appears inside both "North Korea" and "South Korea"
+# without those being self-referential; "Russia" vs "Ukraine" are two
+# real, distinct countries in real conflict, not a demonym pair, even
+# though a naive substring/fuzzy check flagged them during this
+# investigation). Values are lowercase to match _normalize_actor_for_
+# selfref's own lowercasing.
+GDELT_DEMONYM_TO_COUNTRY = {
+    'philippine': 'philippines',
+    'australian': 'australia',
+    'south korean': 'south korea',
+    'north korean': 'north korea',
+    'saudi': 'saudi arabia',
+    'german': 'germany',
+    'nigerian': 'nigeria',
+    'thai': 'thailand',
+    'azerbaijani': 'azerbaijan',
+    'sri lankan': 'sri lanka',
+    'japanese': 'japan',
+    'algerian': 'algeria',
+    'namibian': 'namibia',
+    'malian': 'mali',
+    'taiwanese': 'taiwan',
+    'costa rican': 'costa rica',
+    'kenyan': 'kenya',
+    'nicaraguan': 'nicaragua',
+    'africa': 'south africa',
+}
+
+# A THIRD, independent noise signal, distinct from the two above: a row
+# where GDELT resolved NO Actor1Name at all (not a generic name — no name),
+# combined with a violence-coded CAMEO root. Confirmed live: of 1,110 rows
+# carrying the generic fallback title (see GDELT_GENERIC_FALLBACK_TITLE_
+# PREFIX below, which fires exactly when Actor1Name is blank), the ones
+# under root 19 (FIGHT) averaged severity 99.7 (366 rows) and root 18
+# (ASSAULT) averaged 92.6 (31 rows) — the single largest contributor to
+# the severity-90-100 band. A live 15-row sample of root-19 blank-actor
+# rows found 13 confirmed non-geopolitical (a school lockdown, a bus
+# crash, a commercial building fire, infant deaths, a law-enforcement
+# anniversary piece) — a real armed-conflict/mass-violence event
+# significant enough to be geopolitical almost always has an identifiable
+# state or organized-group actor; "fight"/"assault"-coded text with NO
+# actor GDELT could name at all is a strong (confirmed ~87% in-sample)
+# signal of local crime/accident content GDELT's vocabulary-based CAMEO
+# classifier miscoded, not a real gap in the two filters above (which only
+# ever look at NAMED actors). Roots 10-17 (diplomatic/verbal, much lower
+# severity) are deliberately excluded — not the severity complaint's
+# driver, and this exact combination wasn't verified for those roots.
+GDELT_BLANK_ACTOR_VIOLENT_ROOTS = {'18', '19', '20'}
+
+# The exact title _build_title produces when Actor1Name is blank — used
+# both to gate GDELT_BLANK_ACTOR_VIOLENT_ROOTS's retroactive counterpart
+# and to exclude these rows from the syndication fan-out cap below (they
+# share this one uninformative title across genuinely distinct real
+# events/locations — confirmed live: 888 distinct source_urls behind it —
+# so capping by shared title would wrongly delete real, different events).
+GDELT_GENERIC_FALLBACK_TITLE_PREFIX = "Conflict-related event in "
+
 
 class GDELTConnector:
     """
@@ -1396,7 +1677,9 @@ class GDELTConnector:
     _COL_NUM_SOURCES = 32
     _COL_NUM_ARTICLES = 33
     _COL_ACTOR1_NAME = 6
+    _COL_ACTOR1_TYPE1 = 12
     _COL_ACTOR2_NAME = 16
+    _COL_ACTOR2_TYPE1 = 22
     _COL_ACTION_GEO_FULLNAME = 52
     _COL_ACTION_GEO_LAT = 56
     _COL_ACTION_GEO_LONG = 57
@@ -1449,6 +1732,24 @@ class GDELTConnector:
             return []
 
     @staticmethod
+    def _build_title(actor1_name, actor2_name, event_root, country):
+        """A more specific auto-title than a generic '{type} event in
+        {country}' — built from real fields already in the row: both
+        actors (when GDELT resolved them) and the real CAMEO root-verb
+        phrasing (GDELT_EVENT_VERB). Still not a real headline (GDELT's
+        raw export has no article text/title at all, for copyright
+        reasons) — see GDELTConnector.fetch_real_headline for that."""
+        actor1 = actor1_name.strip().title() if actor1_name.strip() else None
+        actor2 = actor2_name.strip().title() if actor2_name.strip() else None
+        verb_template = GDELT_EVENT_VERB.get(event_root)
+
+        if actor1 and verb_template:
+            return f"{actor1} {verb_template.format(a2=actor2 or country)}"
+        if actor1:
+            return f"{actor1} — conflict-related event in {country}"
+        return f"Conflict-related event in {country}"
+
+    @staticmethod
     def _country_from_geo_fullname(full_name):
         """GDELT's ActionGeo_CountryCode is FIPS 10-4, not ISO — this app's
         Crisis.country convention is a real country NAME string (matching
@@ -1459,10 +1760,25 @@ class GDELTConnector:
         confirmed against real sample rows during development, so this
         parses it directly rather than maintaining a ~200-entry FIPS
         lookup table."""
+        country, _segments = GDELTConnector._parse_geo_fullname(full_name)
+        return country
+
+    @staticmethod
+    def _parse_geo_fullname(full_name):
+        """Like _country_from_geo_fullname, but also returns the real
+        segment count — GDELT's own ActionGeo_Type precision is encoded in
+        how many comma segments ActionGeo_FullName has (1 = country-level
+        only, e.g. "Iran"; 2 = admin1/state-level, e.g. "Texas, United
+        States"; 3 = real city-level, e.g. "Kyiv, Kyiv, Ukraine") — used to
+        derive a real, honest location_confidence instead of the flat
+        constant every GDELT crisis used to get regardless of whether
+        GDELT actually resolved a precise incident site or just defaulted
+        to a country/capital point (a real, code-documented GDELT
+        limitation — see get_crisis_real_headline's docstring in app.py)."""
         if not full_name:
-            return None
+            return None, 0
         parts = [p.strip() for p in full_name.split(',') if p.strip()]
-        return parts[-1] if parts else None
+        return (parts[-1] if parts else None), len(parts)
 
     @staticmethod
     def _parse_row(fields):
@@ -1472,13 +1788,64 @@ class GDELTConnector:
         if len(fields) < GDELTConnector._MIN_COLUMNS:
             return None
 
+        # Off-topic check first — cheapest possible reject, and no point
+        # computing type/geo/severity for a row that's getting discarded
+        # anyway (see GDELT_OFFTOPIC_URL_SIGNALS for why this exists).
+        source_url_lower = (fields[GDELTConnector._COL_SOURCE_URL] or '').lower()
+        if any(signal in source_url_lower for signal in GDELT_OFFTOPIC_URL_SIGNALS):
+            return None
+
+        # Ambiguous case — flagged, not filtered (see
+        # GDELT_POSSIBLY_OFFTOPIC_SIGNALS docstring). The row still gets
+        # parsed and shown normally; this only leaves a real, greppable
+        # trail in case someone wants to review how much local-crime noise
+        # is coming through.
+        if any(signal in source_url_lower for signal in GDELT_POSSIBLY_OFFTOPIC_SIGNALS):
+            logger.info(f"GDELT possibly-offtopic (not filtered): {fields[GDELTConnector._COL_SOURCE_URL]}")
+
         quad_class = fields[GDELTConnector._COL_QUAD_CLASS]
         if quad_class not in ('3', '4'):  # keep only verbal + material conflict
+            return None
+
+        # Reject when either actor is a business/corporate entity — see
+        # GDELT_NONSTATE_ACTOR_TYPES for why this (not a GOV/MIL allow-list)
+        # is the real, data-verified signal for "not actually geopolitical".
+        actor1_type = fields[GDELTConnector._COL_ACTOR1_TYPE1].strip()
+        actor2_type = fields[GDELTConnector._COL_ACTOR2_TYPE1].strip()
+        if actor1_type in GDELT_NONSTATE_ACTOR_TYPES or actor2_type in GDELT_NONSTATE_ACTOR_TYPES:
+            return None
+
+        actor1_name_raw = fields[GDELTConnector._COL_ACTOR1_NAME].strip()
+        actor2_name_raw = fields[GDELTConnector._COL_ACTOR2_NAME].strip()
+
+        # Same generic-corporate signal as above, applied to the actor NAME
+        # string — see GDELT_GENERIC_ACTOR_NAMES for why type-only wasn't enough.
+        if actor1_name_raw.lower() in GDELT_GENERIC_ACTOR_NAMES or actor2_name_raw.lower() in GDELT_GENERIC_ACTOR_NAMES:
+            return None
+
+        # A self-referential pair ("United States criticizes United
+        # States") is never a real geopolitical relationship between two
+        # parties — confirmed live (7/7 real examples: a drug-policy
+        # statement, a grand-jury indictment, talk-radio commentary, a
+        # theft-conspiracy sentencing, a university case, GOP-primary
+        # commentary — all purely domestic noise where GDELT's actor
+        # resolver defaulted to the same entity on both sides).
+        if actor1_name_raw and GDELTConnector._normalize_actor_for_selfref(actor1_name_raw) == \
+                GDELTConnector._normalize_actor_for_selfref(actor2_name_raw):
             return None
 
         event_root = fields[GDELTConnector._COL_EVENT_CODE][:2]
         crisis_type = GDELT_TYPE_MAP.get(event_root)
         if crisis_type is None:
+            return None
+
+        # See GDELT_BLANK_ACTOR_VIOLENT_ROOTS for the live-data
+        # verification behind this: a blank Actor1Name combined
+        # specifically with a violence-coded root is confirmed dominated
+        # by non-geopolitical noise (local crime/accident stories using
+        # violent vocabulary), unlike the same blank-actor case under a
+        # diplomatic/verbal root, which is left untouched.
+        if not actor1_name_raw and event_root in GDELT_BLANK_ACTOR_VIOLENT_ROOTS:
             return None
 
         try:
@@ -1489,11 +1856,16 @@ class GDELTConnector:
         if lat == 0 and lon == 0:  # GDELT's placeholder for "no real geo resolved"
             return None
 
-        country = GDELTConnector._country_from_geo_fullname(
+        country, geo_segments = GDELTConnector._parse_geo_fullname(
             fields[GDELTConnector._COL_ACTION_GEO_FULLNAME]
         )
         if not country:
             return None
+        # Real precision signal, not a flat guess — see _parse_geo_fullname.
+        # 1 segment (country-only) is GDELT's fallback for events with no
+        # resolvable physical site (a "threat" or "demand" has no address);
+        # 3 segments is a genuine city-level resolution.
+        location_confidence = {1: 55, 2: 70}.get(geo_segments, 85)
 
         # Severity — real, not fabricated: GoldsteinScale is GDELT's own
         # published -10 (maximally conflictual) .. +10 (maximally
@@ -1522,29 +1894,241 @@ class GDELTConnector:
         except ValueError:
             date_start = datetime.utcnow()
 
-        actor_text = fields[GDELTConnector._COL_ACTOR1_NAME] + ' ' + fields[GDELTConnector._COL_ACTOR2_NAME]
+        actor_text = actor1_name_raw + ' ' + actor2_name_raw
         stakeholders = NewsBasedCrisisDetector._find_stakeholders(actor_text)
 
         source_url = fields[GDELTConnector._COL_SOURCE_URL]
+        title = GDELTConnector._build_title(
+            actor1_name_raw,
+            actor2_name_raw,
+            event_root,
+            country,
+        )
 
         return {
             'id': f"gdelt_{global_event_id}",
             'type': crisis_type,
-            'title': f"{fields[GDELTConnector._COL_ACTOR1_NAME] or 'Unknown actor'} — {crisis_type} event in {country}",
+            'title': title,
             'country': country,
             'latitude': lat,
             'longitude': lon,
             'severity': severity,
             'confidence': confidence,
-            'location_confidence': 85,  # GDELT's own geocoding, not text inference
+            'location_confidence': location_confidence,
             'date_start': date_start,
             'analysis': f"GDELT-monitored event (CAMEO {fields[GDELTConnector._COL_EVENT_CODE]}), reported via {source_url}",
             'impact': f"{num_sources} source(s) reporting",
             'source': 'GDELT',
             'source_id': global_event_id,
+            'source_url': source_url,
             'is_verified': False,
             'stakeholders': ','.join(stakeholders),
         }
+
+    @staticmethod
+    def _cap_fanout_per_source_url(crises):
+        """Keep at most GDELT_MAX_CRISES_PER_SOURCE_URL crises citing the
+        same source_url, favoring the ones with the most independent
+        corroborating sources — see the constant's own docstring for why
+        this exists (GDELT sometimes explodes one article into dozens of
+        permutation-based rows). Rows with no source_url pass through
+        untouched.
+
+        Tie-break is `confidence` (derived from real NumSources), NOT
+        `severity` — confirmed live this actually matters: sorting by
+        severity instead systematically keeps whichever actor-pair
+        permutation happened to get the most inflated Goldstein-derived
+        score and discards the rest, which measurably INCREASED the
+        share of severity-90-100 rows in the surviving dataset (30.3% ->
+        39.2% in a real live sample) — the opposite of this phase's whole
+        point. `confidence` carries no such bias toward one particular
+        permutation's severity."""
+        by_url = defaultdict(list)
+        no_url = []
+        for c in crises:
+            (by_url[c['source_url']] if c.get('source_url') else no_url).append(c)
+
+        kept = list(no_url)
+        dropped = 0
+        for url, group in by_url.items():
+            if len(group) <= GDELT_MAX_CRISES_PER_SOURCE_URL:
+                kept.extend(group)
+                continue
+            group.sort(key=lambda c: c['confidence'], reverse=True)
+            kept.extend(group[:GDELT_MAX_CRISES_PER_SOURCE_URL])
+            dropped += len(group) - GDELT_MAX_CRISES_PER_SOURCE_URL
+
+        if dropped:
+            logger.info(f"Capped GDELT fan-out: dropped {dropped} excess crises sharing an over-represented source_url")
+        return kept
+
+    @staticmethod
+    def _cap_fanout_per_event_cluster(crises):
+        """Keep at most GDELT_MAX_CRISES_PER_EVENT_CLUSTER crises per
+        (country, day, ~11km-rounded coordinate) cluster, favoring the ones
+        with the most independent corroborating sources — see the
+        constant's own docstring for why this exists (many outlets
+        covering one real event, or GDELT resolving unrelated events to
+        the same coarse point). Rows missing country/date/lat/lon pass
+        through untouched rather than being dropped for a data gap
+        unrelated to duplication.
+
+        Tie-break is `confidence`, not `severity` — same reasoning and the
+        same confirmed-live measurement as _cap_fanout_per_source_url
+        above (sorting by severity here compounded that function's own
+        bias further, 39.2% -> 44.5% in the same real sample)."""
+        by_cluster = defaultdict(list)
+        no_key = []
+        for c in crises:
+            date_start = c.get('date_start')
+            lat, lon = c.get('latitude'), c.get('longitude')
+            country = c.get('country')
+            if not (country and date_start and lat is not None and lon is not None):
+                no_key.append(c)
+                continue
+            key = (country, date_start.date(), round(lat, 1), round(lon, 1))
+            by_cluster[key].append(c)
+
+        kept = list(no_key)
+        dropped = 0
+        for key, group in by_cluster.items():
+            if len(group) <= GDELT_MAX_CRISES_PER_EVENT_CLUSTER:
+                kept.extend(group)
+                continue
+            group.sort(key=lambda c: c.get('confidence', 0), reverse=True)
+            kept.extend(group[:GDELT_MAX_CRISES_PER_EVENT_CLUSTER])
+            dropped += len(group) - GDELT_MAX_CRISES_PER_EVENT_CLUSTER
+
+        if dropped:
+            logger.info(f"Capped GDELT fan-out: dropped {dropped} excess crises clustered on the same real-world event/point")
+        return kept
+
+    @staticmethod
+    def _cap_fanout_per_title_day(crises):
+        """Keep at most GDELT_MAX_CRISES_PER_EVENT_CLUSTER crises sharing
+        the same (title, day) — catches syndicated content republished
+        verbatim across many different regional-outlet domains, which
+        evades both caps above (confirmed live: one Australian PM/AI story
+        republished across 21+ distinct *.com.au regional-newspaper
+        domains, each its own source_url and often its own nearby
+        coordinate). Explicitly skips the generic blank-actor fallback
+        title (GDELT_GENERIC_FALLBACK_TITLE_PREFIX) — confirmed live that
+        rows sharing that one uninformative title are genuinely distinct
+        real events (888 distinct source_urls behind it), not syndication;
+        capping them would delete real, different data.
+
+        Tie-break is `confidence`, matching the two caps above."""
+        by_title_day = defaultdict(list)
+        kept = []
+        for c in crises:
+            title = c.get('title') or ''
+            date_start = c.get('date_start')
+            if title.startswith(GDELT_GENERIC_FALLBACK_TITLE_PREFIX) or not date_start:
+                kept.append(c)
+                continue
+            by_title_day[(title, date_start.date())].append(c)
+
+        dropped = 0
+        for key, group in by_title_day.items():
+            if len(group) <= GDELT_MAX_CRISES_PER_EVENT_CLUSTER:
+                kept.extend(group)
+                continue
+            group.sort(key=lambda c: c.get('confidence', 0), reverse=True)
+            kept.extend(group[:GDELT_MAX_CRISES_PER_EVENT_CLUSTER])
+            dropped += len(group) - GDELT_MAX_CRISES_PER_EVENT_CLUSTER
+
+        if dropped:
+            logger.info(f"Capped GDELT fan-out: dropped {dropped} excess crises sharing a syndicated (title, day) pair")
+        return kept
+
+    _CAMEO_CODE_RE = re.compile(r'CAMEO (\d+)')
+
+    @staticmethod
+    def _extract_event_root_from_analysis(analysis_text):
+        """Retroactive recovery of the 2-digit CAMEO event-root code from
+        the `analysis` string _parse_row stores on every crisis it builds
+        (f"GDELT-monitored event (CAMEO {code}), ..."), for cleaning up
+        existing rows that predate a filter needing the root — the raw
+        TSV fields aren't kept once a row becomes a stored Crisis."""
+        if not analysis_text:
+            return None
+        m = GDELTConnector._CAMEO_CODE_RE.search(analysis_text)
+        if not m:
+            return None
+        return m.group(1)[:2]
+
+    @staticmethod
+    def _is_blank_actor_violent_root(title, analysis_text):
+        """Retroactive counterpart to the GDELT_BLANK_ACTOR_VIOLENT_ROOTS
+        ingestion check above, for rows that predate it."""
+        if not (title or '').startswith(GDELT_GENERIC_FALLBACK_TITLE_PREFIX):
+            return False
+        event_root = GDELTConnector._extract_event_root_from_analysis(analysis_text)
+        return event_root in GDELT_BLANK_ACTOR_VIOLENT_ROOTS
+
+    @staticmethod
+    def _normalize_actor_for_selfref(name):
+        """Normalizes a demonym/adjectival actor form (or GDELT's own
+        'Africa'-for-'South Africa' truncation quirk) to the plain country
+        name it refers to, so a self-referential check catches a pair like
+        "Philippine"/"Philippines" that an exact string match misses — see
+        GDELT_DEMONYM_TO_COUNTRY for the live-verified curated list this
+        draws from (deliberately not a general substring/fuzzy rule)."""
+        if not name:
+            return ''
+        key = name.strip().lower()
+        return GDELT_DEMONYM_TO_COUNTRY.get(key, key)
+
+    @staticmethod
+    def _is_self_referential_title(title):
+        """Retroactive detection for existing rows that predate the
+        Actor1Name==Actor2Name ingestion check. Reconstructs the check
+        from the auto-generated title's shape for a self-referential pair
+        ("{X} {verb phrase} {X}") since the raw actor fields aren't kept
+        once a row becomes a stored Crisis — _build_title always puts
+        actor1 first and actor2 (or the country, when actor2 is blank) at
+        the very end of one of GDELT_EVENT_VERB's fixed verb phrases.
+        Both sides are run through _normalize_actor_for_selfref so a
+        demonym-form pair ("Japanese fights Japan") is caught the same
+        way an exact-match pair is.
+
+        Also covers a legacy single-actor title format ("{actor} —
+        conflict event in {country}") no longer produced by the current
+        _build_title (which emits "— conflict-related event in {country}"
+        instead, confirmed live to be unreachable dead code today since
+        GDELT_EVENT_VERB covers every GDELT_TYPE_MAP root) but still
+        present on older rows — self-referential there means the single
+        actor IS the country (confirmed live: "UNITED STATES — conflict
+        event in United States", "CHINA — conflict event in China")."""
+        if not title:
+            return False
+        if ' — conflict event in ' in title:
+            actor, country = title.split(' — conflict event in ', 1)
+            if GDELTConnector._normalize_actor_for_selfref(actor) == \
+                    GDELTConnector._normalize_actor_for_selfref(country):
+                return True
+        for verb_template in GDELT_EVENT_VERB.values():
+            prefix = verb_template.split('{a2}')[0]
+            marker = f' {prefix}'
+            idx = title.find(marker)
+            if idx == -1:
+                continue
+            actor1 = title[:idx].strip()
+            actor2 = title[idx + len(marker):].strip()
+            if actor1 and GDELTConnector._normalize_actor_for_selfref(actor1) == \
+                    GDELTConnector._normalize_actor_for_selfref(actor2):
+                return True
+        return False
+
+    @staticmethod
+    def _starts_with_generic_actor_name(title):
+        """Retroactive counterpart to the GDELT_GENERIC_ACTOR_NAMES
+        ingestion check, applied to the leading actor segment of an
+        existing title (_build_title always puts actor1 first)."""
+        if not title:
+            return False
+        leading = title.split(' ', 1)[0].strip().lower().rstrip('.,')
+        return leading in GDELT_GENERIC_ACTOR_NAMES
 
     @staticmethod
     def fetch_recent_events():
@@ -1567,8 +2151,108 @@ class GDELTConnector:
                     seen_ids.add(crisis['id'])
                     crises.append(crisis)
 
+        crises = GDELTConnector._cap_fanout_per_source_url(crises)
+        crises = GDELTConnector._cap_fanout_per_event_cluster(crises)
+        crises = GDELTConnector._cap_fanout_per_title_day(crises)
+
         logger.info(f"Fetched {len(crises)} conflict-relevant events from GDELT")
         return crises
+
+
+# Real headline text (and, for GDELT crises, a refined pin location) for a
+# crisis whose only data so far is auto-generated/coarse. GDELT's raw event
+# export never includes article text/headlines at all, for copyright
+# reasons, so the only way to get real metadata is to fetch the real
+# SOURCEURL GDELT already gives us and read the page's own <title>/
+# <meta description> tags. Deliberately NOT called during sync (that would
+# mean a live scrape of an arbitrary news site for every one of ~1,300+
+# events per hour) — this is meant to be called lazily, once, the first
+# time a specific crisis is actually opened (see
+# GET /api/crises/<id>/real-headline in app.py), and the caller is
+# expected to cache the result.
+_TITLE_TAG_RE = re.compile(r'<title[^>]*>(.*?)</title>', re.IGNORECASE | re.DOTALL)
+_META_DESC_RE = re.compile(
+    r'<meta\s+(?:[^>]*?\s+)?name=["\']description["\'][^>]*?content=["\'](.*?)["\']',
+    re.IGNORECASE | re.DOTALL,
+)
+
+# A real page's <title> tag, or a news API's own title field, commonly
+# either IS just a date (an archive/listicle page) or has the outlet's own
+# name appended (" - Source Name" / " | Source Name") — neither is
+# something either real source normally cleans up before handing it back,
+# and this app previously passed both straight through to the UI
+# unvalidated. Shared by fetch_real_page_metadata() below (the real-
+# headline lazy-fetch path) and NewsBasedCrisisDetector's NewsAPI title
+# assignment — one utility, two call sites.
+_DATE_ONLY_TITLE_RE = re.compile(
+    r'^\s*(?:'
+    r'\d{1,4}[/.\-]\d{1,2}[/.\-]\d{1,4}'
+    r'|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2},?\s+\d{2,4}'
+    r'|\d{1,2}(?:st|nd|rd|th)?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?,?\s+\d{2,4}'
+    r')\s*$',
+    re.IGNORECASE,
+)
+_TITLE_SOURCE_SUFFIX_RE = re.compile(r'\s+[-|–—]\s+([A-Za-z0-9][A-Za-z0-9 .&\'’]{1,40})$')
+
+
+def _clean_article_title(title, source_name=None):
+    """Real title text (a plausible trailing outlet-name suffix stripped),
+    or None when the title is unusable (empty, or purely a date/archive-
+    page title with no real headline content) — the caller is expected to
+    fall back to something else real (GDELT: its own auto-generated title;
+    NewsAPI: skip the article) rather than show a garbage title."""
+    if not title:
+        return None
+    title = title.strip()
+    suffix_match = _TITLE_SOURCE_SUFFIX_RE.search(title)
+    if suffix_match:
+        suffix = suffix_match.group(1).strip()
+        # Strip only when the suffix is a plausible outlet name: matches
+        # the real known source, or — when the source isn't known here —
+        # looks like one (short, no sentence-ending punctuation inside).
+        looks_like_outlet = (
+            (source_name and suffix.lower() == source_name.strip().lower())
+            or (not source_name and len(suffix) <= 40 and not re.search(r'[.!?]', suffix))
+        )
+        if looks_like_outlet:
+            title = title[:suffix_match.start()].strip()
+    if not title or _DATE_ONLY_TITLE_RE.match(title):
+        return None
+    return title
+
+
+def fetch_real_page_metadata(url):
+    """Real {'title', 'description'} for a live web page (either may be
+    None if the page doesn't have one), or None if the fetch fails or the
+    URL is missing/malformed. One HTTP request for both fields — not
+    GDELT-specific, any crisis with a real source_url could use this."""
+    if not url or not url.startswith(('http://', 'https://')):
+        return None
+    try:
+        import html as html_module
+        response = requests.get(
+            url,
+            headers={'User-Agent': 'GeoIntel/1.0 (geopolitical intelligence platform)'},
+            timeout=8,
+        )
+        response.raise_for_status()
+
+        def _clean(raw):
+            text = html_module.unescape(raw).strip()
+            text = re.sub(r'\s+', ' ', text)
+            return text[:300] if text else None
+
+        title_match = _TITLE_TAG_RE.search(response.text)
+        desc_match = _META_DESC_RE.search(response.text)
+        raw_title = _clean(title_match.group(1)) if title_match else None
+        title = _clean_article_title(raw_title)
+        description = _clean(desc_match.group(1)) if desc_match else None
+        if title is None and description is None:
+            return None
+        return {'title': title, 'description': description}
+    except Exception as e:
+        logger.warning(f"Real page metadata fetch failed for '{url}': {e}")
+        return None
 
 
 class DataAggregator:

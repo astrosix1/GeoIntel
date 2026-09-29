@@ -350,6 +350,39 @@ const ROUTES_BY_ID = new Map(ALL_ROUTES.map(r => [r.id, r]));
 let crisisDisplayLimit = 90;  // Show all available crises by default
 let crisisDisplayOffset = 0;
 
+// Phone-viewport tracking for drawPins() — matches app.css's phone-only
+// breakpoint (max-width:600px, list-primary layout). Computed once and
+// updated via listener rather than calling matchMedia() every animation
+// frame. On a phone there's no hover to help pick an individual pin out of
+// a cluster, so the globe there shows only the top-severity subset plus
+// whatever's selected from the list, instead of every pin like
+// tablet/desktop.
+let isPhoneViewport = window.matchMedia('(max-width: 600px)').matches;
+window.matchMedia('(max-width: 600px)').addEventListener('change', e => {
+  isPhoneViewport = e.matches;
+});
+
+// Below this zoom, a genuinely crisis-dense region (dozens of distinct
+// nearby coordinates, each an individually-legitimate location) still
+// renders as a wall of pins even with the gentler CLUSTER_DIST falloff —
+// there's a real ceiling on how many distinct dots read as anything but
+// noise. Auto-engaging the heatmap (density itself becomes the visual)
+// plus showing only the highest-severity individual pins on top gives a
+// legible "what's here and how bad" read without that ceiling. Purely
+// zoom-driven, independent of the manual heatmap button — it's a safety
+// net for dense regions, not something the user has to remember to turn
+// on. Leaves plenty of zoom range above it (max zoom raised to 25 — see
+// the wheel handler) to zoom in past this and see every individual pin
+// once there's screen space for them.
+const LOW_ZOOM_DECLUTTER_ZOOM = 5;
+const LOW_ZOOM_DECLUTTER_TOP_N = 25;
+// How many more individual pins become visible per zoom unit above
+// zoom=1 (see the topN calculation in drawPins) — tuned so the pin count
+// climbs smoothly rather than jumping, and by ~zoom 10 comfortably
+// exceeds any realistic pool size (the 600 hard cap elsewhere), so it
+// naturally stops constraining anything well before max zoom.
+const PIN_REVEAL_GROWTH_RATE = 60;
+
 // City-level coordinates mapping
 const CITY_COORDS = {
   // NORTH AMERICA
@@ -657,7 +690,27 @@ function getRandomCityCoords(country) {
 // Layer toggles
 let showArcs  = false;
 let showHeat  = false;
+let heatForcedOff = false; // explicit user override — see heatBtn's click handler
 let showCasc  = false;
+let showPins  = true;
+
+// 1-second fade in/out for the right-side toggle effects (arcs, heat,
+// cascade, trade/air/rail routes) — each effect's own render code still
+// reads a plain on/off boolean elsewhere (idle-mode snapshotting, .active
+// class styling), so this doesn't replace those; it's an independent,
+// additive layer that turns "on now?" into a smooth 0-1 multiplier by
+// auto-detecting the moment that boolean flips, no change needed at the
+// click-handler call sites. Every draw path multiplies its own alpha by
+// this instead of hard-gating on the raw boolean, and keeps rendering
+// (at a shrinking alpha) through the fade-out instead of vanishing.
+const _toggleFadeState = {};
+function getFadeAlpha(key, isOnNow) {
+  let st = _toggleFadeState[key];
+  if (!st) { st = _toggleFadeState[key] = { on: isOnNow, changedAt: isOnNow ? performance.now() : -Infinity }; }
+  if (st.on !== isOnNow) { st.on = isOnNow; st.changedAt = performance.now(); }
+  const t = Math.min(1, (performance.now() - st.changedAt) / 1000);
+  return isOnNow ? t : 1 - t;
+}
 let flatMap   = false;
 
 // Severity filter (0 = all, 80 = critical only)
@@ -714,6 +767,125 @@ function fitCanvasToDisplay(cvs, context) {
 }
 
 fitCanvasToDisplay(canvas, ctx);
+
+// ── Starfield backdrop ──────────────────────────────────────────────────
+// Purely decorative — faint stars, a few constellation line groupings, and
+// occasional shooting stars behind the globe. Confined to .globe-col
+// (#starsCanvas sits at z-index:-1, beneath the WebGL sphere), not the
+// whole page. Star/constellation positions are stored normalized (0-1) so
+// a resize just rescales the draw, no regeneration needed. Driven from
+// loop() below, independent of drawGlobe()'s flat-map branch — the flat
+// map/Leaflet layers are opaque and simply cover it in that mode.
+const starsCanvas = document.getElementById('starsCanvas');
+const sctx = starsCanvas.getContext('2d');
+let lastStarsWidth = 0, lastStarsHeight = 0;
+
+const STAR_COUNT = 110;
+const stars = Array.from({ length: STAR_COUNT }, () => ({
+  x: Math.random(),
+  y: Math.random(),
+  r: 0.4 + Math.random() * 1.1,
+  baseAlpha: 0.15 + Math.random() * 0.45,
+  phase: Math.random() * Math.PI * 2,
+  speed: 0.4 + Math.random() * 0.8, // twinkle speed, rad/sec
+}));
+
+// A handful of small constellation groupings — pick a few random stars close
+// together and connect them with faint lines. Purely cosmetic, no real
+// astronomical accuracy intended.
+const CONSTELLATION_COUNT = 4;
+const constellations = [];
+(function buildConstellations() {
+  const used = new Set();
+  for (let c = 0; c < CONSTELLATION_COUNT; c++) {
+    const anchor = Math.floor(Math.random() * stars.length);
+    if (used.has(anchor)) continue;
+    const cx = stars[anchor].x, cy = stars[anchor].y;
+    const nearby = stars
+      .map((s, i) => ({ i, d: Math.hypot(s.x - cx, s.y - cy) }))
+      .filter(s => s.i !== anchor && !used.has(s.i) && s.d < 0.12)
+      .sort((a, b) => a.d - b.d)
+      .slice(0, 3 + Math.floor(Math.random() * 2))
+      .map(s => s.i);
+    if (nearby.length < 2) continue;
+    const group = [anchor, ...nearby];
+    group.forEach(i => used.add(i));
+    constellations.push(group);
+  }
+})();
+
+let shootingStars = [];
+let nextShootingStarAt = performance.now() + 4000 + Math.random() * 8000;
+
+function spawnShootingStar(w, h) {
+  const fromLeft = Math.random() < 0.5;
+  const x0 = fromLeft ? -0.05 : 1.05;
+  const y0 = Math.random() * 0.5;
+  const speed = 0.9 + Math.random() * 0.5; // screen-widths per second
+  const vx = (fromLeft ? 1 : -1) * speed;
+  const vy = speed * (0.35 + Math.random() * 0.25);
+  shootingStars.push({ x: x0, y: y0, vx, vy, bornAt: performance.now(), lifeMs: 700 + Math.random() * 400 });
+}
+
+function drawStars() {
+  const cssW = starsCanvas.clientWidth, cssH = starsCanvas.clientHeight;
+  if (cssW !== lastStarsWidth || cssH !== lastStarsHeight) {
+    fitCanvasToDisplay(starsCanvas, sctx);
+    lastStarsWidth = cssW; lastStarsHeight = cssH;
+  }
+  if (cssW <= 0 || cssH <= 0) return;
+  sctx.clearRect(0, 0, cssW, cssH);
+
+  const now = performance.now();
+  const t = now / 1000;
+
+  // Constellations first, beneath the stars themselves
+  sctx.strokeStyle = 'rgba(140,170,220,0.12)';
+  sctx.lineWidth = 1;
+  constellations.forEach(group => {
+    sctx.beginPath();
+    group.forEach((idx, i) => {
+      const s = stars[idx];
+      const px = s.x * cssW, py = s.y * cssH;
+      if (i === 0) sctx.moveTo(px, py); else sctx.lineTo(px, py);
+    });
+    sctx.stroke();
+  });
+
+  stars.forEach(s => {
+    const twinkle = 0.5 + 0.5 * Math.sin(t * s.speed + s.phase);
+    const alpha = s.baseAlpha * (0.6 + 0.4 * twinkle);
+    sctx.beginPath();
+    sctx.fillStyle = `rgba(220,230,255,${alpha.toFixed(3)})`;
+    sctx.arc(s.x * cssW, s.y * cssH, s.r, 0, Math.PI * 2);
+    sctx.fill();
+  });
+
+  if (now >= nextShootingStarAt) {
+    spawnShootingStar(cssW, cssH);
+    nextShootingStarAt = now + 8000 + Math.random() * 14000;
+  }
+  shootingStars = shootingStars.filter(sh => now - sh.bornAt < sh.lifeMs);
+  shootingStars.forEach(sh => {
+    const age = (now - sh.bornAt) / 1000;
+    const x = (sh.x + sh.vx * age) * cssW;
+    const y = (sh.y + sh.vy * age) * cssH;
+    const tailX = x - sh.vx * cssW * 0.06;
+    const tailY = y - sh.vy * cssH * 0.06;
+    const fadeIn  = Math.min(1, age / 0.08);
+    const fadeOut = Math.min(1, (sh.lifeMs / 1000 - age) / 0.15);
+    const alpha = Math.max(0, Math.min(fadeIn, fadeOut));
+    const grad = sctx.createLinearGradient(tailX, tailY, x, y);
+    grad.addColorStop(0, 'rgba(255,255,255,0)');
+    grad.addColorStop(1, `rgba(255,255,255,${alpha})`);
+    sctx.strokeStyle = grad;
+    sctx.lineWidth = 1.5;
+    sctx.beginPath();
+    sctx.moveTo(tailX, tailY);
+    sctx.lineTo(x, y);
+    sctx.stroke();
+  });
+}
 
 // Clamped to a minimum of 1px: on a narrow/short canvas (small window,
 // mobile portrait layout, or a transient layout state where the pane hasn't
@@ -905,9 +1077,10 @@ function importanceColor(score) {
 // drawCrisisHeatmap()'s colorize pass, so no string formatting or
 // allocation in the hot path.
 const HEAT_RAMP = [
-  [30,  60,  220],   // 0.00 cool blue — low/no density
-  [40,  200, 120],   // 0.33 green
-  [230, 210, 40],    // 0.66 yellow
+  [50,  200, 90],    // 0.00 green — low/no density
+  [140, 210, 60],    // 0.25 yellow-green
+  [230, 210, 40],    // 0.50 yellow
+  [235, 130, 35],    // 0.75 orange
   [230, 40,  40],    // 1.00 red — peak density
 ];
 function heatRampColor(t, out) {
@@ -941,21 +1114,21 @@ let tradeRouteScreenPts = [];
 
 // Draw whichever route layers are currently toggled on, color-coded by
 // disruption risk and styled by mode (see MODE_STYLE).
-function drawAllRoutes() {
+function drawAllRoutes(tradeAlpha = 1, airAlpha = 1, railAlpha = 1) {
   tradeRouteScreenPts = [];
-  if (showTrade) drawRouteSet(TRADE_ROUTES);
-  if (showAir)   drawRouteSet(AIR_ROUTES);
-  if (showRail)  drawRouteSet(RAIL_ROUTES);
+  if (tradeAlpha > 0) drawRouteSet(TRADE_ROUTES, tradeAlpha);
+  if (airAlpha > 0)   drawRouteSet(AIR_ROUTES, airAlpha);
+  if (railAlpha > 0)  drawRouteSet(RAIL_ROUTES, railAlpha);
 }
 
-function drawRouteSet(routes) {
+function drawRouteSet(routes, fadeAlpha = 1) {
   routes.forEach(route => {
     const risk  = routeRiskLevel(route.waypoints);
     const color = routeColorMode === 'importance'
       ? importanceColor(route.importanceScore ?? route.vol * 30)
       : ROUTE_RISK_COLORS[risk];
     const style = MODE_STYLE[route.mode];
-    const alpha = Math.min(1, 0.3 + route.vol * 0.1 + (risk > 0 ? 0.15 : 0) + (style.glow ? 0.1 : 0));
+    const alpha = Math.min(1, 0.3 + route.vol * 0.1 + (risk > 0 ? 0.15 : 0) + (style.glow ? 0.1 : 0)) * fadeAlpha;
     const width = (0.7 + route.vol * 0.4 + (risk * 0.3)) * style.widthMul;
     drawArcPath(route.waypoints, color, width, alpha, style.dash, style.glow);
 
@@ -1157,6 +1330,135 @@ function flatUnprojectClick(screenX, screenY) {
   return { lat: 90 - baseY / H * 180, lon: baseX / W * 360 - 180 };
 }
 
+// ── Real-tile map (Leaflet + OpenStreetMap) ────────────────────────────────
+// Past this fZoom, the vector country-border polygons above have no more
+// detail to give (confirmed directly: even the 3D globe at its max zoom
+// goes essentially blank past this point, same underlying data) — the
+// flat map live-switches to real OpenStreetMap tiles instead. Tuned live
+// in-browser; this is the point where the vector rendering visibly stops
+// adding anything.
+const TILE_MAP_FZOOM_THRESHOLD = 6;
+let leafletMap = null, leafletPinLayer = null, inTileMapMode = false;
+
+// fZoom (this file's own linear "how many times has the 360°-wide
+// equirect view been scaled up" state) and Leaflet's zoom levels (each
+// level doubles resolution, calibrated against a 256px world tile) are
+// different units describing the same thing — the flat map's canvas
+// width, at fZoom=1, already shows the whole 360°-wide equirect image,
+// equivalent to whatever Leaflet zoom level fits that same width in
+// 256px tiles. Converting between them keeps the handoff at roughly the
+// same visual scale in both directions instead of jumping.
+function fZoomToLeafletZoom(fz) {
+  const W = flatCanvas.clientWidth || 800;
+  return Math.log2(W / 256) + Math.log2(Math.max(1, fz));
+}
+function leafletZoomToFZoom(lz) {
+  const W = flatCanvas.clientWidth || 800;
+  return Math.pow(2, lz - Math.log2(W / 256));
+}
+
+// Points fZoom/fPanX/fPanY at the given lat/lon, centered — the inverse
+// of flatUnprojectClick's math, used when handing control back from
+// Leaflet to the canvas view so the two line up.
+function setFlatViewFromLatLon(lat, lon, fz) {
+  const W = flatCanvas.clientWidth, H = flatCanvas.clientHeight;
+  const baseX = (lon + 180) / 360 * W;
+  const baseY = (90 - lat) / 180 * H;
+  fZoom = fz;
+  fPanX = -(baseX - W / 2) * fZoom;
+  fPanY = -(baseY - H / 2) * fZoom;
+}
+
+// Same filter predicate drawFlatMap()'s own pool uses, so the pin set
+// matches every other view regardless of which one happens to be showing.
+function crisisPassesFlatFilters(c) {
+  if (minSeverityFilter > 0 && (c.severity || 0) < minSeverityFilter) return false;
+  if (countryFilter && c.country !== countryFilter) return false;
+  if (activeType !== 'all' && c.type !== activeType) return false;
+  if (activeDomain !== 'all' && getDomainForType(c.type) !== activeDomain) return false;
+  const d = new Date(c.date_start || c.date);
+  return !isNaN(d) && d.getFullYear() <= currentYear;
+}
+
+// Rebuilt on every Leaflet moveend/zoomend from whatever's currently in
+// viewport bounds — unlike the canvas views, this needs no top-N cap at
+// all, since Leaflet only ever draws what's actually on screen no matter
+// how many total crises exist.
+function updateLeafletPins() {
+  if (!leafletMap || !leafletPinLayer) return;
+  leafletPinLayer.clearLayers();
+  const bounds = leafletMap.getBounds();
+  CRISES.forEach(c => {
+    if (c.lat == null || c.lon == null) return;
+    if (!bounds.contains([c.lat, c.lon])) return;
+    if (!crisisPassesFlatFilters(c)) return;
+    const col = TYPE_META[c.type]?.color || '#fff';
+    const isSel = c.id === selected?.id;
+    const marker = L.circleMarker([c.lat, c.lon], {
+      radius: isSel ? 9 : 6,
+      color: 'rgba(255,255,255,0.85)',
+      weight: 1.5,
+      fillColor: col,
+      fillOpacity: 0.9,
+    });
+    // Same integration point every other pin-click path in the app
+    // already uses — the crisis detail panel, Brief/History/Forecast/News
+    // tabs, real-headline fetch, etc. all work unchanged with no new
+    // wiring here.
+    marker.on('click', () => selectCrisis(c));
+    marker.addTo(leafletPinLayer);
+  });
+}
+
+function onLeafletViewChange() {
+  const fz = leafletZoomToFZoom(leafletMap.getZoom());
+  if (fz < TILE_MAP_FZOOM_THRESHOLD) {
+    exitTileMapMode();
+  } else {
+    updateLeafletPins();
+  }
+  // Leaflet's own settle event (fires once per pan/zoom, not continuously)
+  // — the sidebar list's bounds-aware filtering (getCurrentViewBounds())
+  // should track this view too.
+  updateEventsList();
+}
+
+function enterTileMapMode() {
+  if (!leafletMap) {
+    leafletMap = L.map('leafletMap', { zoomControl: false, attributionControl: true });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 19,
+    }).addTo(leafletMap);
+    leafletPinLayer = L.layerGroup().addTo(leafletMap);
+    leafletMap.on('moveend zoomend', onLeafletViewChange);
+  }
+  const center = flatUnprojectClick(flatCanvas.clientWidth / 2, flatCanvas.clientHeight / 2);
+  leafletMap.setView([center.lat, center.lon], fZoomToLeafletZoom(fZoom));
+  document.getElementById('leafletMap').classList.add('visible');
+  inTileMapMode = true;
+  // A freshly-shown Leaflet container that was previously display:none (or
+  // faded to 0 opacity with layout still happening underneath) can end up
+  // with a stale internal size — this recalculates it and nudges pins in.
+  requestAnimationFrame(() => { leafletMap.invalidateSize(); updateLeafletPins(); });
+}
+
+function exitTileMapMode() {
+  if (!inTileMapMode) return;
+  const center = leafletMap.getCenter();
+  setFlatViewFromLatLon(center.lat, center.lng, leafletZoomToFZoom(leafletMap.getZoom()));
+  document.getElementById('leafletMap').classList.remove('visible');
+  inTileMapMode = false;
+  drawFlatMap();
+}
+
+// Called right after fZoom changes (the flat map's wheel handler) — the
+// only place fZoom is ever modified.
+function checkTileMapSwitch() {
+  if (!flatMap) return;
+  if (fZoom >= TILE_MAP_FZOOM_THRESHOLD && !inTileMapMode) enterTileMapMode();
+}
+
 function drawFlatMap() {
   const W = flatCanvas.clientWidth, H = flatCanvas.clientHeight;
   if (!W || !H) return;
@@ -1259,7 +1561,8 @@ flatCanvas.addEventListener('wheel', e => {
   fPanY = my2 + (fPanY - my2) * scaleFactor;
   fZoom = Math.max(1, Math.min(12, fZoom * scaleFactor));
   if (fZoom === 1) { fPanX = 0; fPanY = 0; } // reset pan at min zoom
-  drawFlatMap();
+  checkTileMapSwitch();
+  if (!inTileMapMode) drawFlatMap();
 }, { passive: false });
 
 flatCanvas.addEventListener('mousedown', e => {
@@ -1450,6 +1753,278 @@ function bakeEquirectTexture(features, borders) {
   window.GlobeGL.regenerateTexture(equirectCanvas);
 }
 
+// ── 3D globe detail patch: real OpenStreetMap tiles on the sphere ─────────
+// Same free/no-key OSM raster source Phase 8's flat-map tile layer uses —
+// one real tile provider for the whole app. Above GLOBE_TILE_ZOOM_THRESHOLD
+// a small patch of the sphere (see updateDetailPatch in webgl-globe.js),
+// centered on whatever's currently front-facing, gets a real tile texture
+// instead of the single low-res baked equirect texture the rest of the
+// globe uses — see the plan file for why a full tile-quadtree engine isn't
+// needed here.
+// Lowered from an initial 8 — at 1.1x per scroll notch (the wheel
+// handler's own zoom factor), reaching 8 took ~22 notches, which read as
+// "takes a while" before real detail ever showed up. 4 needs about half
+// that, and the vector country-border rendering is already coarse enough
+// by then that the swap doesn't feel premature.
+const GLOBE_TILE_ZOOM_THRESHOLD = 4;
+let globeTileActive = false;
+let globeTileBuildInFlight = false;
+let globeTileBuiltForCenter = null; // {lat, lon} the currently-shown patch was built for
+let globeTileBuiltForTileZ = null;
+// The tile-snapped lon/lat box the active patch actually covers (same
+// shape as composeGlobeTilePatch's return value) — used by drawPins() to
+// bounds-filter pins to just this window once real tiles are showing,
+// instead of clustering against the whole hemisphere. See Phase 10.
+let globeTileBounds = null;
+
+// This app's rotX/rotY fully determine which lat/lon currently points at
+// the fixed camera (camera sits on +Z looking at the origin — see the
+// axis-convention comment in webgl-globe.js). Solving latLonToViewVec's
+// own formula for the (lat,lon) that produces view=(0,0,1) collapses to
+// this simple closed form (verified algebraically, not guessed): the
+// tilt (rotX) directly IS the front-facing latitude, and the spin (rotY)
+// directly gives the front-facing longitude. Clamped away from the exact
+// poles since Mercator tiles (what OSM serves) don't cover them anyway.
+function frontFacingLatLon() {
+  const lat = Math.max(-85, Math.min(85, rotX * 180 / Math.PI));
+  let lon = -rotY * 180 / Math.PI;
+  lon = ((lon + 180) % 360 + 360) % 360 - 180;
+  return { lat, lon };
+}
+
+// Same conceptual conversion as Phase 8's fZoomToLeafletZoom, adapted for
+// the 3D globe: an orthographic sphere at the current zoom shows an
+// effective "world width" of R()*2*Math.PI CSS pixels for a full 360°,
+// equivalent to whatever slippy-map tile zoom level fits that same width
+// against the standard 256px tile.
+function globeZoomToTileZ() {
+  const effectiveW = R() * 2 * Math.PI;
+  return Math.max(0, Math.min(19, Math.round(Math.log2(Math.max(1, effectiveW / 256)))));
+}
+
+function lonLatToTileXY(lon, lat, z) {
+  const n = Math.pow(2, z);
+  const x = (lon + 180) / 360 * n;
+  const latRad = lat * Math.PI / 180;
+  const y = (1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * n;
+  return { x, y };
+}
+function tileXYToLonLat(x, y, z) {
+  const n = Math.pow(2, z);
+  const lon = x / n * 360 - 180;
+  const latRad = Math.atan(Math.sinh(Math.PI * (1 - 2 * y / n)));
+  return { lon, lat: latRad * 180 / Math.PI };
+}
+
+// Fetches and composites the grid of real OSM tiles covering a window
+// around (centerLat, centerLon), returning both the composited canvas and
+// the EXACT lon/lat box it covers (snapped to tile edges, not the
+// originally-requested window) — that exact box is what the caller must
+// hand to GlobeGL.updateDetailPatch so the texture and the geometry it's
+// painted on line up. Returns null if the request would need an
+// unreasonably large tile grid (shouldn't happen in practice — the patch
+// shrinks angularly as zoom increases) or if every tile failed to load.
+async function composeGlobeTilePatch(centerLat, centerLon, halfAngleDeg, tileZ) {
+  const n = Math.pow(2, tileZ);
+  // Web Mercator tile rows compress as |latitude| grows (tile-y density
+  // scales with 1/cos(lat)) while tile columns don't — so the SAME
+  // halfAngleDeg applied symmetrically to both axes asks for measurably
+  // more tile ROWS than columns away from the equator (confirmed live:
+  // Athens at 38°N regularly produced a 5x7 grid from a request that was
+  // angularly square). Left uncorrected, that tripped the tilesY>6 cap
+  // below well within normal city-zoom range, silently killing the whole
+  // detail-patch feature outside the tropics with no visible error. Scale
+  // the vertical half-angle down by cos(centerLat) so the requested
+  // window's tile row/column counts stay comparable at any latitude —
+  // the horizontal half-angle is untouched.
+  const latHalfAngleDeg = halfAngleDeg * Math.max(0.15, Math.cos(centerLat * Math.PI / 180));
+  const north = Math.min(85, centerLat + latHalfAngleDeg);
+  const south = Math.max(-85, centerLat - latHalfAngleDeg);
+  const west = centerLon - halfAngleDeg;
+  const east = centerLon + halfAngleDeg;
+
+  const tl = lonLatToTileXY(west, north, tileZ);
+  const br = lonLatToTileXY(east, south, tileZ);
+  const x0 = Math.floor(tl.x), x1 = Math.floor(br.x);
+  const y0 = Math.max(0, Math.floor(tl.y)), y1 = Math.min(n - 1, Math.floor(br.y));
+  const tilesX = x1 - x0 + 1, tilesY = y1 - y0 + 1;
+  if (tilesX < 1 || tilesY < 1 || tilesX > 6 || tilesY > 6) return null;
+
+  const TILE_PX = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = tilesX * TILE_PX;
+  canvas.height = tilesY * TILE_PX;
+  const cctx = canvas.getContext('2d');
+  let loadedAny = false;
+
+  // Fetched directly from tile.openstreetmap.org. A backend proxy was
+  // tried first (on the theory that this app's WebGL texture use needed
+  // cross-origin-clean image data OSM might not reliably provide) but
+  // measurement disproved the premise — a direct crossOrigin='anonymous'
+  // load from OSM already produces a non-tainted, texture-safe canvas
+  // (verified directly: getImageData succeeds), and routing the same
+  // request through this app's own dev backend measured ~60x slower
+  // (2.7s vs 43ms for 10 tiles) — the backend was serving them
+  // effectively serially. Direct is simply correct here; see the removed
+  // /api/tile-proxy endpoint's git history if cross-origin trouble ever
+  // shows up against a different tile source in the future.
+  const subdomains = ['a', 'b', 'c'];
+
+  // Real-world tile loads occasionally fail transiently (a slow edge node,
+  // a momentary hiccup) — one retry recovers most of those instead of
+  // permanently leaving that cell blank for the rest of this composite's
+  // lifetime.
+  function loadTile(url, attempt) {
+    return new Promise(resolve => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => resolve(img);
+      img.onerror = () => {
+        if (attempt < 1) resolve(loadTile(url, attempt + 1));
+        else resolve(null);
+      };
+      img.src = url;
+    });
+  }
+
+  const loads = [];
+  for (let ty = y0; ty <= y1; ty++) {
+    for (let tx = x0; tx <= x1; tx++) {
+      const wrappedX = ((tx % n) + n) % n;
+      const sub = subdomains[(tx + ty) % subdomains.length];
+      const url = `https://${sub}.tile.openstreetmap.org/${tileZ}/${wrappedX}/${ty}.png`;
+      const px = (tx - x0) * TILE_PX, py = (ty - y0) * TILE_PX;
+      loads.push(
+        loadTile(url, 0).then(img => {
+          if (img) { cctx.drawImage(img, px, py, TILE_PX, TILE_PX); loadedAny = true; }
+        })
+      );
+    }
+  }
+  await Promise.all(loads);
+  if (!loadedAny) return null;
+
+  // Snap the reported box to the ACTUAL tile edges fetched, not the
+  // originally-requested window — see the function comment.
+  const nw = tileXYToLonLat(x0, y0, tileZ);
+  const se = tileXYToLonLat(x1 + 1, y1 + 1, tileZ);
+
+  // OSM tiles are Web Mercator (latitude spacing compresses away from the
+  // equator); GlobeGL.updateDetailPatch carves the sphere patch with
+  // LINEAR latitude spacing, the same equirect convention pins/project()
+  // already use everywhere else in this app. Left unwarped, the tile
+  // IMAGE's real content (coastlines, roads, cities) drifts away from
+  // where a pin's true lat/lon actually places it on the sphere — this is
+  // exactly the "pins lost their accuracy vs. the flat map" bug: Leaflet
+  // is Mercator-consistent for both tiles and markers, so it never had
+  // this mismatch. Re-sampling the composited tile image into linear
+  // latitude spacing here (once per composite, not per pin) fixes it at
+  // the source instead of trying to correct anything downstream.
+  const warped = warpMercatorToLinearLat(canvas, y0, tileZ, TILE_PX, nw.lat, se.lat);
+  return { canvas: warped, westLon: nw.lon, eastLon: se.lon, northLat: nw.lat, southLat: se.lat };
+}
+
+// Re-samples a Mercator-tiled image into one with linear latitude spacing
+// top-to-bottom, covering the same [northLat, southLat] range — see the
+// call site's comment for why. Approximated with a modest number of
+// horizontal bands (each internally re-scaled by drawImage, not a
+// per-pixel loop) rather than an exact per-pixel remap: cheap, and at the
+// angular sizes this patch ever covers the curve is smooth enough that
+// band artifacts aren't visible.
+function warpMercatorToLinearLat(mercCanvas, y0TileRow, tileZ, tilePx, northLat, southLat) {
+  const W = mercCanvas.width, H = mercCanvas.height;
+  const n = Math.pow(2, tileZ);
+  const latToSrcPx = (lat) => {
+    const latRad = lat * Math.PI / 180;
+    const yFracTiles = (1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * n;
+    return (yFracTiles - y0TileRow) * tilePx;
+  };
+
+  const out = document.createElement('canvas');
+  out.width = W;
+  out.height = H;
+  const octx = out.getContext('2d');
+
+  const BANDS = 32;
+  for (let i = 0; i < BANDS; i++) {
+    const destLatTop = northLat - (i / BANDS) * (northLat - southLat);
+    const destLatBot = northLat - ((i + 1) / BANDS) * (northLat - southLat);
+    const destY0 = (i / BANDS) * H;
+    const destY1 = ((i + 1) / BANDS) * H;
+    const srcY0 = latToSrcPx(destLatTop);
+    const srcY1 = latToSrcPx(destLatBot);
+    const srcH = Math.max(1, srcY1 - srcY0);
+    octx.drawImage(mercCanvas, 0, srcY0, W, srcH, 0, destY0, W, Math.max(1, destY1 - destY0));
+  }
+  return out;
+}
+
+// Called once per frame (cheap — early-returns immediately unless zoomed
+// in past the threshold) from drawGlobe(). Rebuilds are debounced to
+// isSettled() (the same rotation/drag/zoom-settle signal the TopoJSON
+// low→high tier upgrade already uses) and only actually trigger a new
+// tile fetch when the front-facing point has drifted away from the
+// currently-built patch, or the zoom has moved to a different tile level
+// — not on every settle while sitting still.
+function checkGlobeTilePatch() {
+  if (zoom < GLOBE_TILE_ZOOM_THRESHOLD) {
+    if (globeTileActive) {
+      window.GlobeGL.hideDetailPatch();
+      globeTileActive = false;
+      globeTileBuiltForCenter = null;
+      globeTileBounds = null;
+      setGlobeTileAttributionVisible(false);
+    }
+    return;
+  }
+  if (globeTileBuildInFlight || !isSettled()) return;
+
+  const front = frontFacingLatLon();
+  const tileZ = globeZoomToTileZ();
+  const needsRebuild = !globeTileBuiltForCenter
+    || globeTileBuiltForTileZ !== tileZ
+    || geoDistKm(front.lat, front.lon, globeTileBuiltForCenter.lat, globeTileBuiltForCenter.lon) > 300 / Math.pow(2, tileZ - 4);
+  if (!needsRebuild) return;
+
+  globeTileBuildInFlight = true;
+  // Half-angle sized to comfortably cover the visible screen area at the
+  // current zoom (small-angle approximation — valid here since this only
+  // ever runs where the patch is inherently small) plus a modest margin
+  // so further rotation doesn't immediately require another fetch. Kept
+  // tight (0.35, not the original 0.75) — every extra degree of margin is
+  // more tiles to fetch before anything shows, and needsRebuild's own
+  // drift check already covers "the user kept rotating," so this doesn't
+  // need to over-provision for it up front.
+  const halfAngleDeg = Math.min(40, Math.max(canvas.clientWidth, canvas.clientHeight) / R() * (180 / Math.PI) * 0.35);
+  composeGlobeTilePatch(front.lat, front.lon, halfAngleDeg, tileZ).then(result => {
+    globeTileBuildInFlight = false;
+    if (!result || zoom < GLOBE_TILE_ZOOM_THRESHOLD) return; // zoomed back out while this was loading
+    window.GlobeGL.updateDetailPatch(result.westLon, result.eastLon, result.southLat, result.northLat);
+    window.GlobeGL.setDetailPatchTexture(result.canvas);
+    globeTileActive = true;
+    globeTileBuiltForCenter = front;
+    globeTileBuiltForTileZ = tileZ;
+    globeTileBounds = {
+      westLon: result.westLon, eastLon: result.eastLon,
+      southLat: result.southLat, northLat: result.northLat,
+    };
+    setGlobeTileAttributionVisible(true);
+  }).catch(err => {
+    // Without this, a rejected build leaves globeTileBuildInFlight stuck
+    // true forever — every future call short-circuits at this function's
+    // very first line, permanently and silently killing the whole
+    // detail-patch feature with no visible error. Never confirmed firing
+    // in practice, but costs nothing to close.
+    globeTileBuildInFlight = false;
+    console.error('[GlobeTilePatch] build failed:', err);
+  });
+}
+
+function setGlobeTileAttributionVisible(visible) {
+  const el = document.getElementById('globeTileAttribution');
+  if (el) el.classList.toggle('visible', visible);
+}
+
 function drawGlobe() {
   // Flat map mode — skip 3D globe entirely
   if (flatMap) { drawFlatMap(); return; }
@@ -1488,6 +2063,7 @@ function drawGlobe() {
   if (window.GlobeGL && window.GlobeGL.ready) {
     window.GlobeGL.setFrustum(canvas.clientWidth / 2, canvas.clientHeight / 2, r);
     window.GlobeGL.setRotation(rotX, rotY);
+    checkGlobeTilePatch();
     // Subsolar drift is slow (~15°/hour) — recomputing the underlying
     // date/declination math every ~60s is indistinguishable from every
     // frame and far cheaper. But the light's DIRECTION relative to the
@@ -1514,11 +2090,17 @@ function drawGlobe() {
   ctx.fillStyle = atm;
   ctx.beginPath(); ctx.arc(cx, cy, r * 1.18, 0, Math.PI * 2); ctx.fill();
 
-  // Trade/transit routes (sea/air/rail — each gated on its own toggle inside)
-  if (showTrade || showAir || showRail) drawAllRoutes();
+  // Trade/transit routes (sea/air/rail — each gated on its own toggle inside),
+  // relationship arcs, and the cascade sim below all fade in/out over 1s via
+  // getFadeAlpha() rather than snapping instantly — see its own comment.
+  const tradeFade = getFadeAlpha('trade', showTrade);
+  const airFade   = getFadeAlpha('air', showAir);
+  const railFade  = getFadeAlpha('rail', showRail);
+  if (tradeFade > 0 || airFade > 0 || railFade > 0) drawAllRoutes(tradeFade, airFade, railFade);
 
   // Relationship arcs
-  if (showArcs) {
+  const arcsFade = getFadeAlpha('arcs', showArcs);
+  if (arcsFade > 0) {
     const arcColors = { conflict:'#ff3b3b', alliance:'#3dffaa', tension:'#ffd93d', economic:'#4e9eff', proxy:'#b94eff' };
     const actorMap = {};
     ACTORS.forEach(a => { actorMap[a.id] = a; });
@@ -1533,7 +2115,7 @@ function drawGlobe() {
       if (pa.z > 0 || pb.z > 0) {
         const s = (rel.strength || 50) / 100;          // 0 → 1
         const lineW = 0.6 + s * 2.4;                   // 0.6px (weak) → 3px (strong)
-        const alpha = 0.18 + s * 0.52;                  // 0.18 (weak) → 0.7 (strong)
+        const alpha = (0.18 + s * 0.52) * arcsFade;     // 0.18 (weak) → 0.7 (strong)
         drawArc(a.lat, a.lon, b.lat, b.lon, col, lineW, alpha);
       }
     });
@@ -1549,7 +2131,7 @@ function drawGlobe() {
 
       // Outer glow ring
       ctx.save();
-      ctx.globalAlpha = 0.25;
+      ctx.globalAlpha = 0.25 * arcsFade;
       ctx.fillStyle = actor.color;
       ctx.shadowColor = actor.color;
       ctx.shadowBlur = 14;
@@ -1560,7 +2142,7 @@ function drawGlobe() {
 
       // Solid node dot
       ctx.save();
-      ctx.globalAlpha = 1;
+      ctx.globalAlpha = arcsFade;
       ctx.fillStyle = actor.color;
       ctx.shadowColor = actor.color;
       ctx.shadowBlur = 8;
@@ -1578,7 +2160,7 @@ function drawGlobe() {
 
       // Actor label
       ctx.save();
-      ctx.globalAlpha = 0.95;
+      ctx.globalAlpha = 0.95 * arcsFade;
       ctx.font = `bold ${Math.max(9, 10 + zoom * 0.3)}px "Segoe UI", sans-serif`;
       ctx.textAlign = 'center';
       ctx.fillStyle = '#fff';
@@ -1591,7 +2173,8 @@ function drawGlobe() {
 
   // Cascade rings — pulse count driven by number of cascade steps (1-3),
   // color shifts from yellow (low prob) → orange → red (high prob)
-  if (showCasc && selected) {
+  const cascFade = getFadeAlpha('casc', showCasc && !!selected);
+  if (cascFade > 0 && selected) {
     const pSel = project(selected.lat, selected.lon);
     if (pSel.z > 0) {
       const steps = selected.cascade?.steps || [];
@@ -1609,7 +2192,7 @@ function drawGlobe() {
           const prob = step.probability ?? 0.3;
           const color = prob >= 0.65 ? '#ff3c3c' : prob >= 0.4 ? '#ffa532' : '#ffd23c';
           const breathe = 0.7 + Math.sin(pulse + i * 0.8) * 0.3;
-          const alpha = (0.3 + prob * 0.45) * breathe;
+          const alpha = (0.3 + prob * 0.45) * breathe * cascFade;
           (step.actors || []).forEach(actorId => {
             const actor = actorById[actorId];
             if (!actor || actor.lat == null || actor.lon == null) return;
@@ -1625,7 +2208,7 @@ function drawGlobe() {
         const color = prob >= 0.65 ? '255,60,60' : prob >= 0.4 ? '255,165,50' : '255,210,50';
         const phasedPulse = (pulse + ring * 1.1) % (Math.PI * 2);
         const rScale = (ring / (ringCount + 1)) * 0.55 + Math.sin(phasedPulse) * 0.04;
-        const alpha  = (0.55 - ring * 0.12) * (0.7 + Math.sin(phasedPulse) * 0.3);
+        const alpha  = (0.55 - ring * 0.12) * (0.7 + Math.sin(phasedPulse) * 0.3) * cascFade;
         ctx.strokeStyle = `rgba(${color},${alpha.toFixed(2)})`;
         ctx.lineWidth = Math.max(0.5, 2 - ring * 0.45);
         ctx.beginPath();
@@ -1633,7 +2216,7 @@ function drawGlobe() {
         ctx.stroke();
       }
       // Core dot
-      ctx.fillStyle = 'rgba(255,80,80,0.35)';
+      ctx.fillStyle = `rgba(255,80,80,${(0.35 * cascFade).toFixed(2)})`;
       ctx.beginPath();
       ctx.arc(pSel.sx, pSel.sy, 6 + Math.sin(pulse) * 2, 0, Math.PI * 2);
       ctx.fill();
@@ -1645,9 +2228,14 @@ function drawGlobe() {
   ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
 
-  // Crisis density heat map, gated behind the showHeat toggle, then pins on top
-  if (showHeat) drawCrisisHeatmap();
-  drawPins();
+  // Crisis density heat map, gated behind the showHeat toggle (or
+  // auto-engaged below LOW_ZOOM_DECLUTTER_ZOOM — see its own comment),
+  // then pins on top. Fading on the EFFECTIVE on/off state (not just
+  // showHeat) means crossing the auto-zoom threshold fades smoothly too.
+  const heatEffectiveOn = !heatForcedOff && (showHeat || zoom < LOW_ZOOM_DECLUTTER_ZOOM);
+  const heatFade = getFadeAlpha('heat', heatEffectiveOn);
+  if (heatFade > 0) drawCrisisHeatmap(heatFade);
+  if (showPins) drawPins();
 }
 
 function drawPins() {
@@ -1679,6 +2267,68 @@ function drawPins() {
     (!countryFilter || c.country === countryFilter) &&
     (minSeverityFilter === 0 || (c.severity || 0) >= minSeverityFilter)
   );
+
+  if (globeTileActive && globeTileBounds) {
+    // Real tiles are showing a small, known geographic window — bounds-
+    // filter to just that window instead of the whole-hemisphere top-N
+    // logic below, mirroring updateLeafletPins()'s own bounds.contains()
+    // check for the flat map. This is why the flat map rarely shows a
+    // cluster badge (few crises fall inside a real-zoomed window) while
+    // the globe previously did (it was clustering against the whole
+    // hemisphere's pool regardless of how zoomed in you were). Ring-
+    // spread/cluster-merge below are untouched — now just operating on
+    // this much smaller pool, so they still catch the rare case where
+    // several crises genuinely coincide within the visible window instead
+    // of silently hiding them the way Leaflet's marker-stacking does.
+    const { westLon, eastLon, southLat, northLat } = globeTileBounds;
+    const crossesAntimeridian = westLon > eastLon;
+    pool = pool.filter(c => {
+      if (c.lat == null || c.lon == null) return false;
+      if (c.lat < southLat || c.lat > northLat) return false;
+      return crossesAntimeridian
+        ? (c.lon >= westLon || c.lon <= eastLon)
+        : (c.lon >= westLon && c.lon <= eastLon);
+    });
+    if (selected && !pool.some(c => c.id === selected.id)) {
+      const selC = CRISES.find(c => c.id === selected.id);
+      if (selC) pool.push(selC);
+    }
+  } else {
+    // ── Top-severity subset + whatever's selected ────────────────────────────────
+    // Phone: a cluster of dozens of same-size overlapping pins isn't a
+    // usable interaction surface there (no hover, imprecise touch), and the
+    // list is the primary way to reach a specific crisis — so the globe
+    // shows only a quick "what's worst right now" read, always the 10
+    // highest-severity pins regardless of zoom.
+    //
+    // Tablet/desktop: same idea, but zoom-gated instead of always-on — see
+    // LOW_ZOOM_DECLUTTER_ZOOM's own comment. Above that zoom there's enough
+    // screen space per pin that the full pool (smaller pin size — see
+    // baseR) is still legible.
+    //
+    // Either way, the selected crisis's pin is always added back in if the
+    // cap would have excluded it, so picking anything from the list always
+    // pops a visible pin.
+    //
+    // Tablet/desktop growth is continuous rather than a binary switch at
+    // LOW_ZOOM_DECLUTTER_ZOOM — starts at LOW_ZOOM_DECLUTTER_TOP_N right at
+    // zoom=1 and climbs PIN_REVEAL_GROWTH_RATE more pins per zoom unit, so
+    // "more pins appear" reads as a smooth reveal while zooming in rather
+    // than a sudden jump. By ~zoom 10 the cap (500+) exceeds any realistic
+    // pool size, so it naturally stops being a limiting factor at all
+    // rather than needing an explicit "fully uncapped" cutoff.
+    const topN = isPhoneViewport
+      ? 10
+      : Math.round(LOW_ZOOM_DECLUTTER_TOP_N + Math.max(0, zoom - 1) * PIN_REVEAL_GROWTH_RATE);
+    if (topN > 0) {
+      const top = [...pool].sort((a, b) => (b.severity || 0) - (a.severity || 0)).slice(0, topN);
+      if (selected && !top.some(c => c.id === selected.id)) {
+        const selC = pool.find(c => c.id === selected.id);
+        if (selC) top.push(selC);
+      }
+      pool = top;
+    }
+  }
 
   // ── Project every candidate, then keep only the front-facing hemisphere ───────
   // z > 0  →  facing the viewer  (visible)
@@ -1714,26 +2364,46 @@ function drawPins() {
     eventsByCoord[key].push(item);
   });
 
-  // Circular spread: arrange stacked pins in a ring around the real point
+  // Circular spread: arrange stacked pins in a ring around the real point.
+  // Capped at RING_SPREAD_CAP individual pins — a coordinate this crowded
+  // is almost always coarse geocoding (a country/capital-level point,
+  // mainly from GDELT — see the fan-out/coarse-geocoding notes elsewhere
+  // in this codebase) bunching dozens of unrelated events onto one spot,
+  // not dozens of genuinely distinct precise locations. Without a cap,
+  // a busy point draws a full ring of same-size overlapping dots (as many
+  // as `total`, no limit) instead of reading as "many events here." Past
+  // the cap, the highest-severity pins still get their own ring slot; the
+  // rest are left at the shared point, unspread, so they fall through to
+  // the numbered cluster-merge pass below and collapse into one "+N" badge
+  // instead of drawing a wall of individual dots.
+  const RING_SPREAD_CAP = 10;
   const connectorLines = [];
   visible = visible.map(({c, p, city, lat, lon}) => {
-    const key = `${lat.toFixed(1)},${lon.toFixed(1)}`;
-    const group     = eventsByCoord[key];
-    const idx       = group.findIndex(g => g.c.id === c.id);
-    const total     = group.length;
+    const key   = `${lat.toFixed(1)},${lon.toFixed(1)}`;
+    const group = eventsByCoord[key];
+    const total = group.length;
 
     let sx = p.sx, sy = p.sy;
+    let alreadySpread = false;
 
     if (total > 1) {
-      // Ring radius: 20 px base + 4 px per extra pin, capped at 55 px
-      const ringR  = Math.min(55, 20 + (total - 1) * 4);
-      const angle  = (idx / total) * Math.PI * 2 - Math.PI / 2; // start at top
-      sx = p.sx + Math.cos(angle) * ringR;
-      sy = p.sy + Math.sin(angle) * ringR;
-      connectorLines.push({ x1: p.sx, y1: p.sy, x2: sx, y2: sy, confidence: c.location_confidence ?? 75 });
+      const spreadGroup = total > RING_SPREAD_CAP
+        ? [...group].sort((a, b) => (b.c.severity || 0) - (a.c.severity || 0)).slice(0, RING_SPREAD_CAP)
+        : group;
+      const idx = spreadGroup.findIndex(g => g.c.id === c.id);
+      if (idx !== -1) {
+        const spreadTotal = spreadGroup.length;
+        // Ring radius: 20 px base + 4 px per extra pin, capped at 55 px
+        const ringR = Math.min(55, 20 + (spreadTotal - 1) * 4);
+        const angle = (idx / spreadTotal) * Math.PI * 2 - Math.PI / 2; // start at top
+        sx = p.sx + Math.cos(angle) * ringR;
+        sy = p.sy + Math.sin(angle) * ringR;
+        connectorLines.push({ x1: p.sx, y1: p.sy, x2: sx, y2: sy, confidence: c.location_confidence ?? 75 });
+        alreadySpread = true;
+      }
     }
 
-    return { c, p: {...p, sx, sy}, city, _alreadySpread: total > 1 };
+    return { c, lat, lon, p: {...p, sx, sy}, city, _alreadySpread: alreadySpread };
   });
 
   // Draw connector lines first (behind pins)
@@ -1749,6 +2419,48 @@ function drawPins() {
     ctx.setLineDash([]);
   });
 
+  // ── Ring-overflow safety net (always on, independent of zoom) ────────────────
+  // Anything beyond RING_SPREAD_CAP at one exact coordinate used to fall
+  // through to the general CLUSTER_DIST merge pass below to get badged —
+  // but that pass deliberately turns itself OFF at high zoom (correctly,
+  // for genuinely-distinct nearby points that should separate out once
+  // there's screen space for them). An exact coordinate collision never
+  // "resolves" into distinct points no matter how far you zoom in, though
+  // — confirmed live: at max zoom, 325 crises sharing one coordinate
+  // rendered as silently-stacked overlapping dots with no badge at all,
+  // reproducing the exact "hidden data" failure mode this app's pin
+  // rendering exists to avoid. This pass runs unconditionally so the
+  // overflow always gets one small badge, regardless of zoom.
+  const ringOverflowBadged = new Set();
+  visible = visible.filter(item => {
+    const key = `${item.lat.toFixed(1)},${item.lon.toFixed(1)}`;
+    const group = eventsByCoord[key];
+    if (group.length <= RING_SPREAD_CAP || item._alreadySpread) return true;
+    if (!ringOverflowBadged.has(key)) {
+      ringOverflowBadged.add(key);
+      const excessCount = group.length - RING_SPREAD_CAP;
+      const cx2 = item.p.sx, cy2 = item.p.sy; // shared exact point for the whole group
+      const maxSev = Math.max(...group.map(g => g.c.severity || 0));
+      const col = maxSev > 80 ? '#ff3b3b' : maxSev > 60 ? '#ff8833' : '#ffd93d';
+      const cr = 14 + Math.min(excessCount, 20) * 0.6;
+      ctx.save();
+      ctx.shadowColor = col; ctx.shadowBlur = 14;
+      ctx.fillStyle = col + '33';
+      ctx.beginPath(); ctx.arc(cx2, cy2, cr + 5, 0, Math.PI * 2); ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = col + 'cc';
+      ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(cx2, cy2, cr, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.font = `bold ${cr > 18 ? 12 : 10}px "Segoe UI", sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('+' + excessCount, cx2, cy2);
+      ctx.restore();
+    }
+    return false; // already represented by the badge above
+  });
+
   // ── CLUSTERING — merge nearby pins when zoomed out ───────────────────────────
   // Pins already pulled apart into a ring above (_alreadySpread — exact/
   // near-duplicate coordinates) are exempt: they were deliberately made
@@ -1758,10 +2470,14 @@ function drawPins() {
   // The cluster radius itself shrinks as you zoom in (instead of a fixed
   // 38px that only ever got fully switched off past a hard zoom>=1.4
   // cutoff), so decluttering fades out smoothly — the more zoomed in you
-  // are, the more individual pins show individually, right up to zoom 10
-  // where clustering is effectively off. That also directly means more
-  // pins become visible the further in you zoom, not just a step change.
-  const CLUSTER_DIST = 38 / Math.max(1, zoom);
+  // are, the more individual pins show individually. Divisor changed from
+  // a straight `zoom` to `1 + (zoom-1)*0.5` — halves the shrink rate, so a
+  // genuinely crisis-dense real region (dozens of distinct nearby
+  // coordinates, each too small a ring to trip the old fast falloff) stays
+  // merged into "N" badges much further into the zoom range instead of
+  // dissolving into a web of individually-connected pins. Unchanged at
+  // zoom=1 (still 38px), only the falloff past that is gentler.
+  const CLUSTER_DIST = 38 / (1 + (Math.max(1, zoom) - 1) * 0.5);
   if (CLUSTER_DIST > 4) { // below this it's not doing anything meaningful
     const assigned = new Set();
     const clusters = [];
@@ -1837,8 +2553,19 @@ function drawPins() {
     // small country; zoomed in, the same fixed size under-represents how
     // precisely the crisis's point is actually known. Clamped so it never
     // gets tiny (min zoom) or oversized (max zoom).
-    const baseR     = Math.max(5, Math.min(11, 7 + (zoom - 1) * 1.2));
-    const r2        = isHovered || isActive ? baseR + 3 : baseR;
+    //
+    // Tablet/desktop still render the full pool (hundreds of pins at once),
+    // so they get a slightly smaller base size to ease the clutter. Phone
+    // is already capped to ~10 pins above, so it keeps the original size —
+    // no need to shrink further, and a phone screen benefits more from a
+    // bigger, easier-to-read pin than a smaller one.
+    const baseR     = isPhoneViewport
+      ? Math.max(5, Math.min(11, 7 + (zoom - 1) * 1.2))
+      : Math.max(4, Math.min(9, 6 + (zoom - 1) * 1.0));
+    // The "pop" on selection needs to read clearly on a phone with no hover
+    // to fall back on — a bigger bump than the desktop hover/active bump.
+    const activeBump = isPhoneViewport ? 9 : 3;
+    const r2        = isActive ? baseR + activeBump : isHovered ? baseR + 3 : baseR;
 
     const isUpcoming = c.status === 'upcoming';
 
@@ -1923,7 +2650,7 @@ function drawPins() {
 // desirable here, not a quality loss, since the content is already
 // blurred and low-frequency).
 const HEAT_DOWNSAMPLE = 0.4; // buffer edge = 0.4 * (2r)
-function drawCrisisHeatmap() {
+function drawCrisisHeatmap(fadeAlpha = 1) {
   const cx = CX(), cy = CY(), r = R();
 
   const filteredCrises = filterByDateRange(CRISES, currentYear).filter(c => {
@@ -1957,7 +2684,19 @@ function drawCrisisHeatmap() {
   // downsampled buffer back to full size in the final composite.
   offCtx.globalCompositeOperation = 'lighter';
 
-  const spreadR = r * 0.22 * scale; // fixed-ish geographic spread, not severity-scaled
+  // Both shrunk from the original 0.22 / 0.18-0.50: at real-world density
+  // (a crisis-dense region can have 50-200+ crises within a few degrees of
+  // each other), the old wide kernel + high per-crisis alpha meant nearly
+  // every dense region saturated the accumulation buffer to its ceiling
+  // almost immediately — the whole 4-stop blue→green→yellow→red ramp
+  // collapsed to "is there anything here: solid red" instead of showing
+  // real density variation. Smaller kernel + lower per-crisis alpha means
+  // it takes a genuinely denser cluster to climb the same ramp, so the
+  // gradient actually reads as a gradient (visible blue/green fringes,
+  // yellow mid-density bands) instead of a flat red blob. The soft-clip
+  // compression below (not a hard clamp) does the rest of the work for
+  // the very densest spots.
+  const spreadR = r * 0.11 * scale;
 
   filteredCrises.forEach(crisis => {
     const p = project(crisis.lat, crisis.lon);
@@ -1968,14 +2707,7 @@ function drawCrisisHeatmap() {
     const by = (p.sy - (cy - r)) * scale;
 
     const severity = (crisis.severity || 50) / 100;
-    // Kept well under 1.0 even at max severity (0.18-0.50 range) so a
-    // SINGLE crisis never saturates the accumulation buffer's alpha —
-    // otherwise 'lighter' blending has no headroom left to show that a
-    // cluster of crises is hotter than any one of them alone, which
-    // defeats the entire point of a density heat map. (Verified: with
-    // the earlier 0.25-0.80 range plus a 1.6x post-boost below, one
-    // severity-90 crisis alone already hit the 255 alpha ceiling.)
-    const peakAlpha = 0.18 + severity * 0.32;
+    const peakAlpha = 0.07 + severity * 0.13;
 
     const grad = offCtx.createRadialGradient(bx, by, 0, bx, by, spreadR);
     grad.addColorStop(0,   `rgba(255,255,255,${peakAlpha})`);
@@ -1995,8 +2727,15 @@ function drawCrisisHeatmap() {
   const data = imgData.data;
   const rgb = [0, 0, 0];
   for (let i = 0; i < data.length; i += 4) {
-    const intensity = data[i + 3] / 255; // accumulated alpha = accumulated density
+    let intensity = data[i + 3] / 255; // accumulated alpha = accumulated density
     if (intensity <= 0.003) continue;
+    // Power curve (exponent > 1) rather than the raw linear value: pushes
+    // low/mid density down toward the ramp's blue-green end and reserves
+    // yellow/red for genuinely dense spots, instead of the ramp's warm
+    // end dominating most of the visible range. Combined with the smaller
+    // kernel/alpha above, this is what turns "mostly solid red" into an
+    // actual blue→green→yellow→red gradient across a region.
+    intensity = Math.pow(intensity, 1.5);
     heatRampColor(intensity, rgb);
     data[i]     = rgb[0];
     data[i + 1] = rgb[1];
@@ -2020,7 +2759,7 @@ function drawCrisisHeatmap() {
   // here specifically because peakAlpha/no-boost above now leave real
   // headroom in the 0-255 range for density to show through — this
   // baseAlpha is a uniform final multiplier, not a per-pixel one.
-  const baseAlpha = Math.max(0.1, 0.85 - (zoom - 0.5) * 0.28);
+  const baseAlpha = Math.max(0.1, 0.85 - (zoom - 0.5) * 0.28) * fadeAlpha;
 
   ctx.save();
   ctx.beginPath();
@@ -2036,10 +2775,30 @@ function drawCrisisHeatmap() {
 // UI: SELECTION & PANELS
 // ════════════════════════════════════════════════════════════
 
+// Full mutual exclusion between the left crisis-list panel and the right
+// crisis/route-detail panel: opening one collapses/closes the other, in
+// both directions, so at most one is ever open at a time. Idle mode's own
+// entry branch (which already hides #colLeft via display:none, a separate
+// mechanism from .collapsed) calls closeRightPanel() too rather than
+// toggling classes directly, so the two systems never fight — display:none
+// simply wins visually regardless of the .collapsed state underneath.
+function openRightPanel() {
+  document.getElementById('colRight').classList.add('open');
+  document.getElementById('colLeft').classList.add('collapsed');
+  const toggle = document.getElementById('sidebarToggle');
+  if (toggle) toggle.textContent = '▶';
+}
+function closeRightPanel() {
+  document.getElementById('colRight').classList.remove('open');
+  document.getElementById('colLeft').classList.remove('collapsed');
+  const toggle = document.getElementById('sidebarToggle');
+  if (toggle) toggle.textContent = '◀';
+}
+
 function selectCrisis(crisis) {
   setPanelMode('crisis');
   selected = crisis;
-  document.getElementById('colRight').classList.add('open');
+  openRightPanel();
   updateAllPanels();
   updateEventsList();
 }
@@ -2072,7 +2831,7 @@ function selectRoute(route) {
   if (!route) return;
   setPanelMode('route');
   selectedRoute = route;
-  document.getElementById('colRight').classList.add('open');
+  openRightPanel();
   updateRoutePanel(route);
 }
 
@@ -2108,48 +2867,11 @@ function updateRoutePanel(route) {
   document.getElementById('ri-ownership').textContent = route.ownership || 'No data available.';
 }
 
-// Heuristic forecasts carry a real relative signal (system reads this as
-// higher/lower risk) but no real statistical precision — so the UI shows a
-// qualitative band, not the underlying number, even though the bar width
-// still tracks it for a quick visual comparison.
-function probBand(v) {
-  if (v >= 60) return 'High';
-  if (v >= 30) return 'Med';
-  return 'Low';
-}
-
 function updateAllPanels() {
   if (!selected) return;
   const c = selected;
 
   document.getElementById('panelTitleText').textContent = c.title;
-
-  // ── Forecast ──
-  document.getElementById('forecastEmpty').style.display = 'none';
-  const fc = document.getElementById('forecastContent');
-  fc.style.display = 'flex';
-  fc.innerHTML = (c.forecasts || []).map(f => `
-    <div class="forecast-item">
-      <div class="forecast-q">${escapeHtml(f.q)}</div>
-      <div class="prob-bars">
-        <div class="prob-row">
-          <span class="prob-lbl">Unlikely</span>
-          <div class="prob-track"><div class="prob-fill" style="width:${f.low}%;background:#3dffaa"></div></div>
-          <span class="prob-pct" style="color:#3dffaa">${probBand(f.low)}</span>
-        </div>
-        <div class="prob-row">
-          <span class="prob-lbl">Possible</span>
-          <div class="prob-track"><div class="prob-fill" style="width:${f.mid}%;background:#ffd93d"></div></div>
-          <span class="prob-pct" style="color:#ffd93d">${probBand(f.mid)}</span>
-        </div>
-        <div class="prob-row">
-          <span class="prob-lbl">Likely</span>
-          <div class="prob-track"><div class="prob-fill" style="width:${f.high}%;background:#ff3b3b"></div></div>
-          <span class="prob-pct" style="color:#ff3b3b">${probBand(f.high)}</span>
-        </div>
-      </div>
-    </div>
-  `).join('');
 }
 
 // ════════════════════════════════════════════════════════════
@@ -2216,9 +2938,74 @@ function buildChips() {
 // (app.js's exportCrisisData) so the on-screen count and an exported file
 // are provably describing the same set — this used to be duplicated inline
 // inside updateEventsList() only.
+// Real visible angular half-radius of the 3D globe at the current zoom —
+// exact, not the tile-patch's small-angle approximation (that one's a
+// deliberate underestimate to limit tile-fetch cost; this needs the true
+// value since it decides how much of the globe the event list should
+// show). Orthographic projection of a unit sphere: a point at angular
+// distance θ from the front-facing center lands at screen-space offset
+// R()*sin(θ), so the canvas edge (screen half-size canvasHalf) is visible
+// up to θ = asin(min(1, canvasHalf/R())) — naturally saturates at 90°
+// (the whole hemisphere) once R() shrinks below the canvas half-size.
+function getVisibleGlobeHalfAngleDeg() {
+  const canvasHalf = Math.min(canvas.clientWidth, canvas.clientHeight) / 2;
+  return Math.asin(Math.min(1, canvasHalf / Math.max(1, R()))) * 180 / Math.PI;
+}
+
+function normalizeLon(lon) { return ((lon + 180) % 360 + 360) % 360 - 180; }
+
+// Real, already-available geographic bounds for whatever view is currently
+// active — null means "no meaningful narrowing, show everything" (e.g. the
+// 3D globe zoomed out far enough that the whole hemisphere is visible).
+// Mirrors drawPins()'s own globeTileBounds reuse and updateLeafletPins()'s
+// leafletMap.getBounds() pattern, generalized to also cover the 3D globe
+// below the tile-patch threshold and the plain flat canvas map, neither of
+// which had a bounds concept before.
+function getCurrentViewBounds() {
+  if (inTileMapMode && leafletMap) {
+    const b = leafletMap.getBounds();
+    return { westLon: b.getWest(), eastLon: b.getEast(), southLat: b.getSouth(), northLat: b.getNorth() };
+  }
+  if (flatMap) {
+    const W = flatCanvas.clientWidth, H = flatCanvas.clientHeight;
+    if (W === 0 || H === 0) return null; // not laid out yet — see the 3D-globe guard below
+    const tl = flatUnprojectClick(0, 0), br = flatUnprojectClick(W, H);
+    return { westLon: tl.lon, eastLon: br.lon, southLat: br.lat, northLat: tl.lat };
+  }
+  if (globeTileActive && globeTileBounds) return globeTileBounds;
+  // A canvas with no real size yet (e.g. updateEventsList() fires from
+  // initApp() before the browser's first layout pass has run) makes R()
+  // collapse to its 1px floor and canvasHalf to 0 — getVisibleGlobeHalfAngleDeg()
+  // would then read that as "extremely zoomed in" (asin(0)=0°) instead of
+  // "not ready", collapsing the box to a single degenerate point and
+  // hiding almost every crisis. Confirmed live: this fired for real on
+  // startup. Treat an unlaid-out canvas the same as "whole hemisphere
+  // visible" — no narrowing — rather than computing a bogus box from it.
+  if (canvas.clientWidth === 0 || canvas.clientHeight === 0) return null;
+  const halfAngle = getVisibleGlobeHalfAngleDeg();
+  if (halfAngle >= 89) return null; // whole hemisphere visible — nothing to narrow
+  const front = frontFacingLatLon();
+  return {
+    westLon: normalizeLon(front.lon - halfAngle),
+    eastLon: normalizeLon(front.lon + halfAngle),
+    southLat: Math.max(-85, front.lat - halfAngle),
+    northLat: Math.min(85, front.lat + halfAngle),
+  };
+}
+
+function crisisWithinBounds(c, bounds) {
+  if (!bounds) return true;
+  if (c.lat == null || c.lon == null) return false;
+  if (c.lat < bounds.southLat || c.lat > bounds.northLat) return false;
+  return bounds.westLon > bounds.eastLon
+    ? (c.lon >= bounds.westLon || c.lon <= bounds.eastLon)
+    : (c.lon >= bounds.westLon && c.lon <= bounds.eastLon);
+}
+
 function getFilteredCrises() {
   const q = document.getElementById('searchInput').value.toLowerCase();
   const crisisesInYear = filterByDateRange(CRISES, currentYear);
+  const viewBounds = getCurrentViewBounds();
 
   return crisisesInYear
     .filter(c => {
@@ -2230,7 +3017,12 @@ function getFilteredCrises() {
       const typeMatch = activeType === 'all' || c.type === activeType;
       const domainMatch = activeDomain === 'all' || getDomainForType(c.type) === activeDomain;
       const countryMatch = !countryFilter || c.country === countryFilter;
-      return typeMatch && domainMatch && countryMatch;
+      // Always keep the selected crisis in the list even if the view has
+      // since panned/zoomed away from it — same exception drawPins() makes
+      // for the map itself, so picking something from the list can't make
+      // it vanish from the list.
+      const boundsMatch = crisisWithinBounds(c, viewBounds) || c.id === selected?.id;
+      return typeMatch && domainMatch && countryMatch && boundsMatch;
     })
     .filter(c => c.title.toLowerCase().includes(q) || c.country.toLowerCase().includes(q));
 }
@@ -2277,15 +3069,78 @@ function updateEventsList() {
       toggleBookmark(crisis);
       e.currentTarget.classList.toggle('on', bookmarks.has(crisis.id));
     });
-    el.addEventListener('click', () => selectCrisis(crisis));
+    el.addEventListener('click', () => { selectCrisis(crisis); navigateToCrisis(crisis); });
     list.appendChild(el);
   });
+
+  prefetchVisibleRealHeadlines(visible);
 }
 
-function buildNewsFeed() {
-  // Build news feed from events with low location confidence (diplomatic statements, announcements)
-  const list = document.getElementById('newsfeedList');
-  const empty = document.getElementById('newsfeedEmpty');
+// GDELT-sourced crises (the majority of the dataset) start with an
+// auto-generated CAMEO-verb title (e.g. "Qualcomm coerces Apple" — see
+// GDELTConnector._build_title) and only got their real scraped headline
+// lazily on click, via selectCrisis(). That kept sync-time scraping cost
+// bounded, but meant most of what's on screen looked generic/wrong until
+// clicked. Eagerly resolving it for just the currently-rendered list (not
+// the full ~1,300+/hour ingestion volume) keeps that same cost discipline
+// while fixing what's actually visible — the backend endpoint is cached 30
+// days server-side, so this is a one-time cost per crisis.
+//
+// The endpoint is rate-limited server-side to 30/minute (shared with
+// click-driven fetches from selectCrisis) — confirmed live: an earlier,
+// unthrottled concurrency-4 version burned through that budget in seconds
+// against a real ~90-row list and every request past it 429'd. Capped to
+// the first 24 pending rows (comfortably covers what's actually on screen
+// without scrolling) and paced sequentially at one request per 2.5s (24/
+// minute), leaving real headroom in the 30/minute budget for a user
+// clicking a crisis while this is still running.
+const REAL_HEADLINE_PREFETCH_LIMIT = 24;
+const REAL_HEADLINE_PREFETCH_INTERVAL_MS = 2500;
+let realHeadlinePrefetchInFlight = false;
+async function prefetchVisibleRealHeadlines(visible) {
+  if (realHeadlinePrefetchInFlight) return;
+  const pending = visible
+    .filter(c => c.source === 'GDELT' && !c._realHeadlineChecked)
+    .slice(0, REAL_HEADLINE_PREFETCH_LIMIT);
+  if (pending.length === 0) return;
+  realHeadlinePrefetchInFlight = true;
+  for (const crisis of pending) {
+    crisis._realHeadlineChecked = true;
+    try {
+      const hr = await GeoIntelAPI.getRealHeadline(crisis.id);
+      // getRealHeadline() never throws — a failed request resolves as
+      // {title:null, error:'HTTP 429'}. Rate-limited specifically (as
+      // opposed to a one-off network hiccup) means the shared budget is
+      // already exhausted for this window — retrying immediately would
+      // just fail again, so stop the whole batch rather than working
+      // through the rest of `pending` one 429 at a time. Un-mark this one
+      // so a later list render (next visit, or once the window clears)
+      // gets a real chance to resolve it instead of being stuck on the
+      // placeholder title forever.
+      if (hr.error && hr.error.includes('429')) {
+        crisis._realHeadlineChecked = false;
+        break;
+      }
+      if (hr.title) crisis.title = hr.title;
+      if (hr.location) {
+        crisis.lat = hr.location.lat;
+        crisis.lon = hr.location.lon;
+        crisis.country = hr.location.country;
+      }
+      if (hr.title) {
+        const row = document.querySelector(`#eventsList [data-id="${crisis.id}"] .evt-name`);
+        if (row) row.textContent = crisis.title;
+      }
+    } catch (e) {}
+    await new Promise(r => setTimeout(r, REAL_HEADLINE_PREFETCH_INTERVAL_MS));
+  }
+  realHeadlinePrefetchInFlight = false;
+}
+
+function buildDiplomacyFeed() {
+  // Build diplomacy feed from events with low location confidence (diplomatic statements, announcements)
+  const list = document.getElementById('diplomacyList');
+  const empty = document.getElementById('diplomacyEmpty');
   list.innerHTML = '';
 
   // Filter events with low location_confidence (< 50) or no precise location
@@ -2363,7 +3218,8 @@ document.querySelectorAll('.tab[data-tab]').forEach(tab => {
     // repaints it, cheap and idempotent).
     if (id === 'briefing' && selected) updateBriefingPanel(selected.briefing);
     if (id === 'history' && selected) updateHistoryPanel(selected.history);
-    if (id === 'news' && selected) updateNewsPanel(selected.news);
+    if (id === 'related' && selected) updateRelatedPanel(selected.related);
+    if (id === 'diplomacy') buildDiplomacyFeed();
   });
 });
 
@@ -2567,8 +3423,19 @@ canvas.addEventListener('wheel', e => {
   const cmy  = e.clientY - rect.top;
 
   const oldZoom = zoom;
-  const factor  = e.deltaY < 0 ? 1.1 : 1 / 1.1;
-  zoom = Math.max(0.5, Math.min(10, zoom * factor));
+  // 1.18/notch (was 1.1) — the old rate took ~22 scroll notches to reach
+  // zoom 8, which read as sluggish. Raised for a snappier feel; cursor-
+  // anchored compensation below is unaffected by this constant.
+  const factor  = e.deltaY < 0 ? 1.18 : 1 / 1.18;
+  // Raised from 25 — the real ceiling is now the city-tile-patch feature
+  // (composeGlobeTilePatch/globeZoomToTileZ, GLOBE_TILE_ZOOM_THRESHOLD),
+  // which independently caps at OSM tile zoom 19. At the old cap of 25,
+  // globeZoomToTileZ() only ever reached tile zoom ~8 — nowhere near that
+  // ceiling — so 25 was leaving real, already-supported detail on the
+  // table. 70 gives meaningfully more headroom into real tile detail
+  // without exceeding the tile system's own limit; halfAngleDeg already
+  // shrinks automatically as R() grows, so no other change is needed.
+  zoom = Math.max(0.5, Math.min(70, zoom * factor));
   if (zoom === oldZoom) return;
 
   // Zoom toward cursor: work out the globe-space normalised coords of the
@@ -2582,10 +3449,23 @@ canvas.addEventListener('wheel', e => {
   // Only adjust rotation when cursor is inside the globe disc
   if (nx * nx + ny * ny < 0.92) {
     // The point was at screen offset (nx*oldR, -ny*oldR) and will now be at
-    // (nx*newR, -ny*newR).  Compensate with a rotation so it stays at cursor.
-    const zf   = zoom / oldZoom;
-    const dRotY = nx * (1 - 1 / zf) * 0.85;
-    const dRotX = ny * (1 - 1 / zf) * 0.55;
+    // (nx*newR, -ny*newR) unless rotation compensates. Exact derivation
+    // (was: flat tuned constants 0.85/0.55, correct only near screen-center
+    // and increasingly wrong toward the limb) — from latLonToViewVec()'s
+    // own transform, for a point currently at view-space (nx, ny, zview)
+    // on the unit sphere:
+    //   dx/drotY = zview*cosRotX - ny*sinRotX
+    //   dy/drotX = -zview
+    // Solving for the rotation delta that keeps this same real point under
+    // the cursor after zoom (Δx = -nx*(1-1/zf), Δy = -ny*(1-1/zf)) gives
+    // the exact compensation below, valid at any rotX and any distance
+    // from the globe's center — not just near it.
+    const zf = zoom / oldZoom;
+    const zview = Math.sqrt(Math.max(0.05, 1 - nx * nx - ny * ny));
+    const cosRotX = Math.cos(rotX), sinRotX = Math.sin(rotX);
+    const dxdRotY = zview * cosRotX - ny * sinRotX;
+    const dRotY = Math.abs(dxdRotY) > 0.05 ? nx * (1 - 1 / zf) / dxdRotY : 0;
+    const dRotX = ny * (1 - 1 / zf) / zview;
     rotY -= dRotY;
     rotX  = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, rotX + dRotX));
   }
@@ -2663,25 +3543,27 @@ canvas.addEventListener('click', e => {
       if (isPointInCountry(f, emx, emy)) { found = f; break; }
     }
     const tip = document.getElementById('countryTooltip');
+    // countryFilter is intentionally never set here anymore — clicking a
+    // country used to also filter the pin/list view down to just that
+    // country, which is being removed. highlightedCountry (the flat map's
+    // recolor) and this tooltip are purely informational and stay exactly
+    // as they were.
     if (found) {
       const name = ISO_NAMES[parseInt(found.id)] || `Country #${found.id}`;
       if (highlightedCountry?.feature === found) {
-        // Second click on same country → clear filter
+        // Second click on same country → clear highlight
         highlightedCountry = null;
-        countryFilter = null;
         tip.style.display = 'none';
       } else {
         highlightedCountry = { name, feature: found };
-        countryFilter = name;
         // Count crises in this country
         const cnt = CRISES.filter(c => c.country === name).length;
         tip.innerHTML = `🔍 <strong>${name}</strong> &nbsp;·&nbsp; ${cnt} event${cnt !== 1 ? 's' : ''} &nbsp;<span style="color:var(--dim);font-weight:400;font-size:9px">click again to clear</span>`;
         tip.style.display = 'block';
       }
     } else {
-      // Click on ocean → clear filter
+      // Click on ocean → clear highlight
       highlightedCountry = null;
-      countryFilter = null;
       tip.style.display = 'none';
     }
     updateEventsList();
@@ -2697,6 +3579,13 @@ document.getElementById('resetBtn').addEventListener('click', () => { rotX = DEF
 // stays visible and clickable both to enter and to exit idle mode.
 let idleMode = false;
 const IDLE_HIDE_SELECTORS = ['#colLeft', '.globe-controls', '#timelinePanel', '#arcLegend', '#relPanel', '#breakingAlert', '#countryTooltip', '#tradeTooltip'];
+// Active-layer booleans (showArcs/showHeat/etc. are module-level `let`s, not
+// window properties, so they can't be read/written generically by name —
+// each is snapshotted and forced off explicitly) + their toggle buttons, so
+// a layer left on before idling doesn't keep silently rendering while its
+// button is hidden and unreachable to turn back off; restored exactly as
+// they were on exit.
+let idleLayerSnapshot = null;
 document.getElementById('idleModeBtn').addEventListener('click', function() {
   idleMode = !idleMode;
   this.classList.toggle('active', idleMode);
@@ -2705,13 +3594,34 @@ document.getElementById('idleModeBtn').addEventListener('click', function() {
       const el = document.querySelector(sel);
       if (el) { el.dataset._prevDisplay = el.style.display; el.style.display = 'none'; }
     });
-    document.getElementById('colRight').classList.remove('open');
+    // heatForcedOff must be included here too: idle mode resets zoom to
+    // DEFAULT_ZOOM (1), well below LOW_ZOOM_DECLUTTER_ZOOM (5), so without
+    // forcing it the heatmap's own auto-on-when-zoomed-out behavior would
+    // override showHeat=false and show it during idle anyway.
+    idleLayerSnapshot = { showArcs, showHeat, heatForcedOff, showCasc, showTrade, showAir, showRail };
+    showArcs = showHeat = showCasc = showTrade = showAir = showRail = false;
+    heatForcedOff = true;
+    ['arcBtn', 'heatBtn', 'cascBtn', 'tradeBtn', 'planeBtn', 'trainBtn'].forEach(btnId => {
+      const btn = document.getElementById(btnId);
+      if (btn) btn.classList.remove('active');
+    });
+    closeRightPanel();
     rotX = DEFAULT_ROTX; rotY = DEFAULT_ROTY; zoom = DEFAULT_ZOOM;
   } else {
     IDLE_HIDE_SELECTORS.forEach(sel => {
       const el = document.querySelector(sel);
       if (el) el.style.display = el.dataset._prevDisplay || '';
     });
+    if (idleLayerSnapshot) {
+      ({ showArcs, showHeat, heatForcedOff, showCasc, showTrade, showAir, showRail } = idleLayerSnapshot);
+      document.getElementById('arcBtn').classList.toggle('active', showArcs);
+      document.getElementById('heatBtn').classList.toggle('active', showHeat);
+      document.getElementById('cascBtn').classList.toggle('active', showCasc);
+      document.getElementById('tradeBtn').classList.toggle('active', showTrade);
+      document.getElementById('planeBtn').classList.toggle('active', showAir);
+      document.getElementById('trainBtn').classList.toggle('active', showRail);
+      idleLayerSnapshot = null;
+    }
   }
 });
 document.getElementById('arcBtn').addEventListener('click', function() {
@@ -2720,7 +3630,22 @@ document.getElementById('arcBtn').addEventListener('click', function() {
   document.getElementById('arcLegend').style.display = showArcs ? 'block' : 'none';
 });
 document.getElementById('heatBtn').addEventListener('click', function() {
-  showHeat = !showHeat;
+  // The heatmap auto-shows below LOW_ZOOM_DECLUTTER_ZOOM regardless of
+  // showHeat (see drawGlobe()'s render condition) — previously that meant
+  // there was no way to turn it OFF while zoomed out, since showHeat=false
+  // couldn't override the auto-on. heatForcedOff is an explicit user
+  // override that beats the auto-zoom behavior; the click always flips
+  // *actual current visibility*, not just the showHeat flag, and the
+  // override persists until toggled again (not reset by zooming) so the
+  // button behaves as a normal, predictable toggle at any zoom level.
+  const currentlyVisible = !heatForcedOff && (showHeat || zoom < LOW_ZOOM_DECLUTTER_ZOOM);
+  if (currentlyVisible) {
+    showHeat = false;
+    heatForcedOff = true;
+  } else {
+    showHeat = true;
+    heatForcedOff = false;
+  }
   this.classList.toggle('active', showHeat);
 });
 document.getElementById('cascBtn').addEventListener('click', async function() {
@@ -2770,6 +3695,33 @@ document.getElementById('trainBtn').addEventListener('click', function() {
   this.classList.toggle('active', showRail);
 });
 
+// Routes menu — one trigger button opens a popover holding the 4 buttons
+// above (color mode + sea/air/rail), which keep their original ids/click
+// handlers untouched; this only relocates their markup into a dropdown.
+(function initRoutesMenu() {
+  const btn  = document.getElementById('routesMenuBtn');
+  const menu = document.getElementById('routesMenu');
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    const open = menu.classList.toggle('open');
+    btn.setAttribute('aria-expanded', String(open));
+  });
+  document.addEventListener('click', e => {
+    if (!menu.classList.contains('open')) return;
+    if (!menu.contains(e.target) && e.target !== btn) {
+      menu.classList.remove('open');
+      btn.setAttribute('aria-expanded', 'false');
+    }
+  });
+})();
+
+// Hide pins — a straightforward render-gate on drawPins(), same pattern as
+// every other gc-btn toggle (arcBtn/heatBtn/etc.).
+document.getElementById('hidePinsBtn').addEventListener('click', function() {
+  showPins = !showPins;
+  this.classList.toggle('active', !showPins);
+});
+
 // Flat map toggle
 document.getElementById('flatBtn').addEventListener('click', function() {
   flatMap = !flatMap;
@@ -2782,7 +3734,15 @@ document.getElementById('flatBtn').addEventListener('click', function() {
     drawFlatMap();
   } else {
     flatCanvas.style.cursor = '';
+    if (inTileMapMode) {
+      document.getElementById('leafletMap').classList.remove('visible');
+      inTileMapMode = false;
+    }
   }
+  // Switching views changes getCurrentViewBounds()'s source entirely
+  // (globe vs flat canvas) — refresh immediately rather than waiting for
+  // the next settle/motion event, which might not come right away.
+  updateEventsList();
 });
 
 // Fullscreen toggle
@@ -2837,22 +3797,6 @@ document.getElementById('shareBtn').addEventListener('click', () => {
     btn.style.color = '#3dffaa';
     setTimeout(() => { btn.textContent = '🔗'; btn.style.color = 'var(--accent)'; }, 1800);
   });
-});
-
-// Social share — the Web Share API gives a native share sheet (all
-// installed apps) where supported, mainly mobile browsers; everywhere else,
-// fall back to a pre-filled X/Twitter share-intent link in a new tab.
-document.getElementById('shareSocialBtn').addEventListener('click', () => {
-  if (!selected) return;
-  const url = buildShareUrl(selected);
-  const text = `${selected.title} — via GeoIntel`;
-
-  if (navigator.share) {
-    navigator.share({ title: selected.title, text, url }).catch(() => {});
-    return;
-  }
-  const intentUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`;
-  window.open(intentUrl, '_blank', 'noopener,noreferrer');
 });
 
 // Toast notification
@@ -2912,8 +3856,10 @@ async function applyDeepLink() {
     impact: raw.impact || '',
     stakeholders: Array.isArray(raw.stakeholders) ? raw.stakeholders : [],
     domains: raw.domains || { military:50, economic:50, political:50, environment:50, technology:50, information:50 },
-    forecasts: [], cascade: [], causal: [], analogy: null,
+    cascade: [], causal: [], analogy: null,
     is_verified: raw.is_verified || false,
+    source: raw.source || null,
+    source_url: raw.source_url || null,
     _shared: true,
   };
 
@@ -2969,7 +3915,7 @@ function updateWatchlist() {
     el.querySelector('.bookmark-btn').addEventListener('click', e => {
       e.stopPropagation(); toggleBookmark(crisis);
     });
-    el.addEventListener('click', () => selectCrisis(crisis));
+    el.addEventListener('click', () => { selectCrisis(crisis); navigateToCrisis(crisis); });
     list.appendChild(el);
   });
 }
@@ -3284,26 +4230,55 @@ setTimeout(() => {
 const colLeft = document.getElementById('colLeft');
 const sidebarToggle = document.getElementById('sidebarToggle');
 sidebarToggle.addEventListener('click', () => {
-  colLeft.classList.toggle('collapsed');
-  sidebarToggle.textContent = colLeft.classList.contains('collapsed') ? '▶' : '◀';
+  const willCollapse = !colLeft.classList.contains('collapsed');
+  if (willCollapse) {
+    colLeft.classList.add('collapsed');
+    sidebarToggle.textContent = '▶';
+  } else {
+    // Opening the left list closes the right panel too — full mutual
+    // exclusion (see openRightPanel/closeRightPanel).
+    closeRightPanel();
+  }
+});
+
+// Mobile globe-control menu — #globeMenuBtn only renders on mobile (see
+// app.css); every button inside .globe-controls keeps its own existing
+// id/handler, this just toggles the container's visibility.
+document.getElementById('globeMenuBtn')?.addEventListener('click', () => {
+  document.querySelector('.globe-controls').classList.toggle('mobile-open');
 });
 
 // Right panel open/close
-const colRight = document.getElementById('colRight');
 document.getElementById('panelClose').addEventListener('click', () => {
-  colRight.classList.remove('open');
+  closeRightPanel();
 });
 
 // ════════════════════════════════════════════════════════════
 // ANIMATION LOOP
 // ════════════════════════════════════════════════════════════
 
-const IDLE_ROTATE_SPEED = 0.0012; // rad/frame, slow continuous drift while idle mode is active
+const IDLE_ROTATE_SPEED = 0.0018; // rad/frame, slow continuous drift while idle mode is active
+// Edge-triggered: fires updateEventsList() exactly once when motion
+// transitions from "moving" to "settled" (~220ms after the last
+// drag/zoom/pan), never on every frame — rebuilding the sidebar's DOM
+// list continuously during a drag would be wasteful and janky. Covers the
+// 3D globe and the plain flat canvas map, both of which drive the shared
+// markMotion()/isSettled() signal already; Leaflet mode has its own
+// native moveend/zoomend settle event, handled separately in
+// onLeafletViewChange().
+let _eventListPendingRefresh = false;
+function checkEventListRefresh() {
+  if (!isSettled()) { _eventListPendingRefresh = true; return; }
+  if (_eventListPendingRefresh) { _eventListPendingRefresh = false; updateEventsList(); }
+}
+
 function loop() {
   decayStaleDragVelocity();
   applyInertia();
   if (idleMode && !drag) rotY += IDLE_ROTATE_SPEED;
+  drawStars();
   drawGlobe();
+  if (!inTileMapMode) checkEventListRefresh();
   requestAnimationFrame(loop);
 }
 
@@ -3367,11 +4342,12 @@ async function loadRealData() {
         impact: c.impact || '',
         stakeholders: Array.isArray(c.stakeholders) ? c.stakeholders : [],
         domains: c.domains || { military: 50, economic: 50, political: 50, environment: 50, technology: 50, information: 50 },
-        forecasts: [],
         cascade: [],
         causal: [],
         analogy: null,
         is_verified: c.is_verified || false,
+        source: c.source || null,
+        source_url: c.source_url || null,
         status: c.status || 'active',
         date_scheduled: c.date_scheduled || null,
       }));
@@ -3690,25 +4666,26 @@ function updateHistoryPanel(hist) {
   renderMarkdown(textEl, hist.history);
 }
 
-// Per-crisis news articles — the fetch (crisis.news, via GeoIntelAPI.getNews
-// in selectCrisis below) already existed; this just renders it, matching the
-// same pattern as updateBriefingPanel/updateHistoryPanel above.
-function updateNewsPanel(articles) {
-  const c = document.getElementById('newsContent'), e = document.getElementById('newsEmpty');
+// Other real crises related to the currently selected one — the fetch
+// (crisis.related, via GeoIntelAPI.getRelated in selectCrisis below) already
+// existed; this renders it as a clickable list, matching the same
+// click-to-navigate pattern buildDiplomacyFeed()'s items already use.
+function updateRelatedPanel(related) {
+  const c = document.getElementById('relatedContent'), e = document.getElementById('relatedEmpty');
 
-  if (!articles) {
+  if (!related) {
     c.style.display = 'none';
     if (selected) {
-      showPanelUnavailable(e, 'News articles unavailable for this crisis<br>(try again shortly)');
+      showPanelUnavailable(e, 'Related crises unavailable<br>(try again shortly)');
     } else {
       resetPanelEmpty(e);
       e.style.display = 'flex';
     }
     return;
   }
-  if (articles.length === 0) {
+  if (related.length === 0) {
     c.style.display = 'none';
-    showPanelUnavailable(e, 'No recent news articles found<br>for this crisis');
+    showPanelUnavailable(e, 'No related crises found<br>for this event');
     return;
   }
 
@@ -3716,25 +4693,27 @@ function updateNewsPanel(articles) {
   e.style.display = 'none';
   c.style.display = 'flex';
 
-  c.innerHTML = articles.map(a => {
-    // Two possible shapes reach here: real DB-backed articles use
-    // published_at (snake_case, News.to_dict()); the synthetic fallback
-    // generated when no real articles are indexed uses publishedAt
-    // (camelCase, backend's _generate_contextual_news). Accept either.
-    const rawDate = a.published_at || a.publishedAt;
-    const dateStr = rawDate ? new Date(rawDate).toLocaleDateString() : '';
-    const meta = [escapeHtml(a.source || 'Unknown source'), dateStr].filter(Boolean).join(' • ');
-    const body = `
-      <div style="font-weight:600;color:#e0eaff;font-size:11px;margin-bottom:3px;line-height:1.4">${escapeHtml(a.title || 'Untitled')}</div>
-      <div style="color:var(--dim);font-size:9px">${meta}</div>`;
-    const itemStyle = 'display:block;padding:8px;border:1px solid rgba(255,255,255,.1);border-radius:3px;background:rgba(255,255,255,.03);text-decoration:none;transition:background .2s;';
-    // Only a clickable link for http(s) URLs — same scheme restriction
-    // renderMarkdown() already applies to source citations, so a
-    // malformed/untrusted URL can't smuggle a javascript: scheme.
-    return /^https?:\/\//.test(a.url || '')
-      ? `<a href="${escapeHtml(a.url)}" target="_blank" rel="noopener noreferrer" style="${itemStyle}" onmouseover="this.style.background='rgba(78,158,255,.1)'" onmouseout="this.style.background='rgba(255,255,255,.03)'">${body}</a>`
-      : `<div style="${itemStyle}">${body}</div>`;
-  }).join('');
+  c.innerHTML = '';
+  related.forEach(rc => {
+    const tm = TYPE_META[rc.type] || {};
+    const sevCol = rc.severity > 80 ? '#ff3b3b' : rc.severity > 60 ? '#ff8833' : '#ffd93d';
+    const item = document.createElement('div');
+    item.style.cssText = 'display:block;padding:8px;border:1px solid rgba(255,255,255,.1);border-radius:3px;background:rgba(255,255,255,.03);cursor:pointer;transition:background .2s;';
+    item.onmouseover = () => item.style.background = 'rgba(78,158,255,.1)';
+    item.onmouseout = () => item.style.background = 'rgba(255,255,255,.03)';
+    item.innerHTML = `
+      <div style="font-weight:600;color:#e0eaff;font-size:11px;margin-bottom:3px;line-height:1.4">${escapeHtml(rc.title || 'Untitled')}</div>
+      <div style="font-size:9px">
+        <span class="sev-badge" style="background:${sevCol}22;color:${sevCol};border:1px solid ${sevCol}55">${rc.severity}</span>
+        <span style="color:${tm.color || '#888'}">${tm.name || rc.type || ''}</span>
+        · <span style="color:var(--dim)">${escapeHtml(rc.country || '')}</span>
+      </div>`;
+    item.addEventListener('click', () => {
+      const full = CRISES.find(cr => cr.id === rc.id) || rc;
+      selectCrisis(full);
+    });
+    c.appendChild(item);
+  });
 }
 
 // Enhanced selectCrisis with all new data
@@ -3742,7 +4721,8 @@ const originalSelectCrisis = selectCrisis;
 selectCrisis = async function(crisis) {
   setPanelMode('crisis');
   selected = crisis;
-  document.getElementById('colRight').classList.add('open');
+  openRightPanel();
+  if (inTileMapMode) updateLeafletPins(); // reflect the new selection's bigger marker immediately
 
   // These four lookups are independent — each is its own network round-trip
   // with no data dependency on the others. Awaiting them one at a time (as
@@ -3756,19 +4736,10 @@ selectCrisis = async function(crisis) {
 
   await Promise.all([
     (async () => {
-      if (crisis.forecasts && crisis.forecasts.length > 0) return;
+      if (crisis.related) return;
       try {
-        const fr = await GeoIntelAPI.getForecasts(crisis.id);
-        if (!fr.error && fr.forecasts) {
-          crisis.forecasts = fr.forecasts.map(f => ({ q:f.q, low:f.low, mid:f.mid, high:f.high }));
-        }
-      } catch (e) {}
-    })(),
-    (async () => {
-      if (crisis.news) return;
-      try {
-        const nr = await GeoIntelAPI.getNews({ crisis_id: crisis.id, days: 30, limit: 5 });
-        if (!nr.error && nr.articles) { crisis.news = nr.articles; }
+        const rr = await GeoIntelAPI.getRelated(crisis.id);
+        if (!rr.error && rr.related) { crisis.related = rr.related; }
       } catch (e) {}
     })(),
     (async () => { if (!crisis.briefing) crisis.briefing = await loadBriefing(crisis.id); })(),
@@ -3780,12 +4751,39 @@ selectCrisis = async function(crisis) {
         if (!rr.error) { crisis.reliability = rr; }
       } catch (e) {}
     })(),
+    (async () => {
+      // GDELT's raw data has no article headline at all (copyright
+      // reasons) — its titles are auto-generated from CAMEO codes/actor
+      // names (see GDELTConnector._build_title). Fetch the real one lazily
+      // here, the first time this specific crisis is opened, rather than
+      // for all ~1,300+ GDELT events on every sync. Server-side cached, so
+      // repeat opens of the same crisis don't re-scrape.
+      if (crisis.source !== 'GDELT' || crisis._realHeadlineChecked) return;
+      crisis._realHeadlineChecked = true;
+      try {
+        const hr = await GeoIntelAPI.getRealHeadline(crisis.id);
+        if (hr.title) { crisis.title = hr.title; }
+        // A refined pin position for this crisis — GDELT's own geocoding
+        // often collapses verbal-conflict events onto a coarse country/
+        // capital point (see the endpoint's own docstring for the real
+        // numbers behind this). The backend already persisted this to the
+        // DB for future loads; updating it here too means THIS pin moves
+        // immediately, without waiting for a page reload. No redraw call
+        // needed — the render loop reads straight from this same object
+        // every frame.
+        if (hr.location) {
+          crisis.lat = hr.location.lat;
+          crisis.lon = hr.location.lon;
+          crisis.country = hr.location.country;
+        }
+      } catch (e) {}
+    })(),
   ]);
 
   updateAllPanels();
   updateBriefingPanel(crisis.briefing);
   updateHistoryPanel(crisis.history);
-  updateNewsPanel(crisis.news);
+  updateRelatedPanel(crisis.related);
   updatePanelBadges(crisis);
   updateEventsList();
 };
@@ -3828,7 +4826,7 @@ async function initApp() {
   }
 
   updateEventsList();
-  buildNewsFeed();
+  buildDiplomacyFeed();
   updateTimelineActivity();
   updateAlertBadge();
   updateWatchlist();
@@ -3892,7 +4890,7 @@ async function initApp() {
 setInterval(async () => {
   await loadRealData();
   updateEventsList();
-  buildNewsFeed();
+  buildDiplomacyFeed();
 }, 3600000); // 1 hour in milliseconds
 
 // Admin users who bypass subscription check
@@ -4174,6 +5172,32 @@ function flyToLatLon(lat, lon) {
     if (t < 1) requestAnimationFrame(step);
   }
   requestAnimationFrame(step);
+}
+
+// Centers the active flat-canvas view on (lat, lon) at the current fZoom —
+// the inverse of flatUnprojectClick's screenX/screenY -> lat/lon mapping,
+// solved for the fPanX/fPanY that put this point at screen-center.
+function panFlatMapTo(lat, lon) {
+  const W = flatCanvas.clientWidth, H = flatCanvas.clientHeight;
+  const baseX = (lon + 180) / 360 * W;
+  const baseY = (90 - lat) / 180 * H;
+  fPanX = (W / 2 - baseX) * fZoom;
+  fPanY = (H / 2 - baseY) * fZoom;
+}
+
+// Shared "go look at this crisis" navigation, reused by every place a
+// crisis can be picked from a list rather than clicked directly on a pin
+// (sidebar list, watchlist, search, shared links) — branches on whichever
+// view is actually active so the pin ends up on-screen regardless of mode.
+function navigateToCrisis(crisis) {
+  if (crisis.lat == null || crisis.lon == null) return;
+  if (inTileMapMode && leafletMap) {
+    leafletMap.setView([crisis.lat, crisis.lon], leafletMap.getZoom());
+  } else if (flatMap) {
+    panFlatMapTo(crisis.lat, crisis.lon);
+  } else {
+    flyToLatLon(crisis.lat, crisis.lon);
+  }
 }
 
 (function initSearch() {

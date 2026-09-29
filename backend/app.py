@@ -21,7 +21,10 @@ import csv
 from io import StringIO
 
 from models import Session, Crisis, News, Actor, Relationship, Forecast, EconomicData, CrisisSnapshot
-from data_sources import DataAggregator, init_actors, init_relationships, init_scheduled_events
+from data_sources import (
+    DataAggregator, init_actors, init_relationships, init_scheduled_events,
+    fetch_real_page_metadata, _extract_incident_location, NominatimGeocoder,
+)
 from cache import cache_get, cache_set, cache_delete, cache_clear_prefix, cache_stats
 
 # Optional: Anthropic for AI briefings
@@ -123,7 +126,7 @@ def serve_static(filename):
 _CSP = (
     "default-src 'self'; "
     "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.socket.io; "
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; "
     "font-src 'self' https://fonts.gstatic.com; "
     "img-src 'self' data: https:; "
     "connect-src 'self' https://en.wikipedia.org https://*.supabase.co; "
@@ -140,6 +143,15 @@ def set_security_headers(response):
     response.headers['Content-Security-Policy'] = _CSP
     if request.is_secure:
         response.headers['Strict-Transport-Security'] = 'max-age=63072000; includeSubDomains'
+    # Frontend files (served straight off disk by serve_static/index below)
+    # otherwise rely on Flask's default conditional ETag/Last-Modified
+    # caching, which lets a plain browser reload silently serve a stale
+    # app.js/app.css/index.html after an edit — the exact confusion that
+    # made this session repeatedly reach for a disposable no-cache server
+    # just to verify changes. API responses are unaffected (their own
+    # in-memory cache_get/cache_set layer already handles that separately).
+    if not request.path.startswith('/api/'):
+        response.headers['Cache-Control'] = 'no-cache, must-revalidate'
     return response
 
 # Try to load SocketIO, but don't fail if it's not available
@@ -357,6 +369,52 @@ def analyze_escalation(crisis_id, _crisis=None):
         session.close()
 
 
+def _resolve_crisis_actors(session, crisis, actors=None):
+    """Resolve a crisis to the real Actor id(s) most likely to be its
+    stakeholders — extracted from analyze_cascade's own resolution chain
+    (exact country-name match -> curated city->country map -> geographic
+    proximity) so other features (History's relationship grounding) can
+    reuse the exact same logic instead of reimplementing it. `actors`
+    can be passed in to avoid re-querying the full Actor table when the
+    caller already has it loaded."""
+    if actors is None:
+        actors = session.query(Actor).all()
+
+    crisis_country = crisis.country
+    resolved = [a.id for a in actors if a.name == crisis_country]
+
+    if not resolved and crisis_country:
+        # crisis.country is sometimes a city/region name rather than a
+        # real country name matching an Actor.name value (e.g. ACLED's
+        # sample fallback data uses "Kyiv", not "Ukraine") — resolve it
+        # via the same curated city->country map NewsBasedCrisisDetector
+        # already uses for geocoding, before falling back to raw
+        # geographic proximity. Without this, the exact-match lookup
+        # above almost never hit and this silently fell through to the
+        # proximity fallback every time.
+        from data_sources import NewsBasedCrisisDetector
+        city_entry = NewsBasedCrisisDetector.LOCATION_MAP.get(crisis_country.lower())
+        if city_entry:
+            resolved = [a.id for a in actors if a.name == city_entry['country']]
+
+    if not resolved:
+        # Fallback: use geographic proximity
+        import math
+        crisis_lat, crisis_lon = crisis.latitude or 0, crisis.longitude or 0
+        distances = []
+        for a in actors:
+            if a.latitude is not None and a.longitude is not None:
+                dist = math.sqrt((a.latitude - crisis_lat) ** 2 + (a.longitude - crisis_lon) ** 2)
+                distances.append((a.id, dist))
+        if distances:
+            distances.sort(key=lambda x: x[1])
+            resolved = [a[0] for a in distances[:2]]
+        else:
+            resolved = [a.id for a in actors[:2]]  # Fallback to first 2 actors
+
+    return resolved
+
+
 def analyze_cascade(crisis_id, depth=2, threshold=50):
     """
     Analyze how a crisis cascades through the actor relationship network.
@@ -390,37 +448,7 @@ def analyze_cascade(crisis_id, depth=2, threshold=50):
                 relationship_graph[rel.actor_b].append((rel.actor_a, rel.type, rel.strength))
 
         # Identify which actors are directly involved in the crisis
-        crisis_country = crisis.country
-        initial_actors = [a.id for a in actors if a.name == crisis_country]
-
-        if not initial_actors and crisis_country:
-            # crisis.country is sometimes a city/region name rather than a
-            # real country name matching an Actor.name value (e.g. ACLED's
-            # sample fallback data uses "Kyiv", not "Ukraine") — resolve it
-            # via the same curated city->country map NewsBasedCrisisDetector
-            # already uses for geocoding, before falling back to raw
-            # geographic proximity. Without this, the exact-match lookup
-            # above almost never hit and this silently fell through to the
-            # proximity fallback every time.
-            from data_sources import NewsBasedCrisisDetector
-            city_entry = NewsBasedCrisisDetector.LOCATION_MAP.get(crisis_country.lower())
-            if city_entry:
-                initial_actors = [a.id for a in actors if a.name == city_entry['country']]
-
-        if not initial_actors:
-            # Fallback: use geographic proximity
-            import math
-            crisis_lat, crisis_lon = crisis.latitude or 0, crisis.longitude or 0
-            distances = []
-            for a in actors:
-                if a.latitude is not None and a.longitude is not None:
-                    dist = math.sqrt((a.latitude - crisis_lat)**2 + (a.longitude - crisis_lon)**2)
-                    distances.append((a.id, dist))
-            if distances:
-                distances.sort(key=lambda x: x[1])
-                initial_actors = [a[0] for a in distances[:2]]
-            else:
-                initial_actors = [a.id for a in actors[:2]]  # Fallback to first 2 actors
+        initial_actors = _resolve_crisis_actors(session, crisis, actors=actors)
 
         # BFS to find cascade pathway
         cascade_steps = []
@@ -696,10 +724,46 @@ def generate_ai_briefing(crisis_id):
                 'url': n.url or '',
                 'published': pub,
             })
+        # News.crisis_id is never populated by any ingestion connector today
+        # (a real, separate bug — the query above matches zero rows for
+        # every crisis, not just thin ones), so numbered_sources is empty
+        # here in practice regardless of how much real reporting exists.
+        # crisis.source_url IS real and already populated for the GDELT
+        # majority (used elsewhere in this function for excerpt text) —
+        # surface it as a real, citable source too instead of leaving it
+        # only implicit in the prose.
+        if crisis.source_url and not any(s['url'] == crisis.source_url for s in numbered_sources):
+            numbered_sources.append({
+                'n': len(numbered_sources) + 1,
+                'title': crisis.title,
+                'source': crisis.source or 'Unknown outlet',
+                'url': crisis.source_url,
+                'published': crisis.date_start.strftime('%Y-%m-%d') if crisis.date_start else 'undated',
+            })
         sources_block = '\n'.join(
             f"[{s['n']}] {s['title']} — {s['source']}, {s['published']}. {s['url']}"
             for s in numbered_sources
         ) or 'No indexed news sources are available for this crisis.'
+
+        # Real article substance for the top few sources — previously
+        # fetched into `news` above but never actually used beyond a
+        # title/date/url citation stub, even though News.content is a real
+        # column populated at ingest. Without this, Claude had only
+        # metadata to cite, not anything to expand a real explanation
+        # from — the direct cause of "bland, severity-only" briefings.
+        excerpt_parts = []
+        for i, n in enumerate(news[:3], 1):
+            if n.content:
+                excerpt_parts.append(f"[{i}] {n.content[:600]}")
+        # A live-scraped description of the crisis's own primary source
+        # (not one of the indexed News rows) — same real-page-metadata
+        # fetch already used elsewhere in this app for pin-location
+        # refinement, reused here for its `description` field instead.
+        if crisis.source_url:
+            meta = fetch_real_page_metadata(crisis.source_url)
+            if meta and meta.get('description'):
+                excerpt_parts.append(f"Primary source description: {meta['description']}")
+        excerpts_block = '\n\n'.join(excerpt_parts) or 'No real article text is available beyond the headlines above.'
 
         # Build context for Claude
         context = f"""
@@ -719,6 +783,9 @@ Affected Sectors: {', '.join(economic['sectors_typically_exposed'])}
 
 Numbered Source List (cite these by number — see instructions):
 {sources_block}
+
+Real article text/excerpts to draw the actual explanation from:
+{excerpts_block}
 """
 
         # Fetch Wikipedia image (non-blocking, optional)
@@ -733,42 +800,21 @@ Numbered Source List (cite these by number — see instructions):
                     messages=[
                         {
                             "role": "user",
-                            "content": f"""Generate an in-depth intelligence briefing for this geopolitical crisis, written for a journalist or political commentator who needs both the analytical depth of an intelligence product AND a verifiable factual trail. Write in the style of a senior analyst at a major intelligence agency — precise, authoritative, and detailed.
+                            "content": f"""Write a single, expansive, specific explanation of what is actually happening in this crisis, for a journalist or political commentator. Not a severity summary, not a generic category description — the real situation: who did what, to whom, when, where, and why it matters right now. Pull the real substance from the article excerpts and numbered sources below rather than speaking in generalities.
 
-CITATION RULES (this briefing will be published under this outlet's name, so sourcing discipline matters):
-- A numbered source list is provided below. Whenever you state a specific fact, figure, quote, or claim that comes from one of those sources, cite it inline immediately after the claim using its bracketed number, e.g. "...forces reportedly withdrew from the eastern district [3]."
+CITATION RULES (this will be published under this outlet's name, so sourcing discipline matters):
+- Whenever you state a specific fact, figure, quote, or claim that comes from the numbered source list or the article excerpts below, cite it inline immediately after the claim using its bracketed number, e.g. "...forces reportedly withdrew from the eastern district [3]."
 - A single sentence may carry multiple citations if it draws on more than one source, e.g. "[2][5]".
-- Only cite numbers that appear in the provided source list. Never invent a source, a number, a quote, or a statistic that isn't backed by the list or by the structured Crisis Context data above it.
-- Analytical judgment, historical background, and forward-looking assessment that come from your own reasoning rather than a listed source should NOT carry a citation — present it plainly as analysis. It is expected and fine for a briefing like this to contain uncited analytical sentences; just don't dress them up with a fake citation.
-- If the source list is empty or too thin to support a claim, say so explicitly rather than filling the gap with an uncited "fact."
+- Only cite numbers that appear in the provided source list. Never invent a source, a number, a quote, or a statistic that isn't backed by the list, the excerpts, or the structured Crisis Context data.
+- Analytical judgment that comes from your own reasoning rather than a listed source should NOT carry a citation — present it plainly as analysis.
+- If the source list and excerpts are thin, say so explicitly rather than filling the gap with an uncited "fact" — a shorter, honest explanation is better than a padded one.
 
-Format your response EXACTLY as follows (keep the headers, and do not add a "Sources" section yourself — one is appended automatically after your response):
-
-## Situation Report
-[5-7 sentences describing the current state of the crisis with specific facts, figures, and timeline, citing the source list where you draw on it]
-
-## Strategic Context
-[5-7 sentences explaining the historical background, root causes, and how this fits into broader regional or global dynamics]
-
-## Key Actors & Interests
-[Bullet list of 4-6 key actors involved, what each stands to gain or lose, and their likely next moves]
-
-## Impact Assessment
-[5-6 sentences on military, economic, political, and humanitarian consequences — both immediate and medium-term]
-
-## Escalation Scenarios
-[3 plausible near-term escalation or de-escalation pathways, each with a stated likelihood and the specific trigger that would produce it]
-
-## What To Watch
-[3-4 concrete, specific indicators a journalist could actually monitor going forward — named events, dates, decisions, or thresholds — not vague generalities]
-
-## Intelligence Gaps
-[2-3 sentences on what remains uncertain or unknown, and specifically what additional reporting or disclosure would resolve it]
+Format your response as flowing prose — no section headers, no bullet points, just the explanation itself (do not add a "Sources" section yourself — one is appended automatically after your response).
 
 Crisis Context:
 {context}
 
-Be specific and analytical — name actors, places, and figures rather than speaking in generalities. This is for publication, so err toward more detail and more precision rather than less. Write at least 800 words total across the sections above (excluding the source list, which is appended separately)."""
+Be specific — name actors, places, and figures rather than speaking in generalities. Write 400-700 words, scaled to how much real material is actually available above rather than padded to a fixed length."""
                         }
                     ]
                 )
@@ -794,7 +840,7 @@ Be specific and analytical — name actors, places, and figures rather than spea
                 return None
         else:
             logger.info("ANTHROPIC_API_KEY not set — generating static briefing")
-            result = _generate_static_briefing(crisis, escalation, economic, reliability, numbered_sources, image)
+            result = _generate_static_briefing(crisis, escalation, economic, reliability, numbered_sources, image, excerpt_parts)
             if result:
                 cache_set(cache_key, result, ttl=3600)
             return result
@@ -816,8 +862,12 @@ def _format_sources_section(numbered_sources):
     return "\n\n## Sources\n" + '\n'.join(lines)
 
 
-def _generate_static_briefing(crisis, escalation, economic, reliability, numbered_sources, image):
-    """Generate a rule-based intelligence briefing when no API key is available."""
+def _generate_static_briefing(crisis, escalation, economic, reliability, numbered_sources, image, excerpt_parts=None):
+    """Generate a rule-based, single-explanation briefing when no API key
+    is available — built from real material (crisis.analysis, real article
+    excerpts) rather than a severity-only template. Honest when that real
+    material is thin: says so rather than padding with generic phrasing."""
+    excerpt_parts = excerpt_parts or []
     sev = crisis.severity
     trend = escalation.get('trend', 'stable') if escalation else 'stable'
     velocity = escalation.get('velocity') if escalation else None
@@ -831,6 +881,7 @@ def _generate_static_briefing(crisis, escalation, economic, reliability, numbere
     # the citation convention the AI-generated path uses.
     lead_citations = ''.join(f"[{s['n']}]" for s in numbered_sources[:2])
     has_citable_news = bool(numbered_sources)
+    has_real_material = bool(crisis.analysis) or bool(excerpt_parts)
 
     severity_label = 'Critical' if sev >= 85 else ('High' if sev >= 65 else ('Moderate' if sev >= 40 else 'Low'))
     trend_desc = {
@@ -841,59 +892,28 @@ def _generate_static_briefing(crisis, escalation, economic, reliability, numbere
         'insufficient_data': 'too new to establish a trend',
     }.get(trend, 'evolving')
 
-    domain_scores = {
-        'Military': crisis.military_score or 0,
-        'Economic': crisis.economic_score or 0,
-        'Political': crisis.political_score or 0,
-        'Environment': crisis.environment_score or 0,
-        'Technology': crisis.technology_score or 0,
-        'Information': crisis.information_score or 0,
-    }
-    active_domains = [k for k, v in domain_scores.items() if v > 30]
-    domain_str = ', '.join(active_domains) if active_domains else 'multiple domains'
+    # Lead with the real explanation when there's real material to draw
+    # from (crisis.analysis, real article excerpts) — this is what makes
+    # it an actual explanation instead of a severity summary. Falls back
+    # to an honest, explicit "not enough real material" statement rather
+    # than padding with generic type-based phrasing when there isn't any.
+    if has_real_material:
+        explanation_parts = []
+        if crisis.analysis:
+            explanation_parts.append(crisis.analysis.strip())
+        for part in excerpt_parts:
+            # part is already "[n] excerpt text" or "Primary source description: ..."
+            explanation_parts.append(part if part.startswith('[') else part)
+        real_explanation = ' '.join(explanation_parts)
+    else:
+        real_explanation = (
+            f"No real article text or analysis is indexed for this crisis yet beyond its "
+            f"structured classification — {crisis.type} activity in {crisis.country}. "
+            f"This is a placeholder until real source material is available; treat the "
+            f"figures below as the only currently-grounded facts."
+        )
 
-    type_context = {
-        'conflict': 'active armed hostilities with casualties and territorial stakes',
-        'military': 'significant military mobilisation or posturing',
-        'diplomatic': 'a diplomatic breakdown with potential for wider fallout',
-        'economic': 'economic coercion or structural instability',
-        'resource': 'competition over critical resources with supply-chain implications',
-        'technology': 'a technology or cyber-domain confrontation',
-        'proxy': 'a proxy conflict with third-party actors as principal combatants',
-        'alliance': 'alliance realignment that could reshape regional security architecture',
-    }.get(crisis.type, 'a geopolitical flashpoint')
-
-    briefing_text = f"""## Situation Report
-{crisis.title} ({crisis.country}) is rated **{severity_label}** at severity {sev}/100{lead_citations}. The situation is {trend_desc}. The crisis involves {type_context}. Cross-domain impact spans {domain_str}, with {impact_sev} economic consequences affecting {sectors}. {"Recent reporting indicates the situation remains fluid" + lead_citations + "." if has_citable_news else "No recent indexed reporting is available to corroborate developments beyond the structured data above."}
-
-## Strategic Context
-This crisis sits within a broader pattern of regional instability in {crisis.country} and surrounding areas. {crisis.analysis or 'Detailed analytical context is unavailable for this event.'} The {crisis.type} dimension suggests structural drivers that are unlikely to resolve quickly without deliberate diplomatic or military intervention.
-
-## Key Actors & Interests
-- **Primary belligerents / stakeholders** in {crisis.country} hold immediate territorial or political stakes
-- **Regional neighbours** face spillover risks in trade, refugees, and security guarantees
-- **Great powers** (US, China, Russia, EU) are monitoring for escalation that affects their strategic interests
-- **International institutions** (UN, regional bodies) have limited leverage at severity {sev}/100
-- **Non-state actors** may exploit governance vacuums if the crisis prolongs
-
-## Impact Assessment
-Economic impact is rated **{impact_sev}**, with {sectors} sectors most exposed. Source reliability is **{rel_label}** across {src_count} tracked source(s). {"Escalation pressure is building — proactive measures are time-sensitive." if trend == "escalating" else ("Conditions may allow for negotiated pauses." if trend == "de-escalating" else "The situation is stable but fragile.")} Humanitarian and infrastructure consequences scale with the {sev}/100 severity rating.
-
-## Escalation Scenarios
-1. **Continued escalation** ({min(sev + 10, 95)}% plausibility if current drivers persist): further deterioration of {domain_str} conditions with possible external actor involvement
-2. **Stalemate / frozen conflict** (moderate plausibility): situation locks in at current severity, reducing acute risk but entrenching structural instability
-3. **Rapid de-escalation** (lower plausibility without mediation): requires significant concessions or third-party intervention
-
-## What To Watch
-- Any shift in the {sev}/100 severity score or the {trend} trend line, which would indicate the drivers above are actually changing rather than holding
-- Statements or troop/resource movements from the primary stakeholders in {crisis.country}
-- Whether {sectors} sector exposure translates into visible price or supply effects
-{"- Follow-on reporting from the sources below, which may update or contradict the current picture" if has_citable_news else "- Emergence of indexed reporting to corroborate or update this structured-data-only assessment"}
-
-## Intelligence Gaps
-Key unknowns include internal decision-making dynamics of primary actors and the degree of external support flows. Confidence in this assessment is {crisis.confidence}% based on {src_count} source(s). {"This briefing is generated analytically from structured severity/escalation/economic data plus the numbered sources below — it is not a substitute for original reporting, and every numbered citation should be independently verified before publication." if has_citable_news else "No indexed news sources were available at generation time, so this briefing rests entirely on structured severity/escalation/economic data — treat it as a starting point, not a substitute for original reporting."}
-
-*This briefing was generated analytically from structured data. Set ANTHROPIC_API_KEY for AI-powered deep analysis.*"""
+    briefing_text = f"""{crisis.title} ({crisis.country}) is rated **{severity_label}** at severity {sev}/100{lead_citations}, {trend_desc}. {real_explanation} {"Recent indexed reporting is cited below" + lead_citations + "; every citation should be independently verified before publication." if has_citable_news else "No recent indexed reporting is available to corroborate developments beyond what's stated above."} Economic exposure is rated **{impact_sev}** across {sectors}; source reliability is **{rel_label}** across {src_count} tracked source(s), {crisis.confidence}% overall confidence."""
 
     briefing_text += _format_sources_section(numbered_sources)
 
@@ -964,22 +984,42 @@ def _format_history_disclaimer():
             "Verify names, dates, and figures independently before citing them.*")
 
 
-def _generate_static_history(crisis):
-    """Rule-based fallback when no ANTHROPIC_API_KEY is set. Unlike
-    _generate_static_briefing, there's no structured historical-knowledge
-    table in this app to synthesize real content from (severity/escalation/
-    economic fields describe the CURRENT situation, not history) — so
-    this stays honest about the gap rather than fabricating a plausible-
-    looking history from data that isn't actually historical."""
+def _generate_static_history(crisis, relevant_relationships=None):
+    """Rule-based fallback when no ANTHROPIC_API_KEY is set. There's no
+    structured historical-narrative table in this app to synthesize a real
+    timeline/background from — but there IS real, hand-curated Relationship
+    data (see init_relationships in data_sources.py) for the specific pair
+    of actors involved in this crisis when one resolves (see
+    generate_deep_history's stakeholder-pair narrowing), so this states
+    that real classification plainly (a fact, not a generated narrative).
+    When no relevant pair resolves, this says exactly that — short and
+    honest — rather than a multi-section skeleton padded with an AI-required
+    disclaimer that used to appear even when real relationship facts WERE
+    being shown. Also doesn't call _format_history_disclaimer(): that
+    footer says "generated by AI", which is simply false on this path."""
+    relevant_relationships = relevant_relationships or []
+
+    if not relevant_relationships:
+        return {
+            'history': 'No history available.',
+            'analogy': None,
+            'model': 'static',
+            'timestamp': datetime.utcnow().isoformat(),
+        }
+
+    facts = '\n'.join(
+        f"- **{r.actor_a}–{r.actor_b}**: classified as *{r.label}* ({r.type}), "
+        f"strength {r.strength}/100, stability {r.stability}/100"
+        for r in relevant_relationships
+    )
     text = (
         f"## Historical Background\n"
-        f"Deep historical analysis for {crisis.title} requires AI-generated "
-        f"analysis and is not available in static mode. Set ANTHROPIC_API_KEY "
-        f"on the backend to enable this feature.\n\n"
-        f"## Timeline\n*Not available without AI analysis.*\n\n"
-        f"## Historical Parallels\n*Not available without AI analysis.*"
+        f"This app's own curated data (real, hand-sourced from public alliance/treaty/conflict "
+        f"records, not generated) classifies the following relationship(s) for the actors involved "
+        f"in {crisis.title}:\n\n{facts}\n\n"
+        f"## Timeline\n*No information available.*\n\n"
+        f"## Historical Parallels\n*No information available.*"
     )
-    text += _format_history_disclaimer()
     return {
         'history': text,
         'analogy': None,
@@ -1011,16 +1051,52 @@ def generate_deep_history(crisis_id):
         if not crisis:
             return None
 
-        # Deliberately minimal context — history/root-causes/prior-analogies
-        # don't depend on today's news, escalation trend, or economic
-        # impact the way the current-situation briefing does; pulling those
-        # in would blur this feature's purpose with the briefing's.
+        # Real, hand-curated relationship data (NATO membership, active
+        # wars, territorial disputes — see init_relationships in
+        # data_sources.py) grounds the generated history in an actual
+        # classification this app already carries, instead of leaving
+        # Claude to work from general knowledge alone. Narrowed to the
+        # SPECIFIC pair of real actors involved in this crisis (both sides
+        # present in crisis.stakeholders — the real, word-boundary-matched
+        # actor ids already written by _find_stakeholders() at ingest) —
+        # not every relationship the crisis's single resolved country
+        # happens to have. The single-actor resolution this used previously
+        # (_resolve_crisis_actors, matching only the crisis's own country)
+        # pulled that country's ENTIRE curated relationship roster regardless
+        # of relevance to this specific crisis — confirmed the direct cause
+        # of a real complaint: a crisis involving the US surfaced 14
+        # unrelated US relationships (AU, NZ, PH, TW, SA, EG, QA, AE, JO, UA,
+        # MX, CO, VE, CU) with no connection to what the crisis was actually
+        # about. Fewer than 2 real stakeholders means no specific pair can
+        # be identified — treated as "no relevant relationship" rather than
+        # falling back to that broad, mostly-irrelevant dump.
+        stakeholder_ids = [s for s in (crisis.stakeholders or '').split(',') if s]
+        relevant_relationships = []
+        if len(stakeholder_ids) >= 2:
+            relevant_relationships = session.query(Relationship).filter(
+                Relationship.is_active == True,
+                Relationship.actor_a.in_(stakeholder_ids),
+                Relationship.actor_b.in_(stakeholder_ids),
+            ).all()
+        relationship_facts = '\n'.join(
+            f"- {r.actor_a}–{r.actor_b}: {r.type}, \"{r.label}\" (strength {r.strength}/100, stability {r.stability}/100)"
+            for r in relevant_relationships
+        ) or 'No curated relationship record exists for this crisis\'s actors.'
+
+        # Deliberately minimal beyond that — history/root-causes/prior-
+        # analogies don't depend on today's news, escalation trend, or
+        # economic impact the way the current-situation briefing does;
+        # pulling those in would blur this feature's purpose with the
+        # briefing's.
         context = f"""
 Crisis: {crisis.title}
 Location: {crisis.country}
 Type: {crisis.type}
 
 Current Situation: {crisis.analysis}
+
+This app's own curated relationship data for the actors involved (real, hand-sourced from public alliance/treaty/conflict records — ground your historical narrative in these classifications where they're relevant, rather than treating them as incidental):
+{relationship_facts}
 """
 
         if anthropic_client and anthropic_client.api_key:
@@ -1031,7 +1107,7 @@ Current Situation: {crisis.analysis}
                     messages=[
                         {
                             "role": "user",
-                            "content": f"""Write a deep historical background briefing for this geopolitical crisis, for a journalist or researcher who needs to understand how this situation actually came to be — not what's happening today, but the decades (or longer) of history behind it.
+                            "content": f"""Write a deep historical background briefing for this geopolitical crisis, for a journalist or researcher who needs to understand how this situation actually came to be — not what's happening today, but the decades (or longer) of history behind it. If the Crisis Context below includes a curated relationship record for the actors involved, treat it as a real, authoritative anchor — e.g. explicitly address how long that classified tension/alliance has existed and how today's crisis fits into it — rather than writing around it.
 
 Format your response EXACTLY as follows (keep the headers):
 
@@ -1077,7 +1153,7 @@ Be specific and factual — this will be read by someone who wants real history,
                 return None
         else:
             logger.info("ANTHROPIC_API_KEY not set — generating static history")
-            result = _generate_static_history(crisis)
+            result = _generate_static_history(crisis, relevant_relationships)
             if result:
                 cache_set(cache_key, result, ttl=172800)
             return result
@@ -1285,12 +1361,8 @@ def get_crisis_detail(crisis_id):
         # Fetch related news
         news = session.query(News).filter(News.crisis_id == crisis_id).limit(10).all()
 
-        # Fetch related forecasts
-        forecasts = session.query(Forecast).filter(Forecast.crisis_id == crisis_id).all()
-
         result = crisis.to_dict()
         result['news'] = [n.to_dict() for n in news]
-        result['forecasts'] = [f.to_dict() for f in forecasts]
 
         session.close()
 
@@ -1362,6 +1434,160 @@ def get_crisis_reliability(crisis_id):
         return jsonify(reliability)
     except Exception as e:
         logger.error(f"Error analyzing reliability: {e}")
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
+
+
+@app.route('/api/crises/<crisis_id>/related', methods=['GET'])
+def get_related_crises(crisis_id):
+    """
+    Other real crises related to this one — replaces the old News tab's
+    per-crisis article list (which silently fabricated headlines via
+    _generate_contextual_news when nothing real was indexed). No
+    similarity model here either, just real, already-available signals:
+    a shared stakeholder (an actual matched Actor in both crises' real
+    `stakeholders` field) is the strongest real relatedness signal
+    available, so it's weighted highest; same `type`, geographic
+    proximity, and temporal proximity follow, each a weaker signal than
+    the last. Every match is traceable back to a real column, never
+    invented.
+    """
+    try:
+        session = Session()
+        crisis = session.query(Crisis).filter(Crisis.id == crisis_id).first()
+        if not crisis:
+            session.close()
+            return jsonify({'error': 'Crisis not found'}), 404
+
+        my_stakeholders = set(filter(None, (crisis.stakeholders or '').split(',')))
+        candidates = session.query(Crisis).filter(
+            Crisis.id != crisis_id,
+            Crisis.is_active == True,
+        ).all()
+
+        import math
+        scored = []
+        for c in candidates:
+            score = 0.0
+
+            their_stakeholders = set(filter(None, (c.stakeholders or '').split(',')))
+            shared = my_stakeholders & their_stakeholders
+            if shared:
+                score += 50 * len(shared)
+
+            if c.type == crisis.type:
+                score += 20
+
+            if crisis.country and c.country and crisis.country == c.country:
+                score += 15
+            elif None not in (crisis.latitude, crisis.longitude, c.latitude, c.longitude):
+                dist = math.sqrt((crisis.latitude - c.latitude) ** 2 + (crisis.longitude - c.longitude) ** 2)
+                if dist < 5:
+                    score += 10 * (1 - dist / 5)
+
+            if crisis.date_start and c.date_start:
+                days_apart = abs((crisis.date_start - c.date_start).days)
+                if days_apart <= 60:
+                    score += 5 * (1 - days_apart / 60)
+
+            if score > 0:
+                scored.append((score, c))
+
+        scored.sort(key=lambda pair: pair[0], reverse=True)
+        result = [c.to_dict() for _, c in scored[:8]]
+
+        session.close()
+        return jsonify({'crisis_id': crisis_id, 'count': len(result), 'related': result})
+    except Exception as e:
+        logger.error(f"Error fetching related crises for {crisis_id}: {e}")
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
+
+
+@app.route('/api/crises/<crisis_id>/real-headline', methods=['GET'])
+@limiter.limit("30 per minute")
+def get_crisis_real_headline(crisis_id):
+    """
+    Real article title/description for a crisis whose stored title is
+    auto-generated (currently only GDELT-sourced crises — see
+    GDELTConnector._build_title), fetched lazily from the crisis's real
+    source_url and cached — rather than during every sync, since that
+    would mean scraping an arbitrary news site for every one of ~1,300+
+    GDELT events per hour.
+
+    For GDELT crises specifically, this ALSO attempts to refine the pin's
+    coordinates: GDELT's own geocoding often resolves verbal-conflict
+    events (a "threat" or "demand" has no clear physical location) to a
+    coarse country/capital-level point, which is why pins cluster so
+    heavily on a handful of coordinates (confirmed directly against this
+    app's live data: dozens of unrelated GDELT crises sharing the exact
+    same point). The real article text just fetched is run through the
+    same AI-extraction + Nominatim pipeline Phase 5 built for NewsAPI
+    (_extract_incident_location, NominatimGeocoder) to find a more
+    specific real location. When one is found, it's written back to the
+    Crisis row itself (not just cached) — unlike the headline, a pin's
+    position is part of the shared map everyone sees before ever opening
+    that crisis, so the fix should persist and benefit every later load,
+    not just this one cached response. This still only runs once per
+    crisis (lazily, on first open, lands in the shared response cache
+    below) rather than during sync — a full bulk re-geocode of ~2,000
+    events would mean ~2,000 Nominatim calls at its enforced 1 req/sec
+    limit alone, well over 30 minutes, plus that many AI calls.
+
+    Returns {title: None, location: None} (not an error) when there's no
+    source_url, the fetch fails, or no refined location is found — all
+    expected, non-fatal outcomes, not crashes.
+    """
+    try:
+        cache_key = f"real_headline:{crisis_id}"
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return jsonify(cached)
+
+        session = Session()
+        crisis = session.query(Crisis).filter(Crisis.id == crisis_id).first()
+        source_url = crisis.source_url if crisis else None
+        source = crisis.source if crisis else None
+        session.close()
+
+        if not crisis:
+            return jsonify({'error': 'Crisis not found'}), 404
+
+        result = {'title': None, 'location': None}
+        page = fetch_real_page_metadata(source_url) if source_url else None
+        if page:
+            result['title'] = page.get('title')
+
+            if source == 'GDELT':
+                text = ' '.join(filter(None, [page.get('title'), page.get('description')]))
+                place_name = _extract_incident_location(text) if text else None
+                geocoded = NominatimGeocoder.geocode(place_name) if place_name else None
+                if geocoded and geocoded.get('country'):
+                    result['location'] = {
+                        'lat': geocoded['lat'], 'lon': geocoded['lon'],
+                        'country': geocoded['country'], 'name': place_name,
+                    }
+                    write_session = Session()
+                    try:
+                        row = write_session.query(Crisis).filter(Crisis.id == crisis_id).first()
+                        if row:
+                            row.latitude = geocoded['lat']
+                            row.longitude = geocoded['lon']
+                            row.country = geocoded['country']
+                            row.location_confidence = 90
+                            write_session.commit()
+                    except Exception as e:
+                        write_session.rollback()
+                        logger.error(f"Error persisting refined location for {crisis_id}: {e}")
+                    finally:
+                        write_session.close()
+
+        # Cache even a fully-empty result — an unreachable/paywalled URL, or
+        # an article with no extractable location, isn't going to start
+        # working on the next request a minute later, and this avoids
+        # re-scraping/re-geocoding the same one on every open.
+        cache_set(cache_key, result, ttl=2592000)  # 30 days — a real article's own metadata doesn't change
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Error fetching real headline for {crisis_id}: {e}")
         return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
 
 
@@ -1462,13 +1688,11 @@ def get_crisis_full_analysis(crisis_id):
 
         crisis_dict = crisis.to_dict()
         news = session.query(News).filter(News.crisis_id == crisis_id).limit(10).all()
-        forecasts = session.query(Forecast).filter(Forecast.crisis_id == crisis_id).all()
 
         session.close()
 
         result = crisis_dict
         result['news'] = [n.to_dict() for n in news]
-        result['forecasts'] = [f.to_dict() for f in forecasts]
         result['reliability'] = calculate_source_reliability(crisis_id)
         result['escalation'] = analyze_escalation(crisis_id)
         result['economic'] = get_economic_impact(crisis_id)
@@ -1775,111 +1999,6 @@ Be specific and factual. Total: 250-350 words."""
 
 
 # ════════════════════════════════════════════════════════════
-# FORECAST ENDPOINTS
-# ════════════════════════════════════════════════════════════
-
-def _generate_static_forecasts(crisis):
-    """
-    Derive probabilistic forecasts from crisis attributes when the DB has none.
-    Returns a list of dicts with keys: q, low, mid, high.
-    """
-    sev = crisis.severity or 50
-    ctype = crisis.type or 'conflict'
-
-    # Base probability that things escalate, based on severity
-    p_escalate = min(int(sev * 0.85), 85)
-    p_stable   = max(int((100 - sev) * 0.6), 10)
-    p_resolve  = max(100 - p_escalate - p_stable, 5)
-
-    # Clamp so bars don't exceed 100
-    def clamp(v): return max(5, min(v, 95))
-
-    type_questions = {
-        'conflict':   ('Will armed hostilities intensify in the next 90 days?',
-                       'Will a ceasefire or peace deal be reached in 6 months?'),
-        'military':   ('Will this escalate to open armed conflict within 60 days?',
-                       'Will external powers intervene militarily?'),
-        'diplomatic': ('Will diplomatic relations deteriorate further?',
-                       'Will a multilateral solution emerge within 6 months?'),
-        'economic':   ('Will sanctions or trade restrictions tighten in 90 days?',
-                       'Will a financial contagion spread to neighbouring economies?'),
-        'resource':   ('Will resource shortages cause domestic instability?',
-                       'Will supply disruption persist beyond 6 months?'),
-        'technology': ('Will cyber or tech-domain attacks escalate?',
-                       'Will international norms be invoked to de-escalate?'),
-        'proxy':      ('Will proxy conflict draw in direct state actors?',
-                       'Will proxy forces gain significant territorial control?'),
-        'alliance':   ('Will alliance commitments be formally invoked?',
-                       'Will non-aligned states shift allegiances?'),
-    }
-
-    q1, q2 = type_questions.get(ctype, (
-        'Will the situation escalate significantly in 90 days?',
-        'Will international mediation reduce tensions within 6 months?'
-    ))
-
-    forecasts = [
-        {
-            'q': q1,
-            'low':  clamp(p_resolve),
-            'mid':  clamp(p_stable),
-            'high': clamp(p_escalate),
-            'method': 'heuristic',
-        },
-        {
-            'q': q2,
-            'low':  clamp(p_escalate),
-            'mid':  clamp(p_stable),
-            'high': clamp(p_resolve),
-            'method': 'heuristic',
-        },
-        {
-            'q': f'Will this crisis cause significant humanitarian impact in {crisis.country or "the region"}?',
-            'low':  clamp(max(5, 100 - sev)),
-            'mid':  clamp(int(sev * 0.3)),
-            'high': clamp(int(sev * 0.6)),
-            'method': 'heuristic',
-        },
-        {
-            'q': 'Will major-power diplomatic engagement intensify within 30 days?',
-            'low':  clamp(max(5, 70 - sev // 2)),
-            'mid':  clamp(20),
-            'high': clamp(sev // 2),
-            'method': 'heuristic',
-        },
-    ]
-    return forecasts
-
-
-@app.route('/api/forecasts/<crisis_id>', methods=['GET'])
-def get_forecasts(crisis_id):
-    """Get forecasts for a crisis"""
-    try:
-        session = Session()
-
-        forecasts = session.query(Forecast).filter(Forecast.crisis_id == crisis_id).all()
-        result = [f.to_dict() for f in forecasts]
-
-        # No stored forecasts — generate rule-based ones from crisis data
-        if not result:
-            crisis = session.query(Crisis).filter(Crisis.id == crisis_id).first()
-            if crisis:
-                result = _generate_static_forecasts(crisis)
-
-        session.close()
-
-        return jsonify({
-            'crisis_id': crisis_id,
-            'count': len(result),
-            'forecasts': result
-        })
-
-    except Exception as e:
-        logger.error(f"Error fetching forecasts: {e}")
-        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
-
-
-# ════════════════════════════════════════════════════════════
 # NEWS ENDPOINTS
 # ════════════════════════════════════════════════════════════
 
@@ -1949,33 +2068,6 @@ def get_economic_data(country_code):
 
     except Exception as e:
         logger.error(f"Error fetching economic data: {e}")
-        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
-
-
-@app.route('/api/crises/<crisis_id>/news', methods=['GET'])
-def get_crisis_news(crisis_id):
-    """Get news articles related to a crisis"""
-    try:
-        session = Session()
-        news = session.query(News).filter(News.crisis_id == crisis_id).limit(10).all()
-        result = [n.to_dict() for n in news]
-        session.close()
-
-        # If no news found, generate contextual news for the crisis.
-        # Open a fresh session — the original was already closed above.
-        if not result:
-            with Session() as s:
-                crisis = s.query(Crisis).filter(Crisis.id == crisis_id).first()
-                if crisis:
-                    result = _generate_contextual_news(crisis)
-
-        return jsonify({
-            'crisis_id': crisis_id,
-            'count': len(result),
-            'articles': result
-        })
-    except Exception as e:
-        logger.error(f"Error fetching news: {e}")
         return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
 
 

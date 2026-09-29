@@ -73,11 +73,21 @@ const state = {
   _mX: new THREE.Matrix4(),
   _mY: new THREE.Matrix4(),
   _mCombined: new THREE.Matrix4(),
+  // Detail-patch crossfade (see updateDetailPatchFade) — target is what
+  // opacity is animating toward; visible only flips to false once a
+  // fade-to-0 actually finishes, so the fade-out is visible instead of
+  // the patch vanishing the instant hideDetailPatch() is called.
+  detailPatchOpacity: 0,
+  detailPatchTargetOpacity: 0,
 };
 
 function init(canvasEl) {
   state.renderer = new THREE.WebGLRenderer({ canvas: canvasEl, antialias: true, alpha: true });
-  state.renderer.setClearColor(0x07090f, 1);
+  // Alpha 0 (was 1): a WebGL clear paints the ENTIRE canvas viewport, not
+  // just the sphere's silhouette — at alpha:1 that made #glCanvas a fully
+  // opaque rectangle every frame, hiding #starsCanvas (z-index:-1, directly
+  // behind it) completely, everywhere, not just around the globe's edge.
+  state.renderer.setClearColor(0x07090f, 0);
 
   state.scene = new THREE.Scene();
 
@@ -99,6 +109,37 @@ function init(canvasEl) {
   const material = new THREE.MeshLambertMaterial({ color: 0xffffff });
   state.sphereMesh = new THREE.Mesh(geometry, material);
   state.scene.add(state.sphereMesh);
+
+  // Detail patch: a small extra piece of sphere surface, shown only at
+  // high zoom and textured with real OpenStreetMap tiles (see
+  // updateDetailPatch/setDetailPatchTexture below) instead of the single
+  // low-res baked equirect texture the rest of the globe uses — see the
+  // plan file for why a full tile-quadtree engine isn't needed: only the
+  // patch of sphere actually facing the camera ever needs real detail.
+  // Added as a CHILD of sphereMesh (not state.scene) specifically so it
+  // inherits sphereMesh's rotation quaternion automatically — no separate
+  // rotation math needed to keep it aligned as the globe spins. Radius is
+  // fractionally larger (1.002 vs 1) to avoid z-fighting with the parent
+  // sphere's own surface. Starts as a degenerate/invisible placeholder;
+  // real geometry arrives via the first updateDetailPatch() call.
+  //
+  // MeshBasicMaterial (unlit), NOT MeshLambertMaterial like the main
+  // sphere — confirmed by report: the patch looked washed out/overexposed
+  // specifically on the sun-facing side and fine on the night side. The
+  // directional "sun" light's intensity (26, see below) was tuned against
+  // the main sphere's own baked texture, which is fine since that texture
+  // IS meant to be lit; real OSM tile imagery is already a finished,
+  // fully-lit image and was getting blown out by having that same strong
+  // light multiplied on top a second time. Unlit means the patch always
+  // shows the tiles' true colors regardless of which side of the globe
+  // it's currently on.
+  const patchGeometry = new THREE.SphereGeometry(1.002, 2, 2, 0, 0.001, 0, 0.001);
+  // transparent + opacity:0 — the patch crossfades in/out (see
+  // updateDetailPatchFade) rather than popping instantly.
+  const patchMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0 });
+  state.detailPatchMesh = new THREE.Mesh(patchGeometry, patchMaterial);
+  state.detailPatchMesh.visible = false;
+  state.sphereMesh.add(state.detailPatchMesh);
 
   // Directional light stands in for the sun — positioned from the real
   // subsolar point (see setSunDirection). A soft ambient keeps the night
@@ -183,6 +224,88 @@ function regenerateTexture(sourceCanvas) {
   if (oldTex) oldTex.dispose();
 }
 
+// Rebuilds the detail patch's geometry to the exact lon/lat box the
+// caller (app.js) just composited a tile texture for — explicit bounds
+// rather than a symmetric center+radius, since a real tile grid's edges
+// rarely land symmetrically around whatever point was originally asked
+// for; passing the box the texture actually covers keeps the two exactly
+// aligned instead of stretching one to fit the other.
+//
+// phi/theta here follow this sphere's existing equirect convention — the
+// same one bakeEquirectTexture()/flatProjectForBake() already use, and
+// the same one the parent sphere's own UVs were built with (see the
+// axis-convention comment atop this file): phi = radians(lon + 180),
+// theta = radians(90 - lat), theta increasing southward. Because this
+// mesh is a CHILD of sphereMesh (see init()), it automatically inherits
+// the parent's rotation — the caller never needs any rotation math of
+// its own, just the lon/lat box.
+function updateDetailPatch(westLonDeg, eastLonDeg, southLatDeg, northLatDeg, segments) {
+  if (!state.ready) return;
+  const phiStart = (westLonDeg + 180) * Math.PI / 180;
+  const phiEnd = (eastLonDeg + 180) * Math.PI / 180;
+  const thetaStart = Math.max(0, (90 - northLatDeg) * Math.PI / 180); // north = smaller theta
+  const thetaEnd = Math.min(Math.PI, (90 - southLatDeg) * Math.PI / 180);
+  const seg = segments || 48;
+
+  const oldGeom = state.detailPatchMesh.geometry;
+  state.detailPatchMesh.geometry = new THREE.SphereGeometry(
+    1.002, seg, seg,
+    phiStart, phiEnd - phiStart,
+    thetaStart, thetaEnd - thetaStart
+  );
+  oldGeom.dispose();
+  // visible is managed by updateDetailPatchFade() based on opacity, not
+  // set directly here — setDetailPatchTexture() (always called right after
+  // this) sets the fade target to 1, which turns visibility on once the
+  // fade actually starts producing a nonzero opacity.
+}
+
+function hideDetailPatch() {
+  if (!state.ready) return;
+  // Don't flip visible=false here — updateDetailPatchFade() does that once
+  // the fade-to-0 actually completes, so zooming back out fades the patch
+  // away instead of cutting it instantly.
+  state.detailPatchTargetOpacity = 0;
+}
+
+// Same swap-and-dispose pattern as regenerateTexture(), targeting the
+// detail patch's own material instead of the main sphere's.
+function setDetailPatchTexture(sourceCanvas) {
+  if (!state.ready) return;
+  const oldTex = state.detailPatchMesh.material.map;
+  const tex = new THREE.CanvasTexture(sourceCanvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  state.detailPatchMesh.material.map = tex;
+  state.detailPatchMesh.material.needsUpdate = true;
+  if (oldTex) oldTex.dispose();
+  // Real content is ready — start (or continue) fading toward fully
+  // visible. A refresh while already shown (e.g. rotating to a new tile
+  // area) just keeps it at/heading to 1, no visible flicker.
+  state.detailPatchTargetOpacity = 1;
+}
+
+const DETAIL_PATCH_FADE_MS = 800;
+// Called once per frame from render() (cheap — a couple of arithmetic ops
+// when nothing's transitioning). Steps material.opacity toward whatever
+// setDetailPatchTexture()/hideDetailPatch() last set as the target, and
+// only turns the mesh fully off once a fade-to-0 has actually reached 0 —
+// see hideDetailPatch()'s comment for why that ordering matters.
+function updateDetailPatchFade() {
+  const cur = state.detailPatchOpacity, target = state.detailPatchTargetOpacity;
+  if (cur === target) return;
+  const step = 16 / DETAIL_PATCH_FADE_MS; // ~1 frame at 60fps, framerate-independent enough for an 800ms fade
+  state.detailPatchOpacity = target > cur
+    ? Math.min(target, cur + step)
+    : Math.max(target, cur - step);
+  state.detailPatchMesh.material.opacity = state.detailPatchOpacity;
+  if (state.detailPatchOpacity === 0 && target === 0) {
+    state.detailPatchMesh.visible = false;
+  } else if (state.detailPatchOpacity > 0) {
+    state.detailPatchMesh.visible = true;
+  }
+}
+
 function resize(cssW, cssH, dpr) {
   if (!state.ready) return;
   state.renderer.setPixelRatio(dpr);
@@ -191,6 +314,7 @@ function resize(cssW, cssH, dpr) {
 
 function render() {
   if (!state.ready) return;
+  updateDetailPatchFade();
   state.renderer.render(state.scene, state.camera);
 }
 
@@ -202,6 +326,9 @@ window.GlobeGL = {
   setZoom,
   setSunDirection,
   regenerateTexture,
+  updateDetailPatch,
+  hideDetailPatch,
+  setDetailPatchTexture,
   resize,
   render,
   get ready() { return state.ready; },

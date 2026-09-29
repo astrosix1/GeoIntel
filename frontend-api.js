@@ -122,16 +122,17 @@ class GeoIntelAPI {
   }
 
   /**
-   * Fetch forecasts for a crisis
+   * Fetch other real crises related to a given one (shared stakeholders,
+   * type, geography, recency — see backend's GET /api/crises/<id>/related).
    */
-  static async getForecasts(crisisId) {
+  static async getRelated(crisisId) {
     try {
-      const response = await fetch(`${API_BASE}/forecasts/${crisisId}`);
+      const response = await fetch(`${API_BASE}/crises/${crisisId}/related`);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return await response.json();
     } catch (error) {
-      console.error(`Error fetching forecasts for ${crisisId}:`, error);
-      return { forecasts: [], count: 0, error: error.message };
+      console.error(`Error fetching related crises for ${crisisId}:`, error);
+      return { related: [], count: 0, error: error.message };
     }
   }
 
@@ -150,21 +151,18 @@ class GeoIntelAPI {
   }
 
   /**
-   * Fetch news articles
+   * Fetch the real article headline for a crisis whose stored title is
+   * auto-generated (currently GDELT-sourced crises only) — lazy, cached
+   * server-side, safe to call every time a crisis is selected.
    */
-  static async getNews(options = {}) {
-    const params = new URLSearchParams();
-    if (options.crisis_id) params.append('crisis_id', options.crisis_id);
-    if (options.days) params.append('days', options.days);
-    if (options.limit) params.append('limit', options.limit);
-
+  static async getRealHeadline(crisisId) {
     try {
-      const response = await fetch(`${API_BASE}/news?${params}`);
+      const response = await fetch(`${API_BASE}/crises/${crisisId}/real-headline`);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return await response.json();
     } catch (error) {
-      console.error('Error fetching news:', error);
-      return { articles: [], count: 0, error: error.message };
+      console.error(`Error fetching real headline for ${crisisId}:`, error);
+      return { title: null, error: error.message };
     }
   }
 

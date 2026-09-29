@@ -71,7 +71,6 @@
 
   /* ── Layout ──────────────────────────────────── */
   --left-w:         280px;
-  --left-collapsed: 40px;
   --right-w:        340px;
 
   /* ── Elevation / shadows ─────────────────────── */
@@ -267,44 +266,71 @@ body {
   position: relative;
   z-index: 5;
 }
-.col-left.collapsed { width: var(--left-collapsed); }
-.col-left.collapsed .pane-body,
-.col-left.collapsed .logo-text,
-.col-left.collapsed .logo-sub,
-.col-left.collapsed .pane-hdr h2,
-.col-left.collapsed #crisisCount,
-.col-left.collapsed .tab-bar { display: none; }
-.col-left.collapsed .logo { justify-content: center; }
-.col-left.collapsed .logo-mark { font-size: 20px; }
+/* Collapses to exactly the header bar's width (was --left-collapsed,
+   40px — left a visible sliver of the LOGO/pane chrome behind, which was
+   the actual bug; a 48px strip showing only the header bar + its toggle
+   button is deliberate, not a leak, and is what keeps the toggle reachable
+   without needing position:fixed). Only .pane content is hidden. */
+.col-left.collapsed { width: 48px; }
+.col-left.collapsed .pane { display: none; }
 
-/* Toggle button */
-.sidebar-toggle {
-  position: absolute;
-  top: 50%;
-  right: -12px;
-  transform: translateY(-50%);
-  width: 22px;
-  height: 40px;
+/* Uniform square "window control" style shared by both sidebars' header
+   bars (see .sidebar-header-bar, .panel-header-bar below) so they read as
+   one consistent design language. */
+.window-btn {
+  width: 32px;
+  height: 32px;
   background: var(--panel);
-  border: 1.5px solid var(--border);
-  border-radius: 0 8px 8px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
   color: var(--accent);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
-  z-index: 20;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  font-size: 13px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-sm);
+  flex-shrink: 0;
 }
-.sidebar-toggle:hover {
+.window-btn:hover {
   background: rgba(0,212,255,.12);
   border-color: var(--accent);
   box-shadow: var(--shadow-md);
 }
-.sidebar-toggle:active {
-  transform: translateY(-50%) scaleX(0.95);
+.window-btn:active { transform: scale(0.93); }
+
+/* Left sidebar's real header-bar strip (was: #sidebarToggle floating via
+   position:fixed, which left it disconnected from the panel it controls).
+   Laid out in-flow as the first child of .col-left, same visual language
+   as .pane-hdr elsewhere in the app. Collapsing .col-left to width:0 (see
+   above) hides this along with everything else — intentional, since the
+   toggle needs to stay reachable only while expanded; there's a separate
+   mobile-only reopen affordance for the collapsed case (unchanged). */
+.sidebar-header-bar {
+  display: flex;
+  align-items: center;
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(0,212,255,.04) 0%, transparent 100%);
+  flex-shrink: 0;
+}
+
+/* Right panel's header-bar strip (was: #shareBtn/#panelClose/#shareSocialBtn
+   floating individually via position:absolute with per-button inline
+   offsets, outside the panel's own edge). Now a real strip, first child of
+   #colRight, buttons right-aligned. #shareSocialBtn has been removed
+   entirely (not relocated) per product decision — copy-link + close only. */
+.panel-header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(0,212,255,.04) 0%, transparent 100%);
+  flex-shrink: 0;
 }
 
 /* ── Globe wrapper ── */
@@ -312,7 +338,8 @@ body {
 /* #glCanvas (WebGL: ocean/land/borders/terrain/lighting) sits beneath the
    transparent #canvas (2D: pins/routes/arcs/tooltips/hit-testing), both
    filling .globe-col — same stacking pattern #flatMapCanvas already used. */
-#glCanvas, #canvas { position:absolute; inset:0; width:100%; height:100%; }
+#starsCanvas, #glCanvas, #canvas { position:absolute; inset:0; width:100%; height:100%; }
+#starsCanvas { z-index:-1; }
 #glCanvas { z-index:0; }
 #canvas { z-index:1; }
 
@@ -336,22 +363,17 @@ body {
   pointer-events: all;
 }
 
-/* Close button for right panel */
-.panel-close {
+/* Right panel's close/share/share-social row — top-right, inside the
+   panel, like a window's title-bar controls (was: floating outside the
+   panel's left edge). All three share .window-btn's base square style
+   (see .col-left's toggle button, same class, for the left-sidebar
+   equivalent); .panel-btn-row just positions them, right-to-left, along
+   the top edge. */
+.panel-btn-row {
   position: absolute;
-  top: 8px; left: -28px;
-  width: 24px; height: 24px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 6px 0 0 6px;
-  color: var(--accent);
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 11px;
+  top: 8px;
   z-index: 16;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   pointer-events: all;
-  backdrop-filter: blur(10px);
 }
 .panel-close:hover { background: rgba(255,45,94,.18); color: #ff6080; border-color: rgba(255,45,94,.3); }
 
@@ -701,6 +723,12 @@ body {
   position: absolute; top: 10px; right: 10px;
   display: flex; flex-direction: column; gap: 4px; z-index: 10;
 }
+/* Mobile-only trigger for .globe-controls.mobile-open (see the
+   max-width:768px block) — hidden by default here (real CSS, not an
+   inline style, so the mobile media query's display:flex can actually
+   override it; an inline style would win over any external stylesheet
+   rule regardless of media query, which was tried first and didn't work). */
+#globeMenuBtn { display: none; }
 .gc-btn {
   width: 36px; height: 36px;
   background: rgba(9,12,24,0.88);
@@ -729,6 +757,40 @@ body {
   color: var(--accent);
   box-shadow: 0 0 16px rgba(0,212,255,0.2);
 }
+
+/* Routes menu — consolidates what used to be 4 separate always-visible
+   buttons (color mode + sea/air/rail toggles) into one trigger + popover,
+   reusing the exact same button ids/click handlers, just relocated. */
+.gc-btn-wrap { position: relative; width: 36px; height: 36px; }
+.routes-menu {
+  display: none;
+  position: absolute;
+  top: 0; right: 44px;
+  flex-direction: column;
+  gap: 4px;
+  background: rgba(9,12,24,0.94);
+  border: 1px solid rgba(0,212,255,0.2);
+  border-radius: var(--r-sm);
+  padding: 6px;
+  backdrop-filter: blur(14px);
+  box-shadow: var(--shadow-md);
+  z-index: 20;
+}
+.routes-menu.open { display: flex; }
+.routes-menu-item.gc-btn {
+  width: auto; height: 32px;
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 0 10px;
+}
+.routes-menu-item.gc-btn span {
+  font-size: 11px;
+  color: var(--text2);
+  white-space: nowrap;
+  font-family: var(--font-sans);
+}
+.routes-menu-item.gc-btn.active span { color: var(--accent); }
 
 /* ── Globe bottom bar ── */
 .globe-bottom {
@@ -843,6 +905,33 @@ input[type=range]::-moz-range-thumb:hover { width:14px; height:14px; box-shadow:
 }
 #flatMapCanvas.visible { display:block; }
 
+/* Real-tile map, swapped in from the flat map at high zoom (see
+   TILE_MAP_FZOOM_THRESHOLD in app.js) — cross-fades via opacity rather
+   than a hard display swap so the switch-over reads as smooth. Sits
+   above #flatMapCanvas (z-index 2); pointer-events off while hidden so
+   it never intercepts clicks meant for the canvas beneath it. */
+#leafletMap {
+  position:absolute; inset:0; width:100%; height:100%;
+  z-index:3;
+  opacity:0; pointer-events:none;
+  transition: opacity .25s ease;
+}
+#leafletMap.visible { opacity:1; pointer-events:all; }
+
+/* OpenStreetMap attribution for the 3D globe's detail patch (Phase 9) —
+   bottom-right, clear of the idle button (bottom-left) and the
+   .globe-bottom search-result panel (bottom-center). */
+.globe-tile-attribution {
+  position:absolute; bottom:8px; right:8px; z-index:4;
+  background:rgba(7,9,15,.75); border:1px solid var(--border);
+  border-radius:6px; padding:3px 8px;
+  font-size:10px; color:var(--dim);
+  opacity:0; pointer-events:none;
+  transition: opacity .25s ease;
+}
+.globe-tile-attribution.visible { opacity:1; pointer-events:all; }
+.globe-tile-attribution a { color:var(--dim); }
+
 /* ── Mobile responsive ── */
 @media (max-width: 768px) {
   body { overflow:auto; }
@@ -850,14 +939,37 @@ input[type=range]::-moz-range-thumb:hover { width:14px; height:14px; box-shadow:
     flex-direction:column; height:auto; min-height:100vh;
     padding:4px; gap:4px; overflow:visible;
   }
+  /* Root-cause fix: on desktop .col-left relies on body/.root being
+     height:100vh + overflow:hidden so its .pane-body (flex:1;
+     overflow-y:auto) scrolls WITHIN a bounded box. Removing that
+     constraint above (for the stacked mobile layout) previously left
+     .col-left with no height ceiling at all, so a full crisis list (90
+     rows by default) rendered at its natural content height — measured
+     directly at ~6,500px, pushing the globe ~5,500px down the page.
+     max-height + overflow:hidden here restores the same bounded-box
+     pattern desktop already uses, just reproportioned for tablet/phone.
+     (Phone gets a taller budget still — see the max-width:600px block
+     below — this 38vh is the tablet-portrait baseline.) */
   .col-left {
-    width:100% !important; max-height:none;
-    overflow:visible;
+    width:100% !important; max-height:38vh;
+    overflow:hidden;
   }
   .col-left .pane { width:100%; }
   .col-left.collapsed { max-height:44px; overflow:hidden; }
+  /* The toggle used to be position:absolute; top:50% relative to
+     .col-left — fine on desktop, but on a tall mobile column that put it
+     wherever the column's vertical center happened to fall (measured at
+     ~2,230px down the page pre-fix). Fixed positioning keeps it at the
+     same reachable spot regardless of scroll position or collapsed state
+     — the one button already serves as both close and reopen (existing
+     click handler flips .collapsed and the ◀/▶ label), so this alone
+     covers both asks rather than needing a second dedicated button. */
+  .sidebar-toggle {
+    position:fixed; top:8px; left:8px; right:auto;
+    transform:none; z-index:100;
+  }
   .globe-col {
-    height:60vw; min-height:280px; max-height:440px;
+    width:100%; height:60vw; min-height:280px; max-height:440px;
     flex-shrink:0;
   }
   #canvas, #flatMapCanvas { touch-action:none; }
@@ -868,17 +980,52 @@ input[type=range]::-moz-range-thumb:hover { width:14px; height:14px; box-shadow:
     display:none;
   }
   .col-right.open { display:flex; animation:none; }
+  /* Content that can scroll under the fixed idle-mode button (bottom-left,
+     index.html) previously had its last lines visibly covered — confirmed
+     by scrolling a real Brief tab to its end. */
+  .col-right .pane-body { padding-bottom:56px; }
   .panel-close {
     position:fixed; top:8px; right:8px;
     left:auto; z-index:100;
   }
   #shareBtn { display:none; }
   .globe-bottom { width:92%; max-width:none; bottom:6px; }
-  .globe-controls { bottom:auto; top:8px; right:8px; flex-direction:row; flex-wrap:wrap; max-width:160px; }
-  .gc-btn { width:30px; height:30px; font-size:13px; }
-  .tab { padding:5px 8px; font-size:8px; }
+  /* Globe controls: 11 buttons collapse into a menu on mobile instead of
+     an always-visible wrapping grid (previously max-width:160px, cramped
+     and competing for space with .panel-close nearby). #globeMenuBtn
+     (index.html, hidden on desktop) toggles .mobile-open; every existing
+     button inside keeps its original id/click handler untouched. */
+  #globeMenuBtn { display:flex; position:absolute; top:8px; right:8px; z-index:11; }
+  .globe-controls {
+    display:none; flex-direction:column;
+    top:52px; right:8px; max-width:none;
+  }
+  .globe-controls.mobile-open { display:flex; }
+  .gc-btn { width:34px; height:34px; font-size:14px; }
+  .gc-btn-wrap { width:34px; height:34px; }
+  .routes-menu { right:42px; }
+  .tab { padding:5px 6px; font-size:9px; }
+  .tab-bar { overflow-x:auto; flex-wrap:nowrap; }
   .pane-hdr h2 { font-size:10px; }
   .search-dropdown { position:fixed; top:auto; bottom:0; left:0; right:0; border-radius:14px 14px 0 0; max-height:60vh; }
+}
+
+/* ── Phone-only: list-primary, globe secondary ──
+   Narrower than the shared 768px mobile/tablet block above on purpose —
+   768px tablets keep the globe-first proportions (a trackpad/mouse can
+   actually hit an individual pin). Phones can't: at this data volume,
+   pins routinely render as a tight cluster of same-size overlapping
+   circles, and touch has no hover to help pick one out, so tapping a
+   specific crisis on the globe is unreliable. The crisis list is the one
+   precise way to reach a specific crisis on a phone, so it gets the
+   majority of the viewport; the globe shrinks to a smaller context view
+   below it rather than disappearing — still useful for an at-a-glance
+   read of where activity is concentrated. */
+@media (max-width: 600px) {
+  .col-left { max-height:58vh; }
+  .globe-col {
+    height:34vw; min-height:170px; max-height:220px;
+  }
 }
 
 /* ── Keyboard shortcut hint ── */
