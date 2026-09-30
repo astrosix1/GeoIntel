@@ -1,8 +1,14 @@
 [phases.setup]
-nixPkgs = ["python311", "python311Packages.pip"]
+nixPkgs = ["python311", "python311Packages.pip", "nodejs_20"]
 
 [phases.install]
-cmds = ["pip install -r backend/requirements.txt"]
+cmds = [
+  "pip install -r backend/requirements.txt",
+  "npm --prefix frontend install",
+]
+
+[phases.build]
+cmds = ["npm --prefix frontend run build"]
 
 [start]
 cmd = "cd backend && python3 scripts/ensure_db.py && python3 app.py"

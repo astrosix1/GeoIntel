@@ -39,7 +39,7 @@ def _fake_nominatim_response(lat='40.7489', lon='-73.9680', country='United Stat
 
 
 def test_geocode_returns_real_coordinates(app_module):
-    with patch('data_sources.requests.get') as mock_get:
+    with patch('data_sources.geocoding.requests.get') as mock_get:
         mock_get.return_value = MagicMock(
             status_code=200, json=lambda: _fake_nominatim_response(),
         )
@@ -51,7 +51,7 @@ def test_geocode_returns_real_coordinates(app_module):
 
 
 def test_geocode_sends_a_descriptive_user_agent(app_module):
-    with patch('data_sources.requests.get') as mock_get:
+    with patch('data_sources.geocoding.requests.get') as mock_get:
         mock_get.return_value = MagicMock(status_code=200, json=lambda: _fake_nominatim_response())
         mock_get.return_value.raise_for_status = lambda: None
 
@@ -62,7 +62,7 @@ def test_geocode_sends_a_descriptive_user_agent(app_module):
 
 
 def test_geocode_no_match_returns_none(app_module):
-    with patch('data_sources.requests.get') as mock_get:
+    with patch('data_sources.geocoding.requests.get') as mock_get:
         mock_get.return_value = MagicMock(status_code=200, json=lambda: [])
         mock_get.return_value.raise_for_status = lambda: None
 
@@ -70,12 +70,12 @@ def test_geocode_no_match_returns_none(app_module):
 
 
 def test_geocode_network_error_returns_none_not_a_crash(app_module):
-    with patch('data_sources.requests.get', side_effect=Exception('network down')):
+    with patch('data_sources.geocoding.requests.get', side_effect=Exception('network down')):
         assert ds.NominatimGeocoder.geocode('Somewhere') is None
 
 
 def test_geocode_caches_repeated_place_names(app_module):
-    with patch('data_sources.requests.get') as mock_get:
+    with patch('data_sources.geocoding.requests.get') as mock_get:
         mock_get.return_value = MagicMock(status_code=200, json=lambda: _fake_nominatim_response())
         mock_get.return_value.raise_for_status = lambda: None
 
@@ -87,7 +87,7 @@ def test_geocode_caches_repeated_place_names(app_module):
 
 
 def test_geocode_self_throttles_to_one_request_per_second(app_module):
-    with patch('data_sources.requests.get') as mock_get, patch('time.sleep') as mock_sleep:
+    with patch('data_sources.geocoding.requests.get') as mock_get, patch('time.sleep') as mock_sleep:
         mock_get.return_value = MagicMock(status_code=200, json=lambda: _fake_nominatim_response())
         mock_get.return_value.raise_for_status = lambda: None
 
@@ -113,7 +113,7 @@ def test_extract_incident_location_parses_a_real_location(app_module):
     fake_client.api_key = 'test-key'
     fake_client.messages.create.return_value = _fake_ai_message('United Nations Headquarters, New York')
 
-    with patch('data_sources._geocode_ai_client', fake_client):
+    with patch('data_sources.geocoding._geocode_ai_client', fake_client):
         result = ds._extract_incident_location('The UN General Assembly convened today...')
         assert result == 'United Nations Headquarters, New York'
 
@@ -123,7 +123,7 @@ def test_extract_incident_location_handles_none_response(app_module):
     fake_client.api_key = 'test-key'
     fake_client.messages.create.return_value = _fake_ai_message('NONE')
 
-    with patch('data_sources._geocode_ai_client', fake_client):
+    with patch('data_sources.geocoding._geocode_ai_client', fake_client):
         assert ds._extract_incident_location('A generic policy op-ed with no location.') is None
 
 
@@ -132,7 +132,7 @@ def test_extract_incident_location_handles_malformed_response_without_crashing(a
     fake_client.api_key = 'test-key'
     fake_client.messages.create.side_effect = Exception('malformed/empty response')
 
-    with patch('data_sources._geocode_ai_client', fake_client):
+    with patch('data_sources.geocoding._geocode_ai_client', fake_client):
         assert ds._extract_incident_location('Some text') is None
 
 
@@ -147,7 +147,7 @@ def test_extract_crisis_from_article_falls_back_to_location_map_without_api_key(
         'publishedAt': '2026-01-01T00:00:00Z',
         'url': 'https://example.com/a',
     }
-    with patch('data_sources.requests.get') as mock_get:
+    with patch('data_sources.geocoding.requests.get') as mock_get:
         # Nominatim must never even be reached when there's no API key.
         crisis = ds.NewsBasedCrisisDetector._extract_crisis_from_article(article)
         assert mock_get.call_count == 0

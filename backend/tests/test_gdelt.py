@@ -333,7 +333,7 @@ def test_get_recent_timestamps_derives_correct_real_url_pattern(app_module):
     )
     fake_response.raise_for_status = lambda: None
 
-    with patch('data_sources.requests.get', return_value=fake_response) as mock_get:
+    with patch('data_sources.gdelt.requests.get', return_value=fake_response) as mock_get:
         timestamps = ds.GDELTConnector._get_recent_timestamps()
 
     mock_get.assert_called_once_with(ds.GDELT_LASTUPDATE_URL, timeout=10)
@@ -341,12 +341,12 @@ def test_get_recent_timestamps_derives_correct_real_url_pattern(app_module):
 
 
 def test_fetch_event_rows_returns_empty_on_network_failure_not_a_crash(app_module):
-    with patch('data_sources.requests.get', side_effect=Exception('network down')):
+    with patch('data_sources.gdelt.requests.get', side_effect=Exception('network down')):
         assert ds.GDELTConnector._fetch_event_rows('20260924120000') == []
 
 
 def test_fetch_recent_events_returns_empty_when_lastupdate_fails(app_module):
-    with patch('data_sources.requests.get', side_effect=Exception('network down')):
+    with patch('data_sources.gdelt.requests.get', side_effect=Exception('network down')):
         assert ds.GDELTConnector.fetch_recent_events() == []
 
 
@@ -371,31 +371,43 @@ def test_fetch_recent_events_dedups_across_overlapping_windows(app_module):
 # indictment, a home-security product review, a community business gala —
 # zero real geopolitical false positives in either sample).
 
-def test_self_referential_actor_pair_is_rejected(app_module):
-    assert ds.GDELTConnector._parse_row(
+def test_self_referential_actor_pair_is_classified_local_not_rejected(app_module):
+    # These signals were confirmed noise, but the Local/Global scope
+    # feature now KEEPS the row and classifies it as scope='local'
+    # instead of discarding it — see GDELT_DEMONYM_TO_COUNTRY's docstring
+    # and models.Crisis.scope.
+    crisis = ds.GDELTConnector._parse_row(
         make_row(actor1_name='UNITED STATES', actor2_name='UNITED STATES')
-    ) is None
+    )
+    assert crisis is not None
+    assert crisis['scope'] == 'local'
 
 
 def test_different_actors_still_pass(app_module):
-    assert ds.GDELTConnector._parse_row(
+    crisis = ds.GDELTConnector._parse_row(
         make_row(actor1_name='UNITED STATES', actor2_name='RUSSIA')
-    ) is not None
+    )
+    assert crisis is not None
+    assert crisis['scope'] == 'global'
 
 
 @pytest.mark.parametrize('generic_name', [
     'COMPANY', 'Companies', 'business', 'CORPORATION',
     'ATTORNEY', 'Prison', 'judge', 'CRIMINAL',
 ])
-def test_generic_actor_name_is_rejected_regardless_of_side_or_case(app_module, generic_name):
-    assert ds.GDELTConnector._parse_row(make_row(actor1_name=generic_name)) is None
-    assert ds.GDELTConnector._parse_row(make_row(actor2_name=generic_name)) is None
+def test_generic_actor_name_is_classified_local_regardless_of_side_or_case(app_module, generic_name):
+    c1 = ds.GDELTConnector._parse_row(make_row(actor1_name=generic_name))
+    c2 = ds.GDELTConnector._parse_row(make_row(actor2_name=generic_name))
+    assert c1 is not None and c1['scope'] == 'local'
+    assert c2 is not None and c2['scope'] == 'local'
 
 
 def test_generic_actor_name_does_not_reject_similar_real_words(app_module):
     # 'Businessman' etc. shouldn't accidentally match on a substring —
     # GDELT_GENERIC_ACTOR_NAMES is an exact (case-insensitive) match.
-    assert ds.GDELTConnector._parse_row(make_row(actor1_name='BUSINESSMAN')) is not None
+    crisis = ds.GDELTConnector._parse_row(make_row(actor1_name='BUSINESSMAN'))
+    assert crisis is not None
+    assert crisis['scope'] == 'global'
 
 
 @pytest.mark.parametrize('similar_word', ['Judiciary', 'Prisoner', 'Attorneys', 'Police'])
@@ -576,18 +588,21 @@ def test_most_mentioned_city_returns_none_for_no_match(app_module):
 # rows found 13 confirmed non-geopolitical (school lockdown, bus crash,
 # building fire, etc.). Roots 10-17 are deliberately untouched.
 
-def test_blank_actor_under_violent_root_is_rejected(app_module):
+def test_blank_actor_under_violent_root_is_classified_local_not_rejected(app_module):
     for event_code in ('180', '190', '200'):  # ASSAULT, FIGHT, MASS VIOLENCE
         row = make_row(actor1_name='', actor2_name='', event_code=event_code, quad_class='4')
-        assert ds.GDELTConnector._parse_row(row) is None, event_code
+        crisis = ds.GDELTConnector._parse_row(row)
+        assert crisis is not None, event_code
+        assert crisis['scope'] == 'local', event_code
 
 
-def test_blank_actor_under_diplomatic_root_still_passes(app_module):
+def test_blank_actor_under_diplomatic_root_still_passes_as_global(app_module):
     # Roots 10-17 are lower-severity and weren't part of the confirmed-noise
-    # finding — a blank actor here must not be newly rejected.
+    # finding — a blank actor here must not be newly rejected or reclassified.
     row = make_row(actor1_name='', actor2_name='', event_code='140', quad_class='4')
     crisis = ds.GDELTConnector._parse_row(row)
     assert crisis is not None
+    assert crisis['scope'] == 'global'
 
 
 def test_named_actor_under_violent_root_still_passes(app_module):
@@ -652,13 +667,16 @@ def test_title_day_cap_passes_through_rows_missing_a_date(app_module):
 # a Crisis — used by the one-time DB cleanup script, not at ingestion time.
 
 def test_retroactive_self_referential_detection_matches_ingestion(app_module):
-    # This exact actor pair is rejected at ingestion (see
-    # test_self_referential_actor_pair_is_rejected) — the retroactive
-    # detector must independently catch the same real pattern from the
-    # title text alone, for rows that predate that ingestion check.
-    assert ds.GDELTConnector._parse_row(
+    # This exact actor pair is classified scope='local' at ingestion (see
+    # test_self_referential_actor_pair_is_classified_local_not_rejected) —
+    # the retroactive detector must independently catch the same real
+    # pattern from the title text alone, for legacy rows stored before
+    # scope classification existed (when this signal really did reject).
+    crisis = ds.GDELTConnector._parse_row(
         make_row(actor1_name='HAMAS', actor2_name='HAMAS', event_code='190')
-    ) is None
+    )
+    assert crisis is not None
+    assert crisis['scope'] == 'local'
     title = ds.GDELTConnector._build_title('HAMAS', 'HAMAS', '19', 'Gaza')
     assert ds.GDELTConnector._is_self_referential_title(title) is True
 
@@ -693,17 +711,21 @@ def test_retroactive_self_referential_detection_covers_legacy_single_actor_forma
     ('SAUDI', 'SAUDI ARABIA'),
     ('AFRICA', 'SOUTH AFRICA'),
 ])
-def test_demonym_form_self_referential_pair_is_rejected_at_ingestion(app_module, actor1, actor2):
-    assert ds.GDELTConnector._parse_row(
+def test_demonym_form_self_referential_pair_is_classified_local_at_ingestion(app_module, actor1, actor2):
+    crisis = ds.GDELTConnector._parse_row(
         make_row(actor1_name=actor1, actor2_name=actor2)
-    ) is None
+    )
+    assert crisis is not None
+    assert crisis['scope'] == 'local'
 
 
 def test_demonym_normalization_does_not_reject_real_different_countries(app_module):
     # 'Saudi'/'Saudi Arabia' are the same country; 'Saudi'/'Iran' are not.
-    assert ds.GDELTConnector._parse_row(
+    crisis = ds.GDELTConnector._parse_row(
         make_row(actor1_name='SAUDI', actor2_name='IRAN')
-    ) is not None
+    )
+    assert crisis is not None
+    assert crisis['scope'] == 'global'
 
 
 def test_retroactive_demonym_self_referential_detection(app_module):
@@ -752,3 +774,85 @@ def test_retroactive_blank_actor_detection_requires_the_generic_title(app_module
     title = ds.GDELTConnector._build_title('UKRAINE', 'RUSSIA', '19', 'Ukraine')
     analysis = 'GDELT-monitored event (CAMEO 190), reported via https://example.com/a'
     assert ds.GDELTConnector._is_blank_actor_violent_root(title, analysis) is False
+
+
+# ── Sync-time real title resolution (_resolve_real_titles, Phase 11) ─────
+# Resolves each row's real article headline once, at sync time, so no
+# reader ever sees a stale auto-generated title with a later "real title"
+# flash — replaces the old app's lazy-fetch-on-click pattern per an
+# explicit product decision.
+
+def _title_resolution_crisis(id, title, source_url):
+    return {'id': id, 'title': title, 'source_url': source_url}
+
+
+def test_resolve_real_titles_replaces_title_on_success(app_module):
+    crises = [_title_resolution_crisis('c1', 'Seoul criticizes Ukraine', 'https://example.com/a')]
+    with patch('data_sources.gdelt.fetch_real_page_metadata',
+               return_value={'title': 'Real headline from the article', 'description': None,
+                              'image_url': None, 'video_url': None}):
+        result = ds.GDELTConnector._resolve_real_titles(crises)
+    assert result[0]['title'] == 'Real headline from the article'
+
+
+def test_resolve_real_titles_keeps_generic_fallback_on_fetch_failure(app_module):
+    crises = [_title_resolution_crisis('c1', 'Seoul criticizes Ukraine', 'https://example.com/a')]
+    with patch('data_sources.gdelt.fetch_real_page_metadata', return_value=None):
+        result = ds.GDELTConnector._resolve_real_titles(crises)
+    assert result[0]['title'] == 'Seoul criticizes Ukraine'
+
+
+def test_resolve_real_titles_keeps_generic_fallback_when_no_real_title_extracted(app_module):
+    # fetch_real_page_metadata can succeed (real description/image found)
+    # while title is None (e.g. _clean_article_title rejected a date-only
+    # <title> tag) — that must still fall back honestly, not blank the title.
+    crises = [_title_resolution_crisis('c1', 'Seoul criticizes Ukraine', 'https://example.com/a')]
+    with patch('data_sources.gdelt.fetch_real_page_metadata',
+               return_value={'title': None, 'description': 'real desc', 'image_url': None, 'video_url': None}):
+        result = ds.GDELTConnector._resolve_real_titles(crises)
+    assert result[0]['title'] == 'Seoul criticizes Ukraine'
+
+
+def test_resolve_real_titles_skips_rows_with_no_source_url(app_module):
+    crises = [_title_resolution_crisis('c1', 'Seoul criticizes Ukraine', None)]
+    with patch('data_sources.gdelt.fetch_real_page_metadata') as mock_fetch:
+        result = ds.GDELTConnector._resolve_real_titles(crises)
+    mock_fetch.assert_not_called()
+    assert result[0]['title'] == 'Seoul criticizes Ukraine'
+
+
+def test_resolve_real_titles_handles_multiple_rows_independently(app_module):
+    crises = [
+        _title_resolution_crisis('c1', 'Seoul criticizes Ukraine', 'https://example.com/a'),
+        _title_resolution_crisis('c2', 'Africa fights Nigeria', 'https://example.com/b'),
+    ]
+
+    def fake_fetch(url):
+        if url == 'https://example.com/a':
+            return {'title': 'Real headline A', 'description': None, 'image_url': None, 'video_url': None}
+        return None  # simulates a real fetch failure for the second row
+
+    with patch('data_sources.gdelt.fetch_real_page_metadata', side_effect=fake_fetch):
+        result = ds.GDELTConnector._resolve_real_titles(crises)
+    by_id = {c['id']: c for c in result}
+    assert by_id['c1']['title'] == 'Real headline A'
+    assert by_id['c2']['title'] == 'Africa fights Nigeria'
+
+
+def test_resolve_real_titles_does_not_crash_on_empty_list(app_module):
+    assert ds.GDELTConnector._resolve_real_titles([]) == []
+
+
+def test_fetch_recent_events_calls_title_resolution_after_the_fanout_caps(app_module):
+    # Order matters: title resolution must run on the SURVIVORS of the
+    # fan-out caps, not on every raw parsed row, or it wastes real network
+    # calls resolving titles for rows about to be dropped as duplicates.
+    with patch('data_sources.gdelt.GDELTConnector._get_recent_timestamps', return_value=['20260101000000']), \
+         patch('data_sources.gdelt.GDELTConnector._fetch_event_rows', return_value=[make_row()]), \
+         patch('data_sources.gdelt.GDELTConnector._resolve_real_titles', side_effect=lambda c: c) as mock_resolve:
+        ds.GDELTConnector.fetch_recent_events()
+    assert mock_resolve.called
+    # Called with a list (the post-cap survivors), not raw TSV field lists.
+    call_arg = mock_resolve.call_args[0][0]
+    assert isinstance(call_arg, list)
+    assert all(isinstance(c, dict) for c in call_arg)

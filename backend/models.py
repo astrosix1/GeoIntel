@@ -85,6 +85,17 @@ class Crisis(Base):
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)  # Human-verified
 
+    # 'global' | 'local' — a real classification, not geography: 'local'
+    # means small-scale, non-geopolitical content (routine city/town crime,
+    # accidents, human-interest stories) that GDELT's CAMEO parser
+    # mis-tags as conflict. Only GDELTConnector._parse_row's own
+    # confirmed noise signals (self-referential/demonym-self-referential
+    # actor pairs, generic-actor names, blank-actor-under-violent-root)
+    # set this to 'local'; every other row (all of ACLED/NewsAPI, and
+    # GDELT rows that pass every filter cleanly) defaults to 'global' —
+    # the safe backward-compatible default for existing rows.
+    scope = Column(String(10), nullable=False, default='global')
+
     def to_dict(self):
         return {
             'id': self.id,
@@ -113,6 +124,7 @@ class Crisis(Base):
             'source': self.source,
             'source_url': self.source_url,
             'is_verified': self.is_verified,
+            'scope': self.scope or 'global',
         }
 
 

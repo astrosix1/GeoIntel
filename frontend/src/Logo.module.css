@@ -1,0 +1,30 @@
+.logo {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: rgba(10, 14, 20, 0.75);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  color: #e6e9ef;
+  pointer-events: none;
+  user-select: none;
+}
+
+.glyph {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.wordmark {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #ffffff;
+}

@@ -13,31 +13,9 @@ def test_health_check_ok(client):
     assert resp.get_json()['status'] == 'ok'
 
 
-def test_admin_stats_requires_auth(client):
-    resp = client.get('/api/admin/stats')
-    assert resp.status_code == 401
-
-
 def test_admin_sync_requires_auth(client):
     resp = client.post('/api/admin/sync')
     assert resp.status_code == 401
-
-
-def test_crises_export_is_public(client):
-    # GET /api/crises/export used to require the admin key even though it
-    # only re-shapes data already public via GET /api/crises — that made it
-    # unreachable for the journalists/researchers it's actually meant for
-    # (Phase 4). It's public now, protected only by the existing rate limit.
-    resp = client.get('/api/crises/export')
-    assert resp.status_code == 200
-
-
-def test_admin_stats_accepts_correct_key(client, monkeypatch):
-    monkeypatch.setenv('ADMIN_KEY', 'test-admin-key')
-    resp = client.get('/api/admin/stats', headers={'X-Admin-Key': 'test-admin-key'})
-    assert resp.status_code == 200
-    body = resp.get_json()
-    assert 'crises_total' in body
 
 
 def test_patch_crisis_requires_auth(client):

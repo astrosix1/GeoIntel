@@ -1,3 +1,4 @@
+from services.escalation import analyze_escalation
 """
 Tests for analyze_escalation() in app.py.
 
@@ -51,13 +52,13 @@ def seed_snapshots(db_session, severities, hours_apart=24):
 
 
 def test_missing_crisis_returns_none(app_module, db_session):
-    result = app_module.analyze_escalation('does-not-exist')
+    result = analyze_escalation('does-not-exist')
     assert result is None
 
 
 def test_zero_snapshots_is_insufficient_data(app_module, db_session):
     seed_crisis(db_session, severity=90)
-    result = app_module.analyze_escalation('esc-1')
+    result = analyze_escalation('esc-1')
     assert result['trend'] == 'insufficient_data'
     assert result['velocity'] is None
     assert result['current_severity'] == 90
@@ -67,7 +68,7 @@ def test_zero_snapshots_is_insufficient_data(app_module, db_session):
 def test_one_snapshot_is_insufficient_data(app_module, db_session):
     seed_crisis(db_session, severity=90)
     seed_snapshots(db_session, [90])
-    result = app_module.analyze_escalation('esc-1')
+    result = analyze_escalation('esc-1')
     assert result['trend'] == 'insufficient_data'
     assert result['velocity'] is None
     assert len(result['history']) == 1
@@ -76,7 +77,7 @@ def test_one_snapshot_is_insufficient_data(app_module, db_session):
 def test_rising_severity_is_escalating(db_session, app_module):
     seed_crisis(db_session, severity=90)
     seed_snapshots(db_session, [50, 90], hours_apart=24)
-    result = app_module.analyze_escalation('esc-1')
+    result = analyze_escalation('esc-1')
     assert result['trend'] == 'escalating'
     assert result['velocity'] > 5
     assert result['severity_change'] == 40
@@ -86,7 +87,7 @@ def test_rising_severity_is_escalating(db_session, app_module):
 def test_falling_severity_is_deescalating(db_session, app_module):
     seed_crisis(db_session, severity=20)
     seed_snapshots(db_session, [80, 20], hours_apart=24)
-    result = app_module.analyze_escalation('esc-1')
+    result = analyze_escalation('esc-1')
     assert result['trend'] == 'de-escalating'
     assert result['velocity'] < -5
     assert result['severity_change'] == -60
@@ -95,7 +96,7 @@ def test_falling_severity_is_deescalating(db_session, app_module):
 def test_flat_severity_is_stable(db_session, app_module):
     seed_crisis(db_session, severity=50)
     seed_snapshots(db_session, [50, 50, 50], hours_apart=24)
-    result = app_module.analyze_escalation('esc-1')
+    result = analyze_escalation('esc-1')
     assert result['trend'] == 'stable'
     assert result['warning'] is None
 
@@ -106,14 +107,14 @@ def test_small_change_stays_within_stable_band(db_session, app_module):
     # against the bucket boundaries drifting from noise-level changes.
     seed_crisis(db_session, severity=53)
     seed_snapshots(db_session, [50, 53], hours_apart=24)
-    result = app_module.analyze_escalation('esc-1')
+    result = analyze_escalation('esc-1')
     assert result['trend'] == 'stable'
 
 
 def test_history_is_ordered_oldest_to_newest(db_session, app_module):
     seed_crisis(db_session, severity=90)
     seed_snapshots(db_session, [10, 50, 90], hours_apart=24)
-    result = app_module.analyze_escalation('esc-1')
+    result = analyze_escalation('esc-1')
     dates = [h['date'] for h in result['history']]
     assert dates == sorted(dates)
 
@@ -122,6 +123,6 @@ def test_passing_preloaded_crisis_skips_lookup(db_session, app_module):
     seed_crisis(db_session, severity=90)
     seed_snapshots(db_session, [50, 90], hours_apart=24)
     crisis = db_session.query(Crisis).filter(Crisis.id == 'esc-1').first()
-    result = app_module.analyze_escalation('esc-1', _crisis=crisis)
+    result = analyze_escalation('esc-1', _crisis=crisis)
     assert result['trend'] == 'escalating'
     assert result['current_severity'] == 90

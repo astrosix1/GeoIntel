@@ -1,0 +1,182 @@
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 320px;
+  max-width: 85vw;
+  background: rgba(10, 14, 20, 0.75);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  color: #e6e9ef;
+  z-index: 20;
+  transform: translateX(-100%);
+  transition: transform 220ms ease;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.open {
+  transform: translateX(0);
+}
+
+.header {
+  padding: 16px 18px 10px;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(230, 233, 239, 0.6);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.scopeToggle {
+  display: flex;
+  gap: 4px;
+  padding: 10px 18px 0;
+}
+
+.scopeOption {
+  flex: 1;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 7px;
+  color: rgba(230, 233, 239, 0.65);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12.5px;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.scopeOption:hover {
+  color: #e6e9ef;
+}
+
+.scopeActive {
+  background: rgba(90, 160, 255, 0.25);
+  color: #ffffff;
+}
+
+.tabRow {
+  display: flex;
+  gap: 4px;
+  padding: 10px 18px 0;
+}
+
+.tabButton {
+  padding: 5px 10px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: rgba(230, 233, 239, 0.55);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12.5px;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.tabButton:hover {
+  color: #e6e9ef;
+}
+
+.tabActive {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 18px 0;
+}
+
+.chip {
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  color: rgba(230, 233, 239, 0.6);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11.5px;
+  text-transform: capitalize;
+}
+
+.chip:hover {
+  color: #e6e9ef;
+}
+
+.chipActive {
+  background: rgba(90, 160, 255, 0.3);
+  color: #ffffff;
+  border-color: rgba(90, 160, 255, 0.5);
+}
+
+.chipEmpty {
+  font-size: 11.5px;
+  color: rgba(230, 233, 239, 0.4);
+}
+
+.scopeCaveat {
+  margin: 10px 18px 0;
+  padding: 8px 10px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: rgba(230, 233, 239, 0.6);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+}
+
+.list {
+  overflow-y: auto;
+  flex: 1;
+  margin-top: 8px;
+}
+
+.item {
+  width: 100%;
+  text-align: left;
+  padding: 12px 18px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.item:hover,
+.itemActive {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.itemTitle {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.itemMeta {
+  font-size: 12px;
+  color: rgba(230, 233, 239, 0.6);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.severityDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status {
+  padding: 12px 18px;
+  font-size: 13px;
+  color: rgba(230, 233, 239, 0.6);
+}

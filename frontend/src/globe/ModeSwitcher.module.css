@@ -1,0 +1,39 @@
+.switcher {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  background: rgba(10, 14, 20, 0.75);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  color: #e6e9ef;
+}
+
+.option {
+  padding: 6px 14px;
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  color: rgba(230, 233, 239, 0.65);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.option:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e6e9ef;
+}
+
+.optionActive {
+  background: rgba(90, 160, 255, 0.25);
+  color: #ffffff;
+}
