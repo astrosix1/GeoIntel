@@ -261,26 +261,41 @@ def _generate_static_briefing(crisis, escalation, economic, reliability, numbere
     """Generate a rule-based, single-explanation briefing when no API key
     is available — built from real material (crisis.analysis, real article
     excerpts) rather than a severity-only template. Honest when that real
-    material is thin: says so rather than padding with generic phrasing."""
+    material is thin: says so rather than padding with generic phrasing.
+
+    Deliberately does NOT include economic-impact or source-reliability
+    sentences: economic.impact_severity is derived directly from
+    crisis.severity (see services/economic.py's threshold ladder) and
+    sectors_typically_exposed is a static lookup by crisis.type, so both
+    just restate the severity badge and category chip already shown above
+    in different words — not real analysis of this specific event. Source
+    reliability is worse: News.crisis_id is never populated by any
+    ingestion connector today, so calculate_source_reliability() always
+    sees zero matched rows and returns the exact same 'unknown'/0-source
+    result for every single crisis — a constant, not a real signal. All
+    three were confirmed live to be the "generic paragraph" users were
+    seeing instead of real event substance; dropped rather than kept as
+    filler now that severity has its own badge."""
     excerpt_parts = excerpt_parts or []
     sev = crisis.severity
-    trend = escalation.get('trend', 'stable') if escalation else 'stable'
+    trend = escalation.get('trend') if escalation else None
     velocity = escalation.get('velocity') if escalation else None
-    velocity = velocity if velocity is not None else 0
-    impact_sev = economic.get('impact_severity', 'moderate') if economic else 'moderate'
-    sectors = ', '.join(economic.get('sectors_typically_exposed', [])) if economic else 'General Economy'
-    src_count = reliability.get('source_count', 1) if reliability else 1
-    rel_label = reliability.get('reliability', 'moderate') if reliability else 'moderate'
-    has_citable_news = bool(numbered_sources)
     has_real_material = bool(crisis.analysis) or bool(excerpt_parts)
 
-    trend_desc = {
-        'escalating': f'rapidly escalating (velocity +{abs(velocity):.1f} pts/day)',
-        'de-escalating': f'de-escalating (velocity −{abs(velocity):.1f} pts/day)',
-        'stable': 'holding at current intensity',
-        'volatile': 'volatile with unpredictable swings',
-        'insufficient_data': 'too new to establish a trend',
-    }.get(trend, 'evolving')
+    # Escalation trend IS real (computed from actual CrisisSnapshot history
+    # — see services/escalation.py) when enough snapshots exist, unlike the
+    # economic/reliability figures above. But most crises are single-
+    # snapshot/newly-ingested, so 'insufficient_data' is the overwhelmingly
+    # common case — showing "too new to establish a trend" on nearly every
+    # briefing is itself the kind of constant filler this fix is removing,
+    # so it's included only when there's an actual real trend to report.
+    trend_sentence = ''
+    if trend == 'escalating':
+        trend_sentence = f" This event is rapidly escalating (velocity +{abs(velocity):.1f} pts/day)."
+    elif trend == 'de-escalating':
+        trend_sentence = f" This event is de-escalating (velocity −{abs(velocity):.1f} pts/day)."
+    elif trend == 'volatile':
+        trend_sentence = " This event's severity has been volatile with unpredictable swings."
 
     # Lead with the real explanation when there's real material to draw
     # from (crisis.analysis, real article excerpts) — this is what makes
@@ -306,8 +321,15 @@ def _generate_static_briefing(crisis, escalation, economic, reliability, numbere
             if cleaned_analysis:
                 explanation_parts.append(cleaned_analysis)
         for part in excerpt_parts:
-            # part is already "[n] excerpt text" or "Primary source description: ..."
-            explanation_parts.append(part if part.startswith('[') else part)
+            # part is already "[n] excerpt text" or "Primary source
+            # description: ...". The "Primary source description:" label is
+            # useful as a field name in the AI prompt context block (where
+            # this same excerpt_parts list is also used), but reads like a
+            # clinical database dump rather than prose in the user-facing
+            # static briefing — drop the label here, keep the real content.
+            if part.startswith('Primary source description: '):
+                part = part[len('Primary source description: '):]
+            explanation_parts.append(part)
         real_explanation = ' '.join(explanation_parts) if explanation_parts else (
             "No additional real narrative is indexed for this crisis beyond what's "
             "shown above — treat the figures below as the only currently-grounded facts."
@@ -325,20 +347,9 @@ def _generate_static_briefing(crisis, escalation, economic, reliability, numbere
     # already shown in EventAnalysis.tsx's dedicated SOURCE section above
     # this text, so this leads with a plain, minimal line and goes straight
     # into the real analytical content instead.
-    # No "[n]" citation marker here — that convention only makes sense next
-    # to a real numbered '## Sources' list, which this static-fallback path
-    # no longer appends (the one real source is already shown in
-    # EventAnalysis.tsx's SOURCE section above this text). Point back to
-    # that section in plain language instead of a dangling bracket number.
-    corroboration_sentence = (
-        "Recent indexed reporting corroborates this beyond the source cited above; "
-        "every citation should be independently verified before publication."
-        if has_citable_news
-        else "No recent indexed reporting is available to corroborate developments beyond what's stated above."
-    )
     briefing_text = f"""Global Severity: {sev}/100
 
-This event is {trend_desc}. {real_explanation} {corroboration_sentence} Economic exposure is rated **{impact_sev}** across {sectors}; source reliability is **{rel_label}** across {src_count} tracked source(s), {crisis.confidence}% overall confidence."""
+{real_explanation}{trend_sentence}"""
 
     # No appended '## Sources' block here — for this static-fallback path,
     # crisis.source_url is the only real citable source GDELT crises ever

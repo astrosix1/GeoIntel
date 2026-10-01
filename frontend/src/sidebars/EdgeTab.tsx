@@ -5,36 +5,37 @@ interface EdgeTabProps {
   side: 'left' | 'right';
 }
 
-// Phase 10.3: a small, always-visible pull-tab fixed to the screen edge,
-// replacing the old invisible 10%-of-viewport hover zone. Hovering it opens
-// the corresponding sidebar (via useHoverZone.ts); a plain click toggles it
-// open too, for accessibility beyond pure hover. Marked
-// data-ui-hover-surface so hovering the tab itself is never mistaken for
-// "hovering the globe" (which force-closes both sidebars).
+// A small, always-visible pull-tab fixed to the screen edge. Hovering it
+// opens the corresponding sidebar; once open, the tab itself becomes an
+// explicit close (×) button instead of the sidebar auto-closing when the
+// cursor moves elsewhere (e.g. onto the globe) — confirmed with you that
+// the previous auto-close-on-hover-away behavior was unwanted. Marked
+// data-ui-hover-surface, left over from the old globe-hover-closes-
+// everything listener; harmless now that nothing reads it to force-close.
 export default function EdgeTab({ side }: EdgeTabProps) {
-  const setLeftEdgeHovered = useUiStore((s) => s.setLeftEdgeHovered);
-  const setRightEdgeHovered = useUiStore((s) => s.setRightEdgeHovered);
-  const toggleLeftManual = useUiStore((s) => s.toggleLeftManual);
-  const toggleRightManual = useUiStore((s) => s.toggleRightManual);
+  const setLeftOpen = useUiStore((s) => s.setLeftOpen);
+  const setRightOpen = useUiStore((s) => s.setRightOpen);
   const leftOpen = useUiStore((s) => s.leftOpen);
   const rightOpen = useUiStore((s) => s.rightOpen);
 
   const isOpen = side === 'left' ? leftOpen : rightOpen;
-  const setHovered = side === 'left' ? setLeftEdgeHovered : setRightEdgeHovered;
-  const toggleManual = side === 'left' ? toggleLeftManual : toggleRightManual;
+  const setOpen = side === 'left' ? setLeftOpen : setRightOpen;
 
   return (
     <button
       type="button"
       data-ui-hover-surface
       className={`${styles.tab} ${styles[side]} ${isOpen ? styles.open : ''}`}
-      aria-label={side === 'left' ? 'Toggle Events sidebar' : 'Toggle Analysis sidebar'}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      onClick={toggleManual}
+      aria-label={
+        isOpen
+          ? side === 'left' ? 'Close Events sidebar' : 'Close Analysis sidebar'
+          : side === 'left' ? 'Open Events sidebar' : 'Open Analysis sidebar'
+      }
+      onMouseEnter={() => setOpen(true)}
+      onClick={() => setOpen(!isOpen)}
     >
       <span className={styles.chevron} aria-hidden="true">
-        {side === 'left' ? (isOpen ? '‹' : '›') : isOpen ? '›' : '‹'}
+        {isOpen ? '×' : side === 'left' ? '›' : '‹'}
       </span>
     </button>
   );

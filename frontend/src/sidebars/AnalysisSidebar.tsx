@@ -6,18 +6,16 @@ import styles from './AnalysisSidebar.module.css';
 export default function AnalysisSidebar() {
   const rightOpen = useUiStore((s) => s.rightOpen);
   const pinnedSelection = useUiStore((s) => s.pinnedSelection);
-  const setRightPanelHovered = useUiStore((s) => s.setRightPanelHovered);
 
-  // Visibility is hover-driven only (10.2) — pinnedSelection controls WHAT
-  // is shown, never WHETHER the panel is shown.
+  // Visibility is controlled by the right EdgeTab (open on hover, close via
+  // its × button) — pinnedSelection controls WHAT is shown, never WHETHER
+  // the panel is shown.
   const isOpen = rightOpen;
 
   return (
     <aside
       data-ui-hover-surface
       className={`${styles.sidebar} ${isOpen ? styles.open : ''}`}
-      onMouseEnter={() => setRightPanelHovered(true)}
-      onMouseLeave={() => setRightPanelHovered(false)}
     >
       <div className={styles.header}>Analysis</div>
       <div className={styles.body}>

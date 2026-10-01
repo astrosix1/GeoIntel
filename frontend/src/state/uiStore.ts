@@ -27,38 +27,23 @@ interface UiState {
   selectCountry: (countryCode: string) => void;
   clearPinnedSelection: () => void;
 
-  // --- Visibility: WHETHER each sidebar is shown. Purely hover/click
-  // driven (useHoverZone.ts), independent of `pinnedSelection`.
+  // --- Visibility: WHETHER each sidebar is shown. `leftOpen`/`rightOpen`
+  // are the sole source of truth — set directly by EdgeTab.tsx (hover-in
+  // opens, a click toggles open/closed), independent of `pinnedSelection`.
+  //
+  // Previously this was re-derived on every hover-state change (edge-tab
+  // hover OR panel-content hover OR a manual-open flag), with a separate
+  // document-level listener that force-closed both sidebars the instant
+  // the cursor touched the globe — even a second after deliberately
+  // clicking a tab open. Confirmed directly with you this was the
+  // "closing automatically" behavior to remove: once open, a sidebar now
+  // stays open regardless of where the cursor goes, and the edge tab
+  // itself becomes the close control (its chevron becomes an × — see
+  // EdgeTab.tsx) rather than hovering elsewhere closing it for you.
   leftOpen: boolean;
   rightOpen: boolean;
   setLeftOpen: (open: boolean) => void;
   setRightOpen: (open: boolean) => void;
-
-  // Hover sources that feed the derived leftOpen/rightOpen state in
-  // useHoverZone.ts: the visible edge tab handles (10.3) and each panel's
-  // own rendered content (the pre-existing "panel-hover fusion" pattern —
-  // keeps a panel open while the cursor is over it, not just its tab).
-  leftEdgeHovered: boolean;
-  rightEdgeHovered: boolean;
-  leftPanelHovered: boolean;
-  rightPanelHovered: boolean;
-  setLeftEdgeHovered: (hovered: boolean) => void;
-  setRightEdgeHovered: (hovered: boolean) => void;
-  setLeftPanelHovered: (hovered: boolean) => void;
-  setRightPanelHovered: (hovered: boolean) => void;
-
-  // A plain click on an edge tab also toggles its sidebar open (10.3,
-  // accessibility beyond pure hover) independent of hover state.
-  leftManualOpen: boolean;
-  rightManualOpen: boolean;
-  toggleLeftManual: () => void;
-  toggleRightManual: () => void;
-
-  // Hovering the globe/map canvas force-closes both sidebars immediately
-  // and unconditionally (10.2, rule 3) — this resets every hover/manual
-  // source, not just the derived open flags, so a stale hover flag can't
-  // silently reopen a panel on the next state change.
-  forceCloseAll: () => void;
 
   activeMode: GlobeMode;
   setActiveMode: (mode: GlobeMode) => void;
@@ -93,32 +78,6 @@ export const useUiStore = create<UiState>((set) => ({
   rightOpen: false,
   setLeftOpen: (open) => set({ leftOpen: open }),
   setRightOpen: (open) => set({ rightOpen: open }),
-
-  leftEdgeHovered: false,
-  rightEdgeHovered: false,
-  leftPanelHovered: false,
-  rightPanelHovered: false,
-  setLeftEdgeHovered: (hovered) => set({ leftEdgeHovered: hovered }),
-  setRightEdgeHovered: (hovered) => set({ rightEdgeHovered: hovered }),
-  setLeftPanelHovered: (hovered) => set({ leftPanelHovered: hovered }),
-  setRightPanelHovered: (hovered) => set({ rightPanelHovered: hovered }),
-
-  leftManualOpen: false,
-  rightManualOpen: false,
-  toggleLeftManual: () => set((s) => ({ leftManualOpen: !s.leftManualOpen })),
-  toggleRightManual: () => set((s) => ({ rightManualOpen: !s.rightManualOpen })),
-
-  forceCloseAll: () =>
-    set({
-      leftOpen: false,
-      rightOpen: false,
-      leftEdgeHovered: false,
-      rightEdgeHovered: false,
-      leftPanelHovered: false,
-      rightPanelHovered: false,
-      leftManualOpen: false,
-      rightManualOpen: false,
-    }),
 
   activeMode: 'events',
   // Switching modes must NOT touch pinnedSelection or sidebar

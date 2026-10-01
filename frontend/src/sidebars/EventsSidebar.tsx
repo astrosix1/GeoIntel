@@ -13,7 +13,6 @@ const TABS: { value: EventsTab; label: string }[] = [
 
 export default function EventsSidebar() {
   const leftOpen = useUiStore((s) => s.leftOpen);
-  const setLeftPanelHovered = useUiStore((s) => s.setLeftPanelHovered);
   const selectCrisis = useUiStore((s) => s.selectCrisis);
   const pinnedSelection = useUiStore((s) => s.pinnedSelection);
   const eventsTab = useUiStore((s) => s.eventsTab);
@@ -59,8 +58,6 @@ export default function EventsSidebar() {
     <aside
       data-ui-hover-surface
       className={`${styles.sidebar} ${isOpen ? styles.open : ''}`}
-      onMouseEnter={() => setLeftPanelHovered(true)}
-      onMouseLeave={() => setLeftPanelHovered(false)}
     >
       <div className={styles.header}>Events{filteredCrises ? ` (${filteredCrises.length})` : ''}</div>
 
