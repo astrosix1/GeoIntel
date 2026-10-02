@@ -29,6 +29,7 @@ from blueprints.economic import economic_bp
 from blueprints.health import health_bp
 from blueprints.countries import countries_bp
 from blueprints.weather import weather_bp
+from blueprints.me import me_bp
 
 load_dotenv()
 
@@ -181,6 +182,7 @@ def create_app():
     app.register_blueprint(health_bp)
     app.register_blueprint(countries_bp)
     app.register_blueprint(weather_bp)
+    app.register_blueprint(me_bp)
 
     # ════════════════════════════════════════════════════════════
     # APP INITIALIZATION

@@ -38,6 +38,15 @@ export interface Crisis {
   scope?: 'global' | 'local';
 }
 
+// GET /api/me — who the caller is and whether premium UI should unlock.
+// The backend enforces premium on its own routes; this only drives the UI.
+export interface Me {
+  signedIn: boolean;
+  userId: string | null;
+  plan: 'free' | 'premium';
+  premium: boolean;
+}
+
 export interface CrisesResponse {
   count: number;
   crises: Crisis[];

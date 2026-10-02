@@ -5,6 +5,7 @@ import AnalysisSidebar from './sidebars/AnalysisSidebar';
 import EdgeTab from './sidebars/EdgeTab';
 import SolarSystem from './background/SolarSystem';
 import Logo from './Logo';
+import AccountChip from './components/AccountChip';
 import './App.css';
 
 function App() {
@@ -15,6 +16,7 @@ function App() {
         <Globe />
       </div>
       <Logo />
+      <AccountChip />
       <ModeSwitcher />
       <EventsSidebar />
       <AnalysisSidebar />

@@ -1,9 +1,28 @@
-import type { CrisesResponse, Crisis, CrisisDetail, Briefing, CountryProfile, StormsResponse } from './types';
+import type { CrisesResponse, Crisis, CrisisDetail, Briefing, CountryProfile, Me, StormsResponse } from './types';
+import { getAccessToken } from '../auth/session';
 
 // In dev, requests go through Vite's proxy (see vite.config.ts) so they are
 // same-origin and unaffected by the backend's CORS allowlist. In production,
 // point this at the real backend origin via VITE_API_BASE_URL.
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
+
+// fetch() that attaches the user's Supabase token when signed in. Public
+// endpoints keep using plain fetch(); use this for any account-aware or
+// premium endpoint.
+export function authedFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const token = getAccessToken();
+  const headers = new Headers(init.headers);
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  return fetch(`${API_BASE_URL}${path}`, { ...init, headers });
+}
+
+export async function fetchMe(): Promise<Me> {
+  const res = await authedFetch('/api/me');
+  if (!res.ok) {
+    throw new Error(`Failed to fetch account status: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
 
 export type CrisisScope = 'global' | 'local' | 'all';
 

@@ -1,5 +1,6 @@
 import { useUiStore } from '../state/uiStore';
 import type { GlobeMode } from '../state/uiStore';
+import PremiumGate from '../components/PremiumGate';
 import styles from './ModeSwitcher.module.css';
 
 // Persistent globe-mode control (step 5 of the rewrite plan). Placed near
@@ -30,6 +31,14 @@ export default function ModeSwitcher() {
           {mode.label}
         </button>
       ))}
+      {/* First premium feature slot. The satellite/topography layers aren't
+          built yet, so this is a disabled placeholder for premium members
+          and a locked, prompt-showing control for everyone else. */}
+      <PremiumGate feature="Satellite view">
+        <button type="button" className={styles.option} disabled title="Coming soon">
+          Satellite
+        </button>
+      </PremiumGate>
     </div>
   );
 }
