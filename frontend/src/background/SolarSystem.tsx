@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { isLiteDevice } from '../lite';
 
 // Purely decorative solar-system background rendered on a single full-viewport
 // 2D canvas, positioned BEHIND the MapLibre globe (see App.tsx DOM order / CSS
@@ -76,7 +77,7 @@ export default function SolarSystem() {
     // and no shooting stars/UFOs. The map is the expensive thing on screen;
     // this decorative layer must not compete with it. Reduced-motion users
     // get one static frame instead of an animation loop.
-    const lite = window.matchMedia('(max-width: 768px)').matches || (navigator.hardwareConcurrency ?? 8) <= 4;
+    const lite = isLiteDevice();
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const maxDpr = lite ? 1 : 2;
 

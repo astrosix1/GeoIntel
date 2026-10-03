@@ -108,6 +108,27 @@ curl http://localhost:5000/api/crises?type=conflict&min_severity=70
 **GET /api/health**
 - Health check
 
+### Comment moderation
+
+Comments are auto-hidden once 5 different people report them. Review them with the
+admin key (header `X-Admin-Key`, or a Supabase admin JWT as a Bearer token):
+
+```bash
+# Reported comments (hidden and still-visible), most reported first
+curl -H "X-Admin-Key: $ADMIN_KEY" https://<api>/api/admin/comments/reported
+
+# Who reported one comment, and why
+curl -H "X-Admin-Key: $ADMIN_KEY" https://<api>/api/admin/comments/<comment_id>/reports
+
+# Put it back (clears its reports)
+curl -X POST -H "X-Admin-Key: $ADMIN_KEY" https://<api>/api/admin/comments/<comment_id>/restore
+
+# Remove it permanently from view
+curl -X POST -H "X-Admin-Key: $ADMIN_KEY" https://<api>/api/admin/comments/<comment_id>/remove
+```
+
+Requires `backend/supabase/003_geointel_comments.sql` to be applied.
+
 ## Data Sources
 
 ### ACLED (Armed Conflict Location & Event Data)

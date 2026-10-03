@@ -6,7 +6,7 @@ import type { CrisisSummary } from '../api/types';
 // — replacing one DOM Marker (plus Popup) per event, which at tens of
 // thousands of events froze pans and crashed mobile browsers. MapLibre's
 // globe projection also occludes far-side layer features itself, so none of
-// the old per-marker hemisphere math applies to these.
+// the old per-marker hemisphere math applies to these. One feature per event.
 
 export const CRISIS_SOURCE_ID = 'crises';
 const CLUSTER_LAYER_ID = 'crises-clusters';

@@ -18,6 +18,20 @@ def optional_user(f):
     return wrapper
 
 
+def require_user(f):
+    """401 sign_in_required for anonymous callers; any signed-in user passes
+    (no premium check). For actions a lapsed-premium user must keep, such as
+    deleting their own comment."""
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        user = get_current_user()
+        if not user:
+            return jsonify({'error': 'sign_in_required'}), 401
+        g.user = user
+        return f(*args, **kwargs)
+    return wrapper
+
+
 def require_premium(f):
     """401 sign_in_required for anonymous, 403 premium_required for a
     signed-in free user — distinct codes so the UI can show the right prompt."""

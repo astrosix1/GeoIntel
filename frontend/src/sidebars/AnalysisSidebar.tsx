@@ -19,7 +19,9 @@ export default function AnalysisSidebar() {
     >
       <div className={styles.header}>Analysis</div>
       <div className={styles.body}>
-        {pinnedSelection?.kind === 'event' && <EventAnalysis crisis={pinnedSelection.crisis} />}
+        {pinnedSelection?.kind === 'event' && (
+          <EventAnalysis key={pinnedSelection.crisis.id} crisis={pinnedSelection.crisis} />
+        )}
         {pinnedSelection?.kind === 'country' && <CountryAnalysis countryCode={pinnedSelection.countryCode} />}
         {!pinnedSelection && (
           <div className={styles.placeholder}>

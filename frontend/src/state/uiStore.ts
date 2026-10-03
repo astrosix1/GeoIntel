@@ -14,6 +14,7 @@ export type PinnedSelection =
   | null;
 
 export type EventsTab = 'all' | 'major' | 'categories';
+export type DashboardTab = 'saved' | 'sources';
 export type CrisisScopeFilter = 'global' | 'local';
 
 // How far back the globe and Events list reach. GDELT adds ~11k events/day,
@@ -70,6 +71,20 @@ interface UiState {
   // Server-side time window, like scope — changing it refetches.
   timeRange: TimeRange;
   setTimeRange: (range: TimeRange) => void;
+
+  // Premium globe layers (Phase 14). These are the user's *requests*; what
+  // actually renders also requires premium (see Globe.tsx), so stale state
+  // can never show a layer to a non-premium user.
+  // "My dashboard" overlay (premium), opened from the account chip.
+  dashboardOpen: boolean;
+  dashboardTab: DashboardTab;
+  setDashboardOpen: (open: boolean) => void;
+  setDashboardTab: (tab: DashboardTab) => void;
+
+  satellite: boolean;
+  relief: boolean;
+  setSatellite: (on: boolean) => void;
+  setRelief: (on: boolean) => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -104,4 +119,14 @@ export const useUiStore = create<UiState>((set) => ({
 
   timeRange: '48h',
   setTimeRange: (range) => set({ timeRange: range }),
+
+  dashboardOpen: false,
+  dashboardTab: 'saved',
+  setDashboardOpen: (open) => set({ dashboardOpen: open }),
+  setDashboardTab: (tab) => set({ dashboardTab: tab }),
+
+  satellite: false,
+  relief: false,
+  setSatellite: (on) => set({ satellite: on }),
+  setRelief: (on) => set({ relief: on }),
 }));

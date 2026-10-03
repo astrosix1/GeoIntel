@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react';
 import type { CrisisSummary } from '../../api/types';
 import { useCrisisBriefingQuery } from '../../state/queries';
+import Scenarios from './Scenarios';
+import Comments from './Comments';
+import SaveButton from '../../components/SaveButton';
 import { colorForSeverity, labelForSeverity } from '../../globe/severity';
 import styles from './EventAnalysis.module.css';
 
 export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
   const { data: briefing, isLoading, isError } = useCrisisBriefingQuery(crisis.id);
   const [imageFailed, setImageFailed] = useState(false);
+  const [tab, setTab] = useState<'analysis' | 'comments'>('analysis');
 
   // Prefer the real image extracted from the crisis's own source article
   // (og:image) over the generic Wikipedia illustrative image — it's the
@@ -48,8 +52,28 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
         <span className={styles.badge}>{crisis.country}</span>
         <span className={styles.badge}>{crisis.type}</span>
         <span className={styles.badge}>{new Date(crisis.date).toLocaleDateString()}</span>
+        <SaveButton crisisId={crisis.id} />
       </div>
 
+      <div className={styles.tabs} role="tablist">
+        {(['analysis', 'comments'] as const).map((value) => (
+          <button
+            key={value}
+            type="button"
+            role="tab"
+            aria-selected={tab === value}
+            className={`${styles.tab} ${tab === value ? styles.tabActive : ''}`}
+            onClick={() => setTab(value)}
+          >
+            {value === 'analysis' ? 'Analysis' : 'Comments'}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'comments' && <Comments crisisId={crisis.id} />}
+
+      {tab === 'analysis' && (
+        <>
       {imageSrc && !imageFailed && (
         <div className={styles.section}>
           <img
@@ -95,6 +119,10 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
         {isError && <div className={styles.error}>Failed to load analysis.</div>}
         {briefing && <div className={styles.briefingText}>{briefing.briefing}</div>}
       </div>
+
+      <Scenarios key={crisis.id} crisisId={crisis.id} />
+        </>
+      )}
     </div>
   );
 }

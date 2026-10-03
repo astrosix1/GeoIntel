@@ -2,6 +2,7 @@ import os
 import requests
 
 from ._shared import logger
+from services.ai_client import AI_MODEL
 
 NOMINATIM_BASE = "https://nominatim.openstreetmap.org/search"
 
@@ -100,7 +101,7 @@ def _extract_incident_location(text):
         return None
     try:
         message = _geocode_ai_client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model=AI_MODEL,
             max_tokens=40,
             messages=[{
                 "role": "user",

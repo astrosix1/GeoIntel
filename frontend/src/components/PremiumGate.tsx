@@ -7,13 +7,15 @@ interface PremiumGateProps {
   children: ReactNode;
   // What the feature is, for the prompt: "Sign in to use {feature}".
   feature: string;
+  // Lay the gate out full-width (for forms) instead of shrink-wrapping its child.
+  block?: boolean;
 }
 
 // Wrap any premium UI. Premium users get the children untouched. Everyone
 // else sees them dimmed and non-interactive with a lock and a prompt: sign in
 // if anonymous, upgrade if signed in on the free plan. This is presentation
 // only — the matching API routes enforce premium on the server.
-export default function PremiumGate({ children, feature }: PremiumGateProps) {
+export default function PremiumGate({ children, feature, block }: PremiumGateProps) {
   const { signedIn, premium, loading } = useEntitlements();
 
   if (premium) return <>{children}</>;
@@ -42,7 +44,7 @@ export default function PremiumGate({ children, feature }: PremiumGateProps) {
   }
 
   return (
-    <div className={styles.gate}>
+    <div className={`${styles.gate} ${block ? styles.block : ''}`}>
       <div className={styles.locked} inert aria-hidden="true">
         {children}
       </div>

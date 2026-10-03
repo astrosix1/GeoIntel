@@ -46,6 +46,72 @@ export type CrisisSummary = Pick<
   'id' | 'title' | 'country' | 'type' | 'severity' | 'scope' | 'date' | 'lat' | 'lon' | 'source_url'
 >;
 
+// GET /api/crises/<id>/scenarios (premium). Likelihood is a qualitative word on
+// purpose — the backend never returns a numeric probability.
+export type ScenarioLikelihood = 'less likely' | 'plausible' | 'more likely';
+
+export interface Scenario {
+  title: string;
+  likelihood: ScenarioLikelihood;
+  timeframe: string;
+  summary: string;
+  what_would_drive_it: string[];
+  watch_for: string[];
+  who_is_affected: string[];
+}
+
+export interface ScenariosResponse {
+  scenarios: Scenario[];
+  assumptions: string[];
+  // The real facts the scenarios were grounded in.
+  based_on: { severity: number; trend: string | null; source_text: boolean; relationships: string[] };
+  disclaimer: string;
+  model: string;
+  timestamp: string;
+}
+
+// Dashboard (premium). A saved event is a server-side snapshot of the crisis at
+// save time, so it still opens after the event is archived from the live list.
+export interface SavedEvent {
+  crisis_id: string;
+  title: string;
+  country: string;
+  type: string;
+  severity: number;
+  lat: number;
+  lon: number;
+  source_url: string | null;
+  event_date: string | null;
+  saved_at: string;
+}
+
+export interface UserPrefs {
+  // Outlet hostnames whose events are hidden from the list and globe.
+  hidden_outlets: string[];
+}
+
+// Event comments (premium to post; anyone can read). Plain text only.
+export interface EventComment {
+  id: string;
+  body: string;
+  author_name: string;
+  created_at: string;
+  mine: boolean;
+  // Auto-hidden after enough reports; only its author (and the admin) sees it.
+  hidden: boolean;
+}
+
+export interface CommentsPage {
+  comments: EventComment[];
+  next_before: string | null;
+}
+
+export interface Profile {
+  display_name: string;
+}
+
+export type ReportReason = 'spam' | 'abusive' | 'misinformation' | 'other';
+
 // GET /api/me — who the caller is and whether premium UI should unlock.
 // The backend enforces premium on its own routes; this only drives the UI.
 export interface Me {

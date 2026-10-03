@@ -4,7 +4,9 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { fetchActiveStorms } from '../api/client';
 import type { CrisisSummary, Storm } from '../api/types';
 import { useUiStore } from '../state/uiStore';
-import { useCrisesQuery } from '../state/queries';
+import { useEntitlements, useVisibleCrises } from '../state/queries';
+import { isLiteDevice } from '../lite';
+import { syncBaseLayers } from './baseLayers';
 import {
   addCrisisLayers,
   attachCrisisInteractions,
@@ -15,12 +17,6 @@ import {
 } from './crisisLayers';
 import { addTimezoneLayer, removeTimezoneLayer, timezonePopupHtml, TIMEZONE_HIT_LAYER_ID } from './TimezoneLayer';
 import { isOnNearHemisphere } from './hemisphere';
-
-// A real, tuned "front and center" fly-to zoom (item 10.5) — front-loaded
-// enough to feel like the camera actually travels to the pin rather than
-// just nudging the existing view, but not so tight that a dense cluster of
-// nearby pins overshoots past the one that was clicked.
-const FLY_TO_ZOOM = 4.5;
 
 // Real, current OpenFreeMap style URL (no API key required).
 // See https://openfreemap.org/quick_start/ — "liberty" is OpenFreeMap's full-detail style.
@@ -66,7 +62,10 @@ export default function Globe() {
   const pinnedSelection = useUiStore((s) => s.pinnedSelection);
   const scope = useUiStore((s) => s.scope);
   const timeRange = useUiStore((s) => s.timeRange);
-  const { data: crises } = useCrisesQuery(scope, timeRange);
+  const { data: crises } = useVisibleCrises(scope, timeRange);
+  const satellite = useUiStore((s) => s.satellite);
+  const relief = useUiStore((s) => s.relief);
+  const { premium } = useEntitlements();
   const selectCrisisRef = useRef(selectCrisis);
   const selectCountryRef = useRef(selectCountry);
   const activeModeRef = useRef(activeMode);
@@ -241,6 +240,20 @@ export default function Globe() {
     };
   }, [activeMode, mapReady]);
 
+  // Premium layers (satellite imagery, topography). Premium is required here
+  // too — not just in the UI — so stale toggle state can never render a
+  // layer for a non-premium user. 3D terrain is skipped on phones/low-core
+  // devices; they get the shaded relief only.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    syncBaseLayers(map, {
+      satellite: premium && satellite,
+      relief: premium && relief,
+      terrain3d: !isLiteDevice(),
+    });
+  }, [mapReady, premium, satellite, relief]);
+
   // Crisis pins: layers exist only in Events mode; their data follows the
   // shared query (so scope/range changes just swap the source's data).
   useEffect(() => {
@@ -264,16 +277,13 @@ export default function Globe() {
     setCrisisData(map, crises ?? []);
   }, [crises, activeMode, mapReady]);
 
-  // Item 10.5: fly the camera to a crisis pin whenever it becomes the
+  // Item 10.5: center the camera on a crisis pin whenever it becomes the
   // pinned selection. Implemented as a subscription to the shared
   // `pinnedSelection` store state (set by `selectCrisis`/`selectCountry`)
-  // rather than duplicating a flyTo call inside each click handler that can
-  // trigger a selection (the marker click handler here in Globe.tsx, and
-  // the crisis-list item click handler in EventsSidebar.tsx, which is out
-  // of scope for this change and owned by another in-flight edit). This
-  // way every current and future path that calls `selectCrisis` gets the
-  // camera fly-to for free, with zero risk of the two call sites drifting
-  // out of sync or of a merge conflict in EventsSidebar.tsx.
+  // rather than a camera call inside each click handler that can trigger a
+  // selection (a pin here, a list item in EventsSidebar.tsx, a stack-popup
+  // row), so every current and future path that calls `selectCrisis`
+  // centers the pin for free.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
@@ -281,14 +291,11 @@ export default function Globe() {
     const { crisis } = pinnedSelection;
     if (typeof crisis.lat !== 'number' || typeof crisis.lon !== 'number') return;
 
-    // A fixed zoom level (rather than e.g. max(current, target)) so every
-    // pin click lands at the same, consistent "front and center" framing
-    // regardless of where the camera started — verified live to avoid both
-    // teleporting (flyTo always animates) and overshoot (a single tuned
-    // constant, not a dynamic function of the current zoom).
-    map.flyTo({
+    // Center only — never change the zoom. easeTo pans straight to the pin
+    // at the current zoom (flyTo would also arc the zoom in/out en route,
+    // and a fixed target zoom zoomed OUT anyone already closer than it).
+    map.easeTo({
       center: [crisis.lon, crisis.lat],
-      zoom: FLY_TO_ZOOM,
       essential: true,
     });
   }, [pinnedSelection, mapReady]);

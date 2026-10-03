@@ -2,7 +2,7 @@ import { useMemo, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useUiStore } from '../state/uiStore';
 import type { EventsTab, TimeRange } from '../state/uiStore';
-import { useCrisesQuery } from '../state/queries';
+import { useVisibleCrises } from '../state/queries';
 import { colorForSeverity } from '../globe/severity';
 import styles from './EventsSidebar.module.css';
 
@@ -34,7 +34,7 @@ export default function EventsSidebar() {
   // scope and time range are server-side filters (10.4) — the backend's
   // `?scope=` / `?days=` query params, not client-side array filters — so
   // the list matches what the backend actually classified and bounded.
-  const { data: crises, isLoading, isError } = useCrisesQuery(scope, timeRange);
+  const { data: crises, isLoading, isError } = useVisibleCrises(scope, timeRange);
 
   const isOpen = leftOpen;
 

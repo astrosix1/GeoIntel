@@ -14,7 +14,7 @@ except Exception:
 from models import Session, Crisis, News
 from cache import cache_get, cache_set
 from data_sources import fetch_real_page_metadata
-from services.ai_client import anthropic_client
+from services.ai_client import anthropic_client, AI_MODEL
 from services.escalation import analyze_escalation
 from services.economic import get_economic_impact
 from services.reliability import calculate_source_reliability
@@ -188,7 +188,7 @@ Real article text/excerpts to draw the actual explanation from:
         if anthropic_client and anthropic_client.api_key:
             try:
                 message = anthropic_client.messages.create(
-                    model="claude-3-5-sonnet-20241022",
+                    model=AI_MODEL,
                     max_tokens=2800,
                     messages=[
                         {
@@ -217,7 +217,7 @@ Be specific — name actors, places, and figures rather than speaking in general
                 result = {
                     'briefing': briefing_text,
                     'sources': numbered_sources,
-                    'model': 'claude-3-5-sonnet-20241022',
+                    'model': AI_MODEL,
                     'timestamp': datetime.utcnow().isoformat()
                 }
                 if image:

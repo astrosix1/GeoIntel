@@ -32,6 +32,33 @@
   font-weight: 400;
 }
 
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin: 2px 0 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.tab {
+  padding: 7px 12px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: rgba(230, 233, 239, 0.6);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+}
+
+.tab:hover {
+  color: #e6e9ef;
+}
+
+.tabActive {
+  color: #ffffff;
+  border-bottom-color: rgba(90, 160, 255, 0.9);
+}
+
 .section {
   margin-bottom: 16px;
 }

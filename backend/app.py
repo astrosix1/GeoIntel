@@ -32,6 +32,8 @@ from blueprints.health import health_bp
 from blueprints.countries import countries_bp
 from blueprints.weather import weather_bp
 from blueprints.me import me_bp
+from blueprints.dashboard import dashboard_bp
+from blueprints.comments import comments_bp
 
 load_dotenv()
 
@@ -67,14 +69,16 @@ _cors_origins = [o.strip() for o in _cors_origins_raw.split(',') if o.strip()]
 # beyond a blocked-request error), and `worker-src` needs 'self' blob:
 # (MapLibre GL JS runs its tile-parsing worker from a blob: URL, which
 # otherwise falls back to script-src and gets blocked with no blob:
-# source).
+# source). The premium Satellite/Topography layers fetch raster tiles
+# client-side too, so `connect-src` also needs tiles.maps.eox.at (EOX
+# Sentinel-2 imagery) and s3.amazonaws.com (AWS Terrain Tiles elevation).
 _CSP = (
     "default-src 'self'; "
     "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.socket.io; "
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; "
     "font-src 'self' https://fonts.gstatic.com; "
     "img-src 'self' data: https:; "
-    "connect-src 'self' https://en.wikipedia.org https://*.supabase.co https://tiles.openfreemap.org https://cdn.jsdelivr.net; "
+    "connect-src 'self' https://en.wikipedia.org https://*.supabase.co https://tiles.openfreemap.org https://cdn.jsdelivr.net https://tiles.maps.eox.at https://s3.amazonaws.com; "
     "worker-src 'self' blob:; "
     "frame-ancestors 'none'; "
     "base-uri 'self'; "
@@ -185,6 +189,8 @@ def create_app():
     app.register_blueprint(countries_bp)
     app.register_blueprint(weather_bp)
     app.register_blueprint(me_bp)
+    app.register_blueprint(dashboard_bp)
+    app.register_blueprint(comments_bp)
 
     # ════════════════════════════════════════════════════════════
     # APP INITIALIZATION

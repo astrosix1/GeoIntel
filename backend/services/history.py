@@ -8,7 +8,7 @@ from datetime import datetime
 
 from models import Session, Crisis, Relationship
 from cache import cache_get, cache_set
-from services.ai_client import anthropic_client
+from services.ai_client import anthropic_client, AI_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +112,44 @@ def _generate_static_history(crisis, relevant_relationships=None):
     }
 
 
+def get_relevant_relationships(session, crisis):
+    """Curated Relationship rows for the SPECIFIC pair of real actors involved
+    in this crisis (both sides present in crisis.stakeholders). Fewer than 2
+    stakeholders means no specific pair can be identified, so this returns []
+    rather than a broad, mostly-irrelevant dump. Shared by the deep-history and
+    scenarios features.
+
+    Background (from when this was inline in generate_deep_history):
+    # Real, hand-curated relationship data (NATO membership, active
+    # wars, territorial disputes — see init_relationships in
+    # data_sources.py) grounds the generated history in an actual
+    # classification this app already carries, instead of leaving
+    # Claude to work from general knowledge alone. Narrowed to the
+    # SPECIFIC pair of real actors involved in this crisis (both sides
+    # present in crisis.stakeholders — the real, word-boundary-matched
+    # actor ids already written by _find_stakeholders() at ingest) —
+    # not every relationship the crisis's single resolved country
+    # happens to have. The single-actor resolution this used previously
+    # (_resolve_crisis_actors, matching only the crisis's own country)
+    # pulled that country's ENTIRE curated relationship roster regardless
+    # of relevance to this specific crisis — confirmed the direct cause
+    # of a real complaint: a crisis involving the US surfaced 14
+    # unrelated US relationships (AU, NZ, PH, TW, SA, EG, QA, AE, JO, UA,
+    # MX, CO, VE, CU) with no connection to what the crisis was actually
+    # about. Fewer than 2 real stakeholders means no specific pair can
+    # be identified — treated as "no relevant relationship" rather than
+    # falling back to that broad, mostly-irrelevant dump.
+    """
+    stakeholder_ids = [s for s in (crisis.stakeholders or '').split(',') if s]
+    if len(stakeholder_ids) < 2:
+        return []
+    return session.query(Relationship).filter(
+        Relationship.is_active == True,
+        Relationship.actor_a.in_(stakeholder_ids),
+        Relationship.actor_b.in_(stakeholder_ids),
+    ).all()
+
+
 def generate_deep_history(crisis_id):
     """
     Generate AI-powered deep historical background, a dated timeline, and a
@@ -135,33 +173,7 @@ def generate_deep_history(crisis_id):
         if not crisis:
             return None
 
-        # Real, hand-curated relationship data (NATO membership, active
-        # wars, territorial disputes — see init_relationships in
-        # data_sources.py) grounds the generated history in an actual
-        # classification this app already carries, instead of leaving
-        # Claude to work from general knowledge alone. Narrowed to the
-        # SPECIFIC pair of real actors involved in this crisis (both sides
-        # present in crisis.stakeholders — the real, word-boundary-matched
-        # actor ids already written by _find_stakeholders() at ingest) —
-        # not every relationship the crisis's single resolved country
-        # happens to have. The single-actor resolution this used previously
-        # (_resolve_crisis_actors, matching only the crisis's own country)
-        # pulled that country's ENTIRE curated relationship roster regardless
-        # of relevance to this specific crisis — confirmed the direct cause
-        # of a real complaint: a crisis involving the US surfaced 14
-        # unrelated US relationships (AU, NZ, PH, TW, SA, EG, QA, AE, JO, UA,
-        # MX, CO, VE, CU) with no connection to what the crisis was actually
-        # about. Fewer than 2 real stakeholders means no specific pair can
-        # be identified — treated as "no relevant relationship" rather than
-        # falling back to that broad, mostly-irrelevant dump.
-        stakeholder_ids = [s for s in (crisis.stakeholders or '').split(',') if s]
-        relevant_relationships = []
-        if len(stakeholder_ids) >= 2:
-            relevant_relationships = session.query(Relationship).filter(
-                Relationship.is_active == True,
-                Relationship.actor_a.in_(stakeholder_ids),
-                Relationship.actor_b.in_(stakeholder_ids),
-            ).all()
+        relevant_relationships = get_relevant_relationships(session, crisis)
         relationship_facts = '\n'.join(
             f"- {r.actor_a}–{r.actor_b}: {r.type}, \"{r.label}\" (strength {r.strength}/100, stability {r.stability}/100)"
             for r in relevant_relationships
@@ -186,7 +198,7 @@ This app's own curated relationship data for the actors involved (real, hand-sou
         if anthropic_client and anthropic_client.api_key:
             try:
                 message = anthropic_client.messages.create(
-                    model="claude-3-5-sonnet-20241022",
+                    model=AI_MODEL,
                     max_tokens=3000,
                     messages=[
                         {
@@ -224,7 +236,7 @@ Be specific and factual — this will be read by someone who wants real history,
                 result = {
                     'history': history_text,
                     'analogy': analogy,
-                    'model': 'claude-3-5-sonnet-20241022',
+                    'model': AI_MODEL,
                     'timestamp': datetime.utcnow().isoformat(),
                 }
                 # 48 hours: see function docstring for why this is much

@@ -18,7 +18,7 @@ from datetime import datetime
 
 from cache import cache_get, cache_set
 from data_sources import RestCountriesConnector, OECConnector, WorldBankConnector
-from services.ai_client import anthropic_client
+from services.ai_client import anthropic_client, AI_MODEL
 from services.briefing import fetch_wikipedia_image
 
 logger = logging.getLogger(__name__)
@@ -127,7 +127,7 @@ Top exported commodities (real OEC data): {trade.get('top_exports_by_commodity')
     if anthropic_client and anthropic_client.api_key:
         try:
             message = anthropic_client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model=AI_MODEL,
                 max_tokens=900,
                 messages=[{
                     "role": "user",
@@ -151,7 +151,7 @@ Respond as plain text with two paragraphs, the first for geography_infrastructur
             return {
                 'geography_infrastructure': geo,
                 'world_contribution': contrib,
-                'model': 'claude-3-5-sonnet-20241022',
+                'model': AI_MODEL,
             }
         except Exception as e:
             logger.error(f"AI country-narrative error: {e}")

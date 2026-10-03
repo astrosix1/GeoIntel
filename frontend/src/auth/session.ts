@@ -55,7 +55,41 @@ function captureTokenFromUrl(): void {
   history.replaceState(null, '', window.location.pathname + window.location.search);
 }
 
+// Local-development demo switch: open the app with `?demo=premium` to unlock
+// premium UI without a real account (`?demo=off` clears it). It only exists
+// in the Vite dev server — `import.meta.env.DEV` is false in production
+// builds, so this whole block is compiled out and can't unlock anything for
+// real visitors. It only changes what the UI shows: the backend still
+// enforces premium on its own routes.
+const DEMO_KEY = 'geointel.demoPremium';
+
+function captureDemoFromUrl(): void {
+  if (!import.meta.env.DEV) return;
+  const params = new URLSearchParams(window.location.search);
+  const demo = params.get('demo');
+  if (demo === null) return;
+  try {
+    if (demo === 'premium') localStorage.setItem(DEMO_KEY, '1');
+    else if (demo === 'off') localStorage.removeItem(DEMO_KEY);
+  } catch {
+    // localStorage unavailable — the flag simply doesn't stick.
+  }
+  params.delete('demo');
+  const search = params.toString();
+  history.replaceState(null, '', window.location.pathname + (search ? `?${search}` : '') + window.location.hash);
+}
+
+export function isDemoPremium(): boolean {
+  if (!import.meta.env.DEV) return false;
+  try {
+    return localStorage.getItem(DEMO_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 let memoryToken: string | null = null;
+captureDemoFromUrl();
 captureTokenFromUrl();
 
 export function getAccessToken(): string | null {
@@ -81,6 +115,7 @@ export function signOut(): void {
   memoryToken = null;
   try {
     localStorage.removeItem(STORAGE_KEY);
+    if (import.meta.env.DEV) localStorage.removeItem(DEMO_KEY);
   } catch {
     // nothing to clear
   }

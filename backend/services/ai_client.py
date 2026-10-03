@@ -1,5 +1,9 @@
-"""Shared Anthropic client for AI-backed features (briefing, history)."""
+"""Shared Anthropic client for AI-backed features (briefing, history, country
+profile, scenarios, incident geocoding)."""
 import os
+
+# One place to change the model. Override per environment with ANTHROPIC_MODEL.
+AI_MODEL = os.getenv('ANTHROPIC_MODEL', 'claude-sonnet-5-5')
 
 try:
     from anthropic import Anthropic

@@ -1,11 +1,13 @@
 import { lazy, Suspense } from 'react';
 import Globe from './globe/Globe';
 import ModeSwitcher from './globe/ModeSwitcher';
+import LayerControl from './globe/LayerControl';
 import EventsSidebar from './sidebars/EventsSidebar';
 import AnalysisSidebar from './sidebars/AnalysisSidebar';
 import EdgeTab from './sidebars/EdgeTab';
 import Logo from './Logo';
 import AccountChip from './components/AccountChip';
+import Dashboard from './components/Dashboard';
 import './App.css';
 
 // Decorative only — loaded after the globe so it never delays first paint.
@@ -22,7 +24,9 @@ function App() {
       </div>
       <Logo />
       <AccountChip />
+      <Dashboard />
       <ModeSwitcher />
+      <LayerControl />
       <EventsSidebar />
       <AnalysisSidebar />
       <EdgeTab side="left" />

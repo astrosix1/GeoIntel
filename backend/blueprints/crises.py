@@ -18,6 +18,8 @@ from services.escalation import analyze_escalation
 from services.economic import get_economic_impact
 from services.briefing import generate_ai_briefing
 from services.history import generate_deep_history
+from services.scenarios import generate_scenarios, ScenariosUnavailable
+from services.gating import require_premium
 from services.realtime import broadcast_new_crisis
 
 logger = logging.getLogger(__name__)
@@ -525,6 +527,26 @@ def get_crisis_briefing(crisis_id):
             }), 503
     except Exception as e:
         logger.error(f"Error generating briefing: {e}")
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
+
+
+@crises_bp.route('/<crisis_id>/scenarios', methods=['GET'])
+@limiter.limit("10 per minute")
+@require_premium
+def get_crisis_scenarios(crisis_id):
+    """Premium: AI-generated branch scenarios for a crisis. Enforced here on
+    the server (401 sign-in / 403 upgrade from require_premium), not just by a
+    locked button. 503 when the model isn't configured or fails — there is no
+    static fallback, so the UI shows an honest 'unavailable'."""
+    try:
+        result = generate_scenarios(crisis_id)
+        if result is None:
+            return jsonify({'error': 'Crisis not found'}), 404
+        return jsonify(result)
+    except ScenariosUnavailable as e:
+        return jsonify({'error': 'scenarios_unavailable', 'reason': e.reason}), 503
+    except Exception as e:
+        logger.error(f"Error generating scenarios: {e}")
         return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
 
 
