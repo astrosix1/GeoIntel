@@ -24,6 +24,23 @@ logger = logging.getLogger(__name__)
 
 crises_bp = Blueprint('crises', __name__, url_prefix='/api/crises')
 
+# List sizing. GDELT adds ~11k events/day, so a window longer than
+# SHORT_WINDOW_DAYS is ranked by severity and capped at LONG_WINDOW_CAP;
+# MAX_LIST_LIMIT is a hard ceiling on any single response.
+SHORT_WINDOW_DAYS = 2
+LONG_WINDOW_CAP = 10000
+MAX_LIST_LIMIT = 30000
+
+
+def _list_response(payload, view):
+    """jsonify the list payload; the lean map view carries no per-user data,
+    so it's safe for Vercel's edge to cache (s-maxage) instead of every
+    visitor hitting Flask after the 60s in-process cache lapses."""
+    response = jsonify(payload)
+    if view == 'map':
+        response.headers['Cache-Control'] = 'public, max-age=30, s-maxage=60, stale-while-revalidate=300'
+    return response
+
 
 @crises_bp.route('', methods=['GET'])
 def get_crises():
@@ -39,11 +56,21 @@ def get_crises():
         # that doesn't pass this param — only an explicit ?scope=global or
         # ?scope=local narrows the result set.
         scope           = request.args.get('scope', 'all').lower()
-        cache_key = f"crises:list:{crisis_type}:{status}:{min_severity}:{days}:{include_analysis}:{scope}"
+        # view=map returns only the fields the globe/list actually read
+        # (~250 B/row instead of ~815 B) — the full row stays available via
+        # GET /api/crises/<id>. Any other value keeps the full shape.
+        view            = request.args.get('view', 'full').lower()
+        limit_arg       = request.args.get('limit', '')
+        try:
+            days_int = int(days) if days else None
+            limit_int = int(limit_arg) if limit_arg else None
+        except ValueError:
+            return jsonify({'error': 'days and limit must be integers'}), 400
+        cache_key = f"crises:list:{crisis_type}:{status}:{min_severity}:{days}:{include_analysis}:{scope}:{view}:{limit_arg}"
 
         cached = cache_get(cache_key)
         if cached is not None:
-            return jsonify(cached)
+            return _list_response(cached, view)
 
         session = Session()
         min_severity_int = int(min_severity)
@@ -62,29 +89,70 @@ def get_crises():
             query = query.filter(Crisis.scope == scope)
 
         # Only apply date window if caller explicitly requests it
-        if days:
-            since = datetime.utcnow() - timedelta(days=int(days))
+        if days_int is not None:
+            since = datetime.utcnow() - timedelta(days=days_int)
             query = query.filter(Crisis.date_start >= since)
 
-        crises = query.order_by(Crisis.severity.desc()).all()
+        # Ordering and cap. Unwindowed requests keep the original behavior
+        # (severity desc, no cap). A short window (<= 2 days) is newest-first
+        # so the cap, if hit, drops the oldest; a longer window is ranked
+        # severity-then-recency and capped, since GDELT adds ~11k events/day
+        # and an uncapped week is far more than a phone can render.
+        limit = limit_int
+        if days_int is None:
+            query = query.order_by(Crisis.severity.desc())
+        elif days_int <= SHORT_WINDOW_DAYS:
+            query = query.order_by(Crisis.date_start.desc(), Crisis.severity.desc())
+            limit = min(limit or MAX_LIST_LIMIT, MAX_LIST_LIMIT)
+        else:
+            query = query.order_by(Crisis.severity.desc(), Crisis.date_start.desc())
+            limit = min(limit or LONG_WINDOW_CAP, LONG_WINDOW_CAP)
+        if limit is not None:
+            query = query.limit(min(limit, MAX_LIST_LIMIT))
 
-        # When analysis is requested, fetch reliability data for all crises in
-        # one batched query instead of one query per crisis (N+1 avoidance).
-        reliability_by_id = {}
-        if include_analysis == 'true':
-            reliability_by_id = calculate_source_reliability_batch([c.id for c in crises])
+        if view == 'map':
+            # Column tuples straight from the DB — skips ORM object
+            # hydration and to_dict() for what can be tens of thousands of rows.
+            rows = query.with_entities(
+                Crisis.id, Crisis.title, Crisis.country, Crisis.type, Crisis.severity,
+                Crisis.scope, Crisis.date_start, Crisis.latitude, Crisis.longitude,
+                Crisis.source_url,
+            ).all()
+            result = [
+                {
+                    'id': r.id,
+                    'title': r.title,
+                    'country': r.country,
+                    'type': r.type,
+                    'severity': r.severity,
+                    'scope': r.scope or 'global',
+                    'date': r.date_start.isoformat() if r.date_start else None,
+                    'lat': r.latitude,
+                    'lon': r.longitude,
+                    'source_url': r.source_url,
+                }
+                for r in rows
+            ]
+        else:
+            crises = query.all()
 
-        result = []
-        for c in crises:
-            crisis_dict = c.to_dict()
-
-            # Add enhanced analysis if requested
+            # When analysis is requested, fetch reliability data for all crises in
+            # one batched query instead of one query per crisis (N+1 avoidance).
+            reliability_by_id = {}
             if include_analysis == 'true':
-                crisis_dict['source_reliability'] = reliability_by_id.get(c.id)
-                # Pass the already-loaded crisis row to skip a redundant lookup query
-                crisis_dict['escalation'] = analyze_escalation(c.id, _crisis=c)
+                reliability_by_id = calculate_source_reliability_batch([c.id for c in crises])
 
-            result.append(crisis_dict)
+            result = []
+            for c in crises:
+                crisis_dict = c.to_dict()
+
+                # Add enhanced analysis if requested
+                if include_analysis == 'true':
+                    crisis_dict['source_reliability'] = reliability_by_id.get(c.id)
+                    # Pass the already-loaded crisis row to skip a redundant lookup query
+                    crisis_dict['escalation'] = analyze_escalation(c.id, _crisis=c)
+
+                result.append(crisis_dict)
 
         session.close()
 
@@ -97,7 +165,7 @@ def get_crises():
         # Cache for 60s (crises don't change second-to-second)
         cache_set(cache_key, response, ttl=60)
 
-        return jsonify(response)
+        return _list_response(response, view)
 
     except Exception as e:
         logger.error(f"Error fetching crises: {e}")

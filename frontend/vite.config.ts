@@ -7,6 +7,17 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ['maplibre-gl'],
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // maplibre-gl is the bulk of the bundle and changes far less often
+        // than app code — its own long-cached chunk.
+        manualChunks(id: string) {
+          if (id.includes('node_modules/maplibre-gl')) return 'maplibre';
+        },
+      },
+    },
+  },
   server: {
     // Proxy API calls to the Flask backend so the browser sees same-origin
     // requests regardless of which port Vite ends up on (avoids CORS entirely

@@ -72,20 +72,32 @@ export default function SolarSystem() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    // Lite mode for phones / low-core devices: 1x pixel density, ~30fps,
+    // and no shooting stars/UFOs. The map is the expensive thing on screen;
+    // this decorative layer must not compete with it. Reduced-motion users
+    // get one static frame instead of an animation loop.
+    const lite = window.matchMedia('(max-width: 768px)').matches || (navigator.hardwareConcurrency ?? 8) <= 4;
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const maxDpr = lite ? 1 : 2;
+
     let width = window.innerWidth;
     let height = window.innerHeight;
-    let dpr = Math.min(window.devicePixelRatio || 1, 2);
+    let dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
 
     function resize() {
       width = window.innerWidth;
       height = window.innerHeight;
-      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
       canvas!.width = width * dpr;
       canvas!.height = height * dpr;
       canvas!.style.width = `${width}px`;
       canvas!.style.height = `${height}px`;
       ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
+      // A resize clears the canvas; the static (reduced-motion) frame has no
+      // loop to repaint it.
+      if (reducedMotion && running) requestAnimationFrame(tick);
     }
+    let running = false;
     resize();
     window.addEventListener('resize', resize);
 
@@ -294,36 +306,49 @@ export default function SolarSystem() {
     let lastTime = performance.now();
 
     function tick(now: number) {
+      if (!running) return;
+      if (lite && !reducedMotion && now - lastTime < 33) {
+        animationFrame = requestAnimationFrame(tick);
+        return;
+      }
       const dt = Math.min(now - lastTime, 50); // clamp to avoid big jumps on tab-away
       lastTime = now;
 
+      // The deep-space backdrop gradient is CSS on the canvas element (below),
+      // not redrawn here — refilling the whole screen with a gradient every
+      // frame was the bulk of this layer's cost.
       ctx!.clearRect(0, 0, width, height);
-
-      // deep-space backdrop gradient, kept dark to read well behind translucent UI
-      const bg = ctx!.createRadialGradient(
-        width * 0.5,
-        height * 0.4,
-        0,
-        width * 0.5,
-        height * 0.4,
-        Math.max(width, height) * 0.8,
-      );
-      bg.addColorStop(0, '#0b0f1e');
-      bg.addColorStop(1, '#03040a');
-      ctx!.fillStyle = bg;
-      ctx!.fillRect(0, 0, width, height);
 
       drawStars(now);
       drawConstellations(now);
-      drawShootingStar(now, dt);
-      drawUfo(now, dt);
+      if (!lite) {
+        drawShootingStar(now, dt);
+        drawUfo(now, dt);
+      }
 
+      if (!reducedMotion) animationFrame = requestAnimationFrame(tick);
+    }
+
+    function start() {
+      running = true;
+      lastTime = performance.now();
       animationFrame = requestAnimationFrame(tick);
     }
-    animationFrame = requestAnimationFrame(tick);
+    function stop() {
+      running = false;
+      cancelAnimationFrame(animationFrame);
+    }
+    // Don't animate a hidden tab.
+    function onVisibilityChange() {
+      if (document.hidden) stop();
+      else start();
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    if (!document.hidden) start();
 
     return () => {
-      cancelAnimationFrame(animationFrame);
+      stop();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('resize', resize);
     };
   }, []);
@@ -339,6 +364,8 @@ export default function SolarSystem() {
         zIndex: 0,
         pointerEvents: 'none',
         display: 'block',
+        // deep-space backdrop, kept dark to read well behind translucent UI
+        background: 'radial-gradient(circle max(80vw, 80vh) at 50% 40%, #0b0f1e, #03040a)',
       }}
       aria-hidden="true"
     />

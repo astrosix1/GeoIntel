@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import type { Crisis } from '../../api/types';
+import type { CrisisSummary } from '../../api/types';
 import { useCrisisBriefingQuery } from '../../state/queries';
 import { colorForSeverity, labelForSeverity } from '../../globe/severity';
 import styles from './EventAnalysis.module.css';
 
-export default function EventAnalysis({ crisis }: { crisis: Crisis }) {
+export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
   const { data: briefing, isLoading, isError } = useCrisisBriefingQuery(crisis.id);
   const [imageFailed, setImageFailed] = useState(false);
 

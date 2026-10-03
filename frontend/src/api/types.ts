@@ -38,6 +38,14 @@ export interface Crisis {
   scope?: 'global' | 'local';
 }
 
+// The lean shape returned by GET /api/crises?view=map — everything the globe,
+// the Events list and the Analysis header read. The full row (analysis,
+// domains, stakeholders...) comes from GET /api/crises/<id> when needed.
+export type CrisisSummary = Pick<
+  Crisis,
+  'id' | 'title' | 'country' | 'type' | 'severity' | 'scope' | 'date' | 'lat' | 'lon' | 'source_url'
+>;
+
 // GET /api/me — who the caller is and whether premium UI should unlock.
 // The backend enforces premium on its own routes; this only drives the UI.
 export interface Me {
@@ -49,7 +57,7 @@ export interface Me {
 
 export interface CrisesResponse {
   count: number;
-  crises: Crisis[];
+  crises: CrisisSummary[];
 }
 
 // Verified live at GET /api/crises/<id> — same shape as a list item plus `news`.

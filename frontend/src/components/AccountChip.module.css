@@ -40,3 +40,13 @@
 .action:hover {
   color: #ffffff;
 }
+
+/* backdrop-filter over a live WebGL map is very expensive on phones; use a more opaque solid panel there instead. */
+@media (max-width: 768px) {
+  .chip {
+    top: 108px;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgba(10, 14, 20, 0.9);
+  }
+}

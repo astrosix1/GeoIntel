@@ -1,17 +1,22 @@
+import { lazy, Suspense } from 'react';
 import Globe from './globe/Globe';
 import ModeSwitcher from './globe/ModeSwitcher';
 import EventsSidebar from './sidebars/EventsSidebar';
 import AnalysisSidebar from './sidebars/AnalysisSidebar';
 import EdgeTab from './sidebars/EdgeTab';
-import SolarSystem from './background/SolarSystem';
 import Logo from './Logo';
 import AccountChip from './components/AccountChip';
 import './App.css';
 
+// Decorative only — loaded after the globe so it never delays first paint.
+const SolarSystem = lazy(() => import('./background/SolarSystem'));
+
 function App() {
   return (
     <div style={{ position: 'fixed', inset: 0 }}>
-      <SolarSystem />
+      <Suspense fallback={null}>
+        <SolarSystem />
+      </Suspense>
       <div style={{ position: 'absolute', inset: 0, zIndex: 1 }}>
         <Globe />
       </div>

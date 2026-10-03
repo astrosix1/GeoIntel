@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Crisis } from '../api/types';
+import type { CrisisSummary } from '../api/types';
 
 // Globe mode switcher (steps 5-6 of the rewrite plan). 'events' shows
 // crisis pins, 'weather' shows GDACS storm pins, 'timezone' shows real IANA
@@ -9,12 +9,17 @@ export type GlobeMode = 'events' | 'weather' | 'timezone';
 // Discriminated union so AnalysisSidebar can hold either an event or a
 // country selection in the same slot (step 4 of the rewrite plan).
 export type PinnedSelection =
-  | { kind: 'event'; crisis: Crisis }
+  | { kind: 'event'; crisis: CrisisSummary }
   | { kind: 'country'; countryCode: string }
   | null;
 
 export type EventsTab = 'all' | 'major' | 'categories';
 export type CrisisScopeFilter = 'global' | 'local';
+
+// How far back the globe and Events list reach. GDELT adds ~11k events/day,
+// so the default is the last 48h; 7d is server-capped to stay phone-friendly.
+export type TimeRange = '24h' | '48h' | '7d';
+export const TIME_RANGE_DAYS: Record<TimeRange, number> = { '24h': 1, '48h': 2, '7d': 7 };
 
 interface UiState {
   // --- Selection: WHAT to show in Analysis. Set by clicking a pin/country,
@@ -23,7 +28,7 @@ interface UiState {
   // panel visibility — selecting something no longer force-opens or pins
   // the Analysis panel open.
   pinnedSelection: PinnedSelection;
-  selectCrisis: (crisis: Crisis) => void;
+  selectCrisis: (crisis: CrisisSummary) => void;
   selectCountry: (countryCode: string) => void;
   clearPinnedSelection: () => void;
 
@@ -61,6 +66,10 @@ interface UiState {
   // actually classified.
   scope: CrisisScopeFilter;
   setScope: (scope: CrisisScopeFilter) => void;
+
+  // Server-side time window, like scope — changing it refetches.
+  timeRange: TimeRange;
+  setTimeRange: (range: TimeRange) => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -92,4 +101,7 @@ export const useUiStore = create<UiState>((set) => ({
 
   scope: 'global',
   setScope: (scope) => set({ scope }),
+
+  timeRange: '48h',
+  setTimeRange: (range) => set({ timeRange: range }),
 }));

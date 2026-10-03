@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.104.0",
+    "@tanstack/react-virtual": "^3.14.13",
     "@watergis/maplibre-gl-terradraw": "^1.16.0",
     "maplibre-gl": "^6.11.2",
     "react": "^19.2.8",

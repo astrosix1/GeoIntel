@@ -1,13 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { fetchCrises, fetchActiveStorms } from '../api/client';
-import type { Crisis, Storm } from '../api/types';
+import { fetchActiveStorms } from '../api/client';
+import type { CrisisSummary, Storm } from '../api/types';
 import { useUiStore } from '../state/uiStore';
-import { colorForSeverity } from './severity';
+import { useCrisesQuery } from '../state/queries';
+import {
+  addCrisisLayers,
+  attachCrisisInteractions,
+  escapeHtml,
+  hitsCrisisLayer,
+  removeCrisisLayers,
+  setCrisisData,
+} from './crisisLayers';
 import { addTimezoneLayer, removeTimezoneLayer, timezonePopupHtml, TIMEZONE_HIT_LAYER_ID } from './TimezoneLayer';
 import { isOnNearHemisphere } from './hemisphere';
-import { createDrawMeasureControl } from './DrawMeasureControl';
 
 // A real, tuned "front and center" fly-to zoom (item 10.5) — front-loaded
 // enough to feel like the camera actually travels to the pin rather than
@@ -51,18 +58,22 @@ const COUNTRY_HIT_LAYER_ID = 'country-hit-test-fill';
 export default function Globe() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+  // Storm pins only — crisis pins are a GPU layer (see crisisLayers.ts).
   const markersRef = useRef<maplibregl.Marker[]>([]);
   const selectCrisis = useUiStore((s) => s.selectCrisis);
   const selectCountry = useUiStore((s) => s.selectCountry);
   const activeMode = useUiStore((s) => s.activeMode);
   const pinnedSelection = useUiStore((s) => s.pinnedSelection);
   const scope = useUiStore((s) => s.scope);
+  const timeRange = useUiStore((s) => s.timeRange);
+  const { data: crises } = useCrisesQuery(scope, timeRange);
   const selectCrisisRef = useRef(selectCrisis);
   const selectCountryRef = useRef(selectCountry);
   const activeModeRef = useRef(activeMode);
   selectCrisisRef.current = selectCrisis;
   selectCountryRef.current = selectCountry;
   activeModeRef.current = activeMode;
+  const crisesByIdRef = useRef(new Map<string, CrisisSummary>());
   const [mapReady, setMapReady] = useState(false);
 
   useEffect(() => {
@@ -73,19 +84,13 @@ export default function Globe() {
       style: OPENFREEMAP_STYLE_URL,
       center: [15, 20],
       zoom: 1.5,
+      // Phones report a 3x pixel ratio; rendering the globe at 3x is a ~2.25x
+      // fill-rate cost over 2x for no visible gain on a map.
+      pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
     });
     mapRef.current = map;
 
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }));
-
-    // Item 10.6 — real draw/measure tool (point/line/polygon/rectangle/
-    // circle/freehand), with real Turf-computed distance/area labels built
-    // into the plugin's own MaplibreMeasureControl. Added as a standard
-    // MapLibre IControl (like NavigationControl above) — it renders its own
-    // toggle button + toolbar, so no extra React UI is needed. Placed
-    // bottom-right (away from NavigationControl's top-right zoom buttons and
-    // ModeSwitcher's top-center cluster).
-    map.addControl(createDrawMeasureControl(), 'bottom-right');
 
     map.on('style.load', () => {
       // Real, documented MapLibre v5+ globe projection API.
@@ -111,17 +116,32 @@ export default function Globe() {
 
     map.on('load', () => {
       setMapReady(true);
+
+      // Item 10.6 — real draw/measure tool (point/line/polygon/rectangle/
+      // circle/freehand), with real Turf-computed distance/area labels built
+      // into the plugin's own MaplibreMeasureControl. Added as a standard
+      // MapLibre IControl (like NavigationControl above) — it renders its own
+      // toggle button + toolbar, so no extra React UI is needed. Placed
+      // bottom-right (away from NavigationControl's top-right zoom buttons and
+      // ModeSwitcher's top-center cluster). Loaded after the map is up (a
+      // separate chunk) so terra-draw/Turf stay off the critical path.
+      import('./DrawMeasureControl').then(({ createDrawMeasureControl }) => {
+        if (mapRef.current === map) map.addControl(createDrawMeasureControl(), 'bottom-right');
+      });
     });
 
-    // Country click: only fires when the click didn't land on a pin marker
-    // (markers are separate DOM elements layered above the map canvas, so
-    // a pin click never reaches this map click handler at all).
+    // Country click: must yield to a crisis pin/cluster under the cursor —
+    // MapLibre fires each layer's click handler independently, so without
+    // the hitsCrisisLayer check a pin click would ALSO select the country
+    // beneath it and overwrite the event selection (storm markers are DOM
+    // elements that stopPropagation themselves, so they never reach here).
     // Guarded by activeModeRef so a Time Zone-mode click on a country's
     // territory doesn't ALSO select that country and force-open the
     // country Analysis view underneath the timezone popup — the two
     // invisible hit-test fill layers otherwise sit on top of each other.
     map.on('click', COUNTRY_HIT_LAYER_ID, (e) => {
       if (activeModeRef.current !== 'events' && activeModeRef.current !== 'weather') return;
+      if (hitsCrisisLayer(map, e.point)) return;
       const feature = e.features?.[0];
       const props = feature?.properties as Record<string, unknown> | undefined;
       const iso2 = (props?.ISO_A2 as string | undefined) ?? (props?.ISO_A2_EH as string | undefined);
@@ -138,15 +158,12 @@ export default function Globe() {
       map.getCanvas().style.cursor = '';
     });
 
-    // Item 10.9: markers are plain screen-projected DOM elements, not real
-    // 3D-occluded objects, so on a globe projection a far-hemisphere marker
-    // would otherwise render on top of the globe's own (correctly-occluded)
-    // surface. `move` fires continuously during pan/rotate/zoom (unlike
-    // `moveend`, which only fires once the gesture settles and would make
-    // pins pop through visibly mid-drag) — recomputing near/far for every
-    // current marker on every `move` was tested live against a real full
-    // crisis-pin set and showed no visible jank, so no throttling was added;
-    // this can be revisited if a future marker count makes it necessary.
+    // Item 10.9: storm pins are plain screen-projected DOM markers, not
+    // real 3D-occluded objects, so on a globe projection a far-hemisphere
+    // marker would otherwise render on top of the globe's own surface.
+    // `move` fires continuously during pan/rotate/zoom. Only the handful of
+    // storm markers go through this now — crisis pins are a GPU layer that
+    // the globe projection occludes itself — so it's cheap.
     map.on('move', () => updateMarkerVisibility(map, markersRef.current));
 
     return () => {
@@ -195,17 +212,6 @@ export default function Globe() {
           // eslint-disable-next-line no-console
           console.error('Failed to load active storms:', err);
         });
-    } else if (activeMode === 'events') {
-      fetchCrises(scope)
-        .then((crises) => {
-          if (cancelled) return;
-          addCrisisMarkers(map, crises, markersRef, (crisis) => selectCrisisRef.current(crisis));
-          updateMarkerVisibility(map, markersRef.current);
-        })
-        .catch((err) => {
-          // eslint-disable-next-line no-console
-          console.error('Failed to load crises:', err);
-        });
     } else if (activeMode === 'timezone') {
       addTimezoneLayer(map);
       map.getCanvas().style.cursor = '';
@@ -233,7 +239,30 @@ export default function Globe() {
       }
       timezonePopup?.remove();
     };
-  }, [activeMode, mapReady, scope]);
+  }, [activeMode, mapReady]);
+
+  // Crisis pins: layers exist only in Events mode; their data follows the
+  // shared query (so scope/range changes just swap the source's data).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || activeMode !== 'events') return;
+    addCrisisLayers(map);
+    const detach = attachCrisisInteractions(map, {
+      getById: (id) => crisesByIdRef.current.get(id),
+      onSelect: (crisis) => selectCrisisRef.current(crisis),
+    });
+    return () => {
+      detach();
+      removeCrisisLayers(map);
+    };
+  }, [activeMode, mapReady]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || activeMode !== 'events') return;
+    crisesByIdRef.current = new Map((crises ?? []).map((c) => [c.id, c]));
+    setCrisisData(map, crises ?? []);
+  }, [crises, activeMode, mapReady]);
 
   // Item 10.5: fly the camera to a crisis pin whenever it becomes the
   // pinned selection. Implemented as a subscription to the shared
@@ -270,49 +299,6 @@ export default function Globe() {
       style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
     />
   );
-}
-
-function addCrisisMarkers(
-  map: maplibregl.Map,
-  crises: Crisis[],
-  markersRef: React.MutableRefObject<maplibregl.Marker[]>,
-  onSelect: (crisis: Crisis) => void,
-) {
-  crises.forEach((crisis) => {
-    if (typeof crisis.lat !== 'number' || typeof crisis.lon !== 'number') return;
-
-    const el = document.createElement('div');
-    el.style.width = '12px';
-    el.style.height = '12px';
-    el.style.borderRadius = '50%';
-    el.style.backgroundColor = colorForSeverity(crisis.severity);
-    el.style.border = '1px solid rgba(255,255,255,0.8)';
-    el.style.cursor = 'pointer';
-    el.style.boxShadow = '0 0 4px rgba(0,0,0,0.5)';
-
-    // stopPropagation is required here: without it, this click also bubbles
-    // to the map's own COUNTRY_HIT_LAYER_ID click handler (MapLibre's
-    // layer-click system listens at the container level, not just the
-    // canvas), which fires AFTER this handler and silently overwrites the
-    // event selection with a country selection for whatever's underneath
-    // the pin — confirmed live: clicking a real crisis pin was opening the
-    // country Analysis view instead of the event one.
-    el.addEventListener('click', (e) => {
-      e.stopPropagation();
-      onSelect(crisis);
-    });
-
-    const marker = new maplibregl.Marker({ element: el })
-      .setLngLat([crisis.lon, crisis.lat])
-      .setPopup(
-        new maplibregl.Popup({ offset: 12 }).setHTML(
-          `<strong>${escapeHtml(crisis.title)}</strong><br/>${escapeHtml(crisis.country)} &middot; severity ${crisis.severity}`,
-        ),
-      )
-      .addTo(map);
-
-    markersRef.current.push(marker);
-  });
 }
 
 // Storm pins use a visually distinct marker (a solid triangle/spiral-ish
@@ -387,10 +373,4 @@ function colorForAlertLevel(level: string | null): string {
     default:
       return '#0ac8ff';
   }
-}
-
-function escapeHtml(value: string): string {
-  const div = document.createElement('div');
-  div.textContent = value;
-  return div.innerHTML;
 }

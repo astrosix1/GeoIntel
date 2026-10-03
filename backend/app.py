@@ -22,7 +22,9 @@ from dotenv import load_dotenv
 from models import Session, Crisis
 from data_sources import DataAggregator, init_actors, init_relationships, init_scheduled_events
 from extensions import limiter, socketio, scheduler
+from cache import cache_clear_prefix
 from services.auth import check_admin_key
+from services.retention import archive_old_crises
 from services.realtime import register_socketio_handlers, broadcast_new_crisis
 from blueprints.crises import crises_bp
 from blueprints.economic import economic_bp
@@ -243,6 +245,11 @@ def scheduled_sync():
         logger.info("Primary data sync completed")
     except Exception as e:
         logger.error(f"Scheduled sync error: {e}")
+    try:
+        if archive_old_crises():
+            cache_clear_prefix('crises:')
+    except Exception as e:
+        logger.error(f"Crisis archive error: {e}")
 
     # Snapshot current severity for every active crisis, once per sync run —
     # this is the real history analyze_escalation() needs. Its own

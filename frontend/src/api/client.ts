@@ -1,4 +1,4 @@
-import type { CrisesResponse, Crisis, CrisisDetail, Briefing, CountryProfile, Me, StormsResponse } from './types';
+import type { CrisesResponse, CrisisSummary, CrisisDetail, Briefing, CountryProfile, Me, StormsResponse } from './types';
 import { getAccessToken } from '../auth/session';
 
 // In dev, requests go through Vite's proxy (see vite.config.ts) so they are
@@ -26,12 +26,20 @@ export async function fetchMe(): Promise<Me> {
 
 export type CrisisScope = 'global' | 'local' | 'all';
 
-// `scope` is optional and omitted from the request entirely when not
-// passed, so existing callers that don't care about local/global filtering
-// (e.g. a future non-Events consumer) keep getting the unfiltered list.
-export async function fetchCrises(scope?: CrisisScope): Promise<Crisis[]> {
-  const query = scope ? `?scope=${encodeURIComponent(scope)}` : '';
-  const res = await fetch(`${API_BASE_URL}/api/crises${query}`);
+export interface FetchCrisesOptions {
+  scope?: CrisisScope;
+  // Only events from the last N days. The backend ranks and caps longer
+  // windows, so a request is always bounded.
+  days?: number;
+}
+
+// Always asks for the lean `view=map` shape (just the fields the globe and
+// list read) — the full row is fetched per event on demand.
+export async function fetchCrises({ scope, days }: FetchCrisesOptions = {}): Promise<CrisisSummary[]> {
+  const params = new URLSearchParams({ view: 'map' });
+  if (scope) params.set('scope', scope);
+  if (days !== undefined) params.set('days', String(days));
+  const res = await fetch(`${API_BASE_URL}/api/crises?${params}`);
   if (!res.ok) {
     throw new Error(`Failed to fetch crises: ${res.status} ${res.statusText}`);
   }

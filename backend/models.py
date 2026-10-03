@@ -39,6 +39,10 @@ Base = declarative_base()
 class Crisis(Base):
     """Represents a geopolitical crisis or conflict"""
     __tablename__ = 'crises'
+    __table_args__ = (
+        # Covers the list endpoint's filter (is_active, scope) + date window/sort.
+        Index('ix_crises_active_scope_date', 'is_active', 'scope', 'date_start'),
+    )
 
     id = Column(String(50), primary_key=True)
     type = Column(String(50), nullable=False)  # conflict, military, diplomatic, economic, resource, alliance, proxy, technology, cyber, infrastructure, migration, trade_war, bioweapon, orbital

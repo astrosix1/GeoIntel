@@ -37,3 +37,22 @@
   background: rgba(90, 160, 255, 0.25);
   color: #ffffff;
 }
+
+/* backdrop-filter over a live WebGL map is very expensive on phones; use a more opaque solid panel there instead. */
+@media (max-width: 768px) {
+  /* Sit below the logo row instead of overlapping it, and never wrap a
+     label onto two lines. */
+  .option {
+    padding: 6px 9px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .switcher {
+    top: 60px;
+    max-width: calc(100vw - 32px);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgba(10, 14, 20, 0.9);
+  }
+}

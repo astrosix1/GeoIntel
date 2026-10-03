@@ -1,5 +1,7 @@
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import type { CrisisScope } from '../api/client';
+import { TIME_RANGE_DAYS } from './uiStore';
+import type { TimeRange } from './uiStore';
 import { fetchCrises, fetchCrisisBriefing, fetchCrisisDetail, fetchCountryProfile, fetchMe } from '../api/client';
 import { getAccessToken } from '../auth/session';
 
@@ -22,11 +24,15 @@ export function useEntitlements(): Entitlements {
   return { signedIn: data?.signedIn ?? false, premium: data?.premium ?? false, loading: isLoading };
 }
 
-export function useCrisesQuery(scope?: CrisisScope) {
+// One shared query feeds both the globe pins and the Events list, so the
+// (large) list is fetched once. Keeping the previous result while a new
+// scope/range loads avoids blanking the globe on every toggle.
+export function useCrisesQuery(scope: CrisisScope, range: TimeRange) {
   return useQuery({
-    queryKey: ['crises', scope ?? 'unfiltered'],
-    queryFn: () => fetchCrises(scope),
+    queryKey: ['crises', scope, range],
+    queryFn: () => fetchCrises({ scope, days: TIME_RANGE_DAYS[range] }),
     staleTime: 60_000,
+    placeholderData: keepPreviousData,
   });
 }
 
