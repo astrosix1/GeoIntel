@@ -173,3 +173,23 @@ class TestMeEndpoint:
         with _plan('active'):
             body = client.get('/api/me', headers=_auth(_token(user_id))).get_json()
         assert body == {'signedIn': True, 'userId': user_id, 'plan': 'premium', 'premium': True}
+
+
+class TestAdminIsPremium:
+    def test_admin_email_is_premium_without_a_subscription(self, gated_client, user_id, monkeypatch):
+        monkeypatch.setenv('ADMIN_EMAILS', 'boss@example.com, other@example.com')
+        token = _token(user_id, email='Boss@Example.com')
+        with _plan(None) as fetch:
+            assert gated_client.get('/premium', headers=_auth(token)).status_code == 200
+            assert gated_client.get('/open', headers=_auth(token)).get_json()['plan'] == 'premium'
+        fetch.assert_not_called()
+
+    def test_non_admin_without_subscription_stays_free(self, gated_client, user_id, monkeypatch):
+        monkeypatch.setenv('ADMIN_EMAILS', 'boss@example.com')
+        with _plan(None):
+            assert gated_client.get('/premium', headers=_auth(_token(user_id))).status_code == 403
+
+    def test_forged_token_claiming_admin_email_is_not_admin(self, gated_client, user_id, monkeypatch):
+        monkeypatch.setenv('ADMIN_EMAILS', 'boss@example.com')
+        forged = _token(user_id, secret='wrong-secret-wrong-secret-wrong!!', email='boss@example.com')
+        assert gated_client.get('/premium', headers=_auth(forged)).status_code == 401

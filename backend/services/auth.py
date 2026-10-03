@@ -88,6 +88,15 @@ def get_current_user():
     return {'id': claims['sub'], 'email': email}
 
 
+def is_admin_email(email):
+    """True if this (token-verified) email is in ADMIN_EMAILS. Callers must
+    only pass an email taken from a verified JWT."""
+    if not email:
+        return False
+    admins = os.getenv('ADMIN_EMAILS', 'collins.nick999@gmail.com').split(',')
+    return email.strip().lower() in {a.strip().lower() for a in admins if a.strip()}
+
+
 def check_admin_key():
     """Return True if the request carries valid credentials.
     Supports two methods:

@@ -4,8 +4,15 @@ from functools import wraps
 
 from flask import g, jsonify
 
-from services.auth import get_current_user
+from services.auth import get_current_user, is_admin_email
 from services.entitlements import get_plan
+
+
+def plan_for(user):
+    """Admins (ADMIN_EMAILS) always get premium; everyone else is looked up."""
+    if is_admin_email(user.get('email')):
+        return 'premium'
+    return get_plan(user['id'])
 
 
 def optional_user(f):
@@ -13,7 +20,7 @@ def optional_user(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
         g.user = get_current_user()
-        g.plan = get_plan(g.user['id']) if g.user else 'free'
+        g.plan = plan_for(g.user) if g.user else 'free'
         return f(*args, **kwargs)
     return wrapper
 
@@ -40,7 +47,7 @@ def require_premium(f):
         user = get_current_user()
         if not user:
             return jsonify({'error': 'sign_in_required'}), 401
-        plan = get_plan(user['id'])
+        plan = plan_for(user)
         if plan != 'premium':
             return jsonify({'error': 'premium_required'}), 403
         g.user = user
