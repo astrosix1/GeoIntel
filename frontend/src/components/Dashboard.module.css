@@ -222,3 +222,26 @@ button.rowMain:hover .rowTitle {
     background: rgb(14, 18, 28);
   }
 }
+
+.footer {
+  display: flex;
+  justify-content: flex-start;
+  padding: 10px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.signOut {
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 13px;
+  color: rgba(230, 233, 239, 0.8);
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.signOut:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}

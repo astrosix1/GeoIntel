@@ -40,42 +40,64 @@ def _feature(eventtype, eventid=1, name='Test Event', lon=-111.9, lat=26.2,
 
 
 @patch('data_sources.gdacs.requests')
-def test_fetch_active_storms_filters_to_tropical_cyclones(mock_requests):
-    """Live behavior: the feed mixes EQ/FL/TC event types together; only
-    TC (tropical cyclone) events should be returned."""
+def test_fetch_active_storms_keeps_only_weather_hazards(mock_requests):
+    """The feed mixes every GDACS type. Weather mode keeps cyclones, floods,
+    wildfires and droughts; earthquakes, volcanoes and tsunamis are dropped."""
     mock_requests.get.return_value = _mock_response(200, {
         'type': 'FeatureCollection',
         'features': [
             _feature('EQ', eventid=1),
-            _feature('FL', eventid=2),
-            _feature('TC', eventid=3, name='POLO-26'),
+            _feature('VO', eventid=2),
+            _feature('TS', eventid=3),
+            _feature('FL', eventid=4),
+            _feature('WF', eventid=5),
+            _feature('DR', eventid=6),
+            _feature('TC', eventid=7, name='POLO-26'),
         ],
     })
 
     result = GDACSConnector.fetch_active_storms()
 
-    assert len(result) == 1
-    assert result[0]['id'] == 3
-    assert result[0]['event_type'] == 'TC'
-    assert result[0]['name'] == 'POLO-26'
-    assert result[0]['lat'] == 26.2
-    assert result[0]['lon'] == -111.9
-    assert result[0]['alert_level'] == 'Red'
-    assert result[0]['severity_kmh'] == 287.0
-    assert result[0]['source'] == 'gdacs.org'
+    assert [r['event_type'] for r in result] == ['FL', 'WF', 'DR', 'TC']
+    cyclone = result[-1]
+    assert cyclone['id'] == 7
+    assert cyclone['hazard'] == 'Tropical cyclone'
+    assert cyclone['name'] == 'POLO-26'
+    assert cyclone['lat'] == 26.2
+    assert cyclone['lon'] == -111.9
+    assert cyclone['alert_level'] == 'Red'
+    assert cyclone['severity_kmh'] == 287.0
+    assert cyclone['source'] == 'gdacs.org'
 
 
 @patch('data_sources.gdacs.requests')
-def test_fetch_active_storms_returns_empty_list_when_no_storms(mock_requests):
-    """A legitimate real state — zero active tropical cyclones globally —
-    must come back as an empty list, not None and not a fabricated storm."""
+def test_fetch_active_storms_carries_hazard_details(mock_requests):
+    feature = _feature('WF', eventid=9, severity=5580.0, severitytext='Green impact in 5580 ha')
+    feature['properties']['severitydata']['severityunit'] = 'ha'
+    feature['properties']['htmldescription'] = 'Green Forest fires in Indonesia.'
+    feature['properties']['affectedcountries'] = [{'iso2': 'ID', 'countryname': 'Indonesia'}]
+    mock_requests.get.return_value = _mock_response(200, {'type': 'FeatureCollection', 'features': [feature]})
+
+    (wildfire,) = GDACSConnector.fetch_active_storms()
+
+    assert wildfire['hazard'] == 'Wildfire'
+    assert wildfire['severity'] == 5580.0
+    assert wildfire['severity_unit'] == 'ha'
+    assert wildfire['severity_kmh'] is None  # wind speed is only meaningful for cyclones
+    assert wildfire['description'] == 'Green Forest fires in Indonesia.'
+    assert wildfire['affected_countries'] == ['Indonesia']
+
+
+@patch('data_sources.gdacs.requests')
+def test_fetch_active_storms_returns_empty_list_when_nothing_active(mock_requests):
+    """A legitimate real state: no weather hazards right now must come back as
+    an empty list, not None and not a fabricated event."""
     mock_requests.get.return_value = _mock_response(200, {
         'type': 'FeatureCollection',
-        'features': [_feature('EQ', eventid=1), _feature('FL', eventid=2)],
+        'features': [_feature('EQ', eventid=1), _feature('VO', eventid=2)],
     })
 
-    result = GDACSConnector.fetch_active_storms()
-    assert result == []
+    assert GDACSConnector.fetch_active_storms() == []
 
 
 @patch('data_sources.gdacs.requests')

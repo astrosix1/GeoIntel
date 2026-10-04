@@ -9,6 +9,8 @@ import pytest
     'https://cdn.jsdelivr.net',        # country-boundary GeoJSON
     'https://tiles.maps.eox.at',       # premium Satellite layer (Sentinel-2)
     'https://s3.amazonaws.com',        # premium Topography layer (AWS elevation tiles)
+    'https://api.rainviewer.com',      # Weather radar frame index
+    'https://tilecache.rainviewer.com',  # Weather radar tiles
 ])
 def test_csp_connect_src_allows_frontend_hosts(app_module, client, host):
     csp = client.get('/api/health').headers['Content-Security-Policy']

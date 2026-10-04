@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { UserDataError } from '../api/client';
+import { signOut } from '../auth/session';
 import type { SavedEvent } from '../api/types';
 import { outletOf } from '../lib/outlet';
 import { colorForSeverity } from '../globe/severity';
@@ -7,17 +8,23 @@ import { useUiStore } from '../state/uiStore';
 import type { DashboardTab } from '../state/uiStore';
 import {
   useCrisesQuery,
+  useAlertsQuery,
   useEntitlements,
   usePrefsQuery,
   useSaveEventMutation,
   useSavedEventsQuery,
   useUpdatePrefsMutation,
 } from '../state/queries';
+import AlertsTab from './AlertsTab';
+import WatchlistTab from './WatchlistTab';
 import styles from './Dashboard.module.css';
+import watch from './Watchlist.module.css';
 
 const TABS: { value: DashboardTab; label: string }[] = [
   { value: 'saved', label: 'Saved' },
   { value: 'sources', label: 'Sources' },
+  { value: 'watchlist', label: 'Watchlist' },
+  { value: 'alerts', label: 'Alerts' },
 ];
 
 const MAX_OUTLET_RESULTS = 40;
@@ -184,6 +191,7 @@ export default function Dashboard() {
   const setTab = useUiStore((s) => s.setDashboardTab);
   const selectCrisis = useUiStore((s) => s.selectCrisis);
   const setRightOpen = useUiStore((s) => s.setRightOpen);
+  const unread = useAlertsQuery().data?.unread ?? 0;
 
   useEffect(() => {
     if (!open) return;
@@ -237,10 +245,21 @@ export default function Dashboard() {
               onClick={() => setTab(t.value)}
             >
               {t.label}
+              {t.value === 'alerts' && unread > 0 && <span className={watch.badge}>{unread}</span>}
             </button>
           ))}
         </div>
-        <div className={styles.body}>{tab === 'saved' ? <SavedTab onOpen={openSaved} /> : <SourcesTab />}</div>
+        <div className={styles.body}>
+          {tab === 'saved' && <SavedTab onOpen={openSaved} />}
+          {tab === 'sources' && <SourcesTab />}
+          {tab === 'watchlist' && <WatchlistTab />}
+          {tab === 'alerts' && <AlertsTab />}
+        </div>
+        <div className={styles.footer}>
+          <button type="button" className={styles.signOut} onClick={signOut}>
+            Sign out
+          </button>
+        </div>
       </div>
     </div>
   );

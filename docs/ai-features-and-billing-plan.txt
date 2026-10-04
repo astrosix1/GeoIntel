@@ -1,0 +1,132 @@
+GEOINTEL - ANTHROPIC API PLAN
+Notes saved so we can pick this up later. Cost figures are rough estimates,
+not measurements: assumed about $3 per million input tokens and $15 per
+million output tokens for Sonnet-class models, roughly a third of that for
+Haiku. Check anthropic.com/pricing for real numbers.
+
+
+1. DECISION MADE
+----------------
+Every feature that uses the Anthropic API is a PREMIUM feature. Free users get
+no AI output. Variable AI cost therefore comes only from paying users.
+
+
+2. STEP ONE: GET AND SET THE API KEY (owner action)
+---------------------------------------------------
+  1. console.anthropic.com -> sign in / create account (separate from a
+     claude.ai subscription).
+  2. Settings -> Billing: add prepaid credit ($5-10 to start).
+  3. Settings -> API Keys -> Create Key. Copy it (shown once). Never paste it
+     in chat or commit it.
+  4. Railway -> backend service -> Variables -> add ANTHROPIC_API_KEY.
+  5. Console -> Settings -> Limits: set a monthly spend limit as a safety net.
+  6. Optional: ANTHROPIC_MODEL on Railway (default claude-sonnet-5-5). It
+     changes every AI feature at once.
+
+
+3. WHAT USES THE API TODAY (already built)
+------------------------------------------
+The backend sends real data we fetched to a Claude model and gets text back.
+  - Scenarios (premium, on click): 3-4 ways an event could unfold, qualitative
+    likelihood only. No key = "unavailable", never a fake fallback.
+  - Event briefing: analysis text. No key = static template text.
+  - History: analogy section. No key = curated static facts.
+  - Country profile: narrative from real data. No key = plain facts.
+  - Geocoding (data_sources/geocoding.py): extraction helper.
+
+PROBLEM TO FIX: only scenarios are premium-gated. Briefing, history, country
+profile and geocoding are open to anonymous visitors, so once a key is set,
+free traffic can trigger paid calls (cached and rate-limited, but no revenue).
+To match the decision in section 1: gate briefing/history/country profile
+behind premium, and let free users keep the static no-AI text. (Geocoding is a
+background extraction step; confirm whether it should stay ungated.)
+
+
+4. NEW FEATURES THAT WOULD USE THE API (all premium-facing)
+-----------------------------------------------------------
+Platform-level, run once for everyone, results shown only to premium
+(fixed cost ~$10-25/month in total):
+  - Event clustering + daily world digest, built only from grouped events.
+  - Better local-vs-global classification (cheap Haiku pass).
+  - Severity sanity check: flag headline/score mismatch, never replace the
+    number.
+  - Comment moderation assist: suggests hide/keep, a human decides.
+  - Translation of headlines and comments.
+Per-user:
+  - Personal alerts + curated feed ("why this matters to you").
+  - "Ask about this event" chat, answers only from event/source context and
+    refuses when context is thin.
+  - Compare two countries or events, from real facts we already fetch.
+  - Weekly email briefing for followed places (needs alerts first).
+
+Rules every AI feature follows (as scenarios does now): only real fetched data
+goes to the model; prompts forbid invented figures/quotes/names; structured
+output (forced tool use) where possible; server-side validation of output;
+caching; rate limits; server-side premium enforcement.
+
+
+5. MODEL CHOICE
+---------------
+Options: Haiku 4.5 (fastest/cheapest), Sonnet 5.5 (current), Opus 5.5,
+Fable 5.1 (likely strongest, most expensive).
+  - Scenarios show the biggest quality gap between tiers (needs reasoning).
+  - Briefing/history/country profile summarise supplied facts: tiers differ
+    little. Haiku would likely do.
+  - Classification, severity check, moderation, translation, geocoding:
+    Haiku is plenty.
+Plan: Sonnet 5.5 everywhere to start; later move summary and bulk jobs to
+Haiku, maybe try Opus for scenarios only. A separate per-feature model setting
+would need a small code change.
+
+
+6. COST ESTIMATES
+-----------------
+Per call (Sonnet): scenario ~3-4 cents; briefing/history/profile ~1-2 cents;
+chat ~2 cents per question; compare ~3 cents. Cached results (scenarios: 12h
+per event, shared across users) cost nothing to re-open.
+
+Heavy journalist/commentator, per month:
+  scenarios 20/day (600) ~$21, chat 20/day ~$15, compare 100 ~$3,
+  feed + email ~$1-3  =>  ~$40-45 (extreme users can pass $80).
+Overall: quiet launch ~$15-30/month; 100 active premium users ~$150-350/month.
+
+RISK: the only limit on scenarios today is 10 requests/minute. One heavy or
+scripted user could cost far more than a subscription brings in.
+
+
+7. USAGE LIMITS (must exist before paid AI launches)
+----------------------------------------------------
+  1. Supabase table: per-user, per-month usage counts per feature.
+  2. Check in each AI endpoint (scenarios now; chat/compare later) returning a
+     clear "limit reached" response; cached re-opens do not count.
+  3. Per-plan allowances (e.g. Premium ~100 scenarios + ~100 questions;
+     Professional ~600 + ~500).
+  4. Usage meter in the dashboard ("62 of 100 used, resets on the 1st").
+  5. Console spend limit (section 2, step 5).
+
+Billing note: the subscription itself stays on the asix.live Stripe setup
+(outside this repo). Rough idea: Premium ~$15/month, Professional ~$59/month
+for journalists, top-up packs, annual discount, newsroom seats. Prices are
+guesses until real usage data exists.
+
+
+8. BUILD ORDER (proposed)
+-------------------------
+  1. Owner: API key + Railway variable + console spend limit.
+  2. Gate briefing/history/country profile behind premium; free keeps static
+     text.
+  3. Usage table, limits and dashboard meter for scenarios.
+  4. Daily digest + clustering (platform job, premium view).
+  5. Local-vs-global classifier and severity check (Haiku).
+  6. Personal feed / alerts, then weekly email.
+  7. Ask-about-event chat and compare (both need their own usage limits).
+  8. Comment moderation assist and translation.
+
+
+9. OPEN QUESTIONS
+-----------------
+  - Confirm gating briefing/history/country profile behind premium.
+  - Should geocoding stay ungated (background step)?
+  - Is the daily digest free or premium?
+  - Sonnet vs Opus for scenarios; per-feature model setting?
+  - Final plan names, prices and allowances.

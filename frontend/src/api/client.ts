@@ -4,6 +4,7 @@ import type {
   CrisisDetail,
   Briefing,
   CommentsPage,
+  Forecast,
   CountryProfile,
   EventComment,
   Me,
@@ -13,6 +14,12 @@ import type {
   ScenariosResponse,
   StormsResponse,
   UserPrefs,
+  AlertSettings,
+  AlertsResponse,
+  GeoResult,
+  NewWatchPlace,
+  WatchPlace,
+  WatchResponse,
 } from './types';
 import { getAccessToken } from '../auth/session';
 
@@ -66,6 +73,7 @@ export type UserDataErrorKind =
   | 'premium_required'
   | 'unavailable'
   | 'limit_reached'
+  | 'exists'
   | 'invalid'
   | 'error';
 
@@ -246,4 +254,89 @@ export async function fetchActiveStorms(): Promise<StormsResponse> {
     throw new Error(`Failed to fetch active storms: ${res.status} ${res.statusText}`);
   }
   return res.json();
+}
+
+// RainViewer's public radar index: a host plus one tile path per frame.
+export interface RadarFramesResponse {
+  host: string;
+  frames: { time: number; path: string }[];
+}
+
+export async function fetchRadarFrames(): Promise<RadarFramesResponse> {
+  const res = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+  if (!res.ok) {
+    throw new Error(`Failed to fetch radar frames: ${res.status} ${res.statusText}`);
+  }
+  const body = await res.json();
+  const frames = body?.radar?.past;
+  if (typeof body?.host !== 'string' || !Array.isArray(frames)) {
+    throw new Error('Unexpected radar index format');
+  }
+  return { host: body.host, frames };
+}
+
+export async function fetchForecast(lat: number, lon: number): Promise<Forecast> {
+  const res = await fetch(`${API_BASE_URL}/api/weather/forecast?lat=${lat}&lon=${lon}`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch forecast: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+// ---- Watchlist places, alerts and place search (premium) ----
+
+export function fetchWatch(): Promise<WatchResponse> {
+  return userDataRequest<WatchResponse>('/api/me/watch');
+}
+
+// A 409 here is either "name already used" or "25 places reached"; the body
+// says which, so the form can tell the user what to change.
+export async function addWatchPlace(place: NewWatchPlace): Promise<WatchPlace> {
+  const res = await authedFetch('/api/me/watch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(place),
+  });
+  if (res.status === 409) {
+    const body = await res.json().catch(() => ({}));
+    throw new UserDataError(body?.error === 'place_exists' ? 'exists' : 'limit_reached');
+  }
+  if (res.status === 401) throw new UserDataError('sign_in_required');
+  if (res.status === 403) throw new UserDataError('premium_required');
+  if (res.status === 503) throw new UserDataError('unavailable');
+  if (res.status === 400) throw new UserDataError('invalid');
+  if (!res.ok) throw new UserDataError('error');
+  return (await res.json()).place;
+}
+
+export function deleteWatchPlace(id: string): Promise<void> {
+  return userDataRequest<void>(`/api/me/watch/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+export function fetchAlerts(): Promise<AlertsResponse> {
+  return userDataRequest<AlertsResponse>('/api/me/alerts');
+}
+
+export function markAlertsRead(target: { ids: string[] } | { all: true }): Promise<void> {
+  return userDataRequest<void>('/api/me/alerts/read', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(target),
+  });
+}
+
+export function fetchAlertSettings(): Promise<AlertSettings> {
+  return userDataRequest<AlertSettings>('/api/me/alert-settings');
+}
+
+export function saveAlertSettings(changes: Partial<AlertSettings>): Promise<AlertSettings> {
+  return userDataRequest<AlertSettings>('/api/me/alert-settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(changes),
+  });
+}
+
+export async function searchPlaces(query: string): Promise<GeoResult[]> {
+  return (await userDataRequest<{ results: GeoResult[] }>(`/api/me/geo/search?q=${encodeURIComponent(query)}`)).results;
 }

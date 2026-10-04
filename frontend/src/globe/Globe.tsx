@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { fetchActiveStorms } from '../api/client';
 import type { CrisisSummary, Storm } from '../api/types';
 import { useUiStore } from '../state/uiStore';
-import { useEntitlements, useVisibleCrises } from '../state/queries';
+import { useEntitlements, useStormsQuery, useVisibleCrises, useWatchQuery } from '../state/queries';
 import { isLiteDevice } from '../lite';
 import { syncBaseLayers } from './baseLayers';
 import {
@@ -17,6 +16,9 @@ import {
 } from './crisisLayers';
 import { addTimezoneLayer, removeTimezoneLayer, timezonePopupHtml, TIMEZONE_HIT_LAYER_ID } from './TimezoneLayer';
 import { isOnNearHemisphere } from './hemisphere';
+import { ALERT_COLORS, hazardIcon } from './hazards';
+import { useRadar } from './useRadar';
+import { applyCrisisFilter, applyHazardFilter } from '../lib/filters';
 
 // Real, current OpenFreeMap style URL (no API key required).
 // See https://openfreemap.org/quick_start/ — "liberty" is OpenFreeMap's full-detail style.
@@ -58,19 +60,34 @@ export default function Globe() {
   const markersRef = useRef<maplibregl.Marker[]>([]);
   const selectCrisis = useUiStore((s) => s.selectCrisis);
   const selectCountry = useUiStore((s) => s.selectCountry);
+  const selectHazard = useUiStore((s) => s.selectHazard);
+  const selectPoint = useUiStore((s) => s.selectPoint);
+  const weatherTab = useUiStore((s) => s.weatherTab);
+  const weatherCategory = useUiStore((s) => s.weatherCategory);
+  const eventsTab = useUiStore((s) => s.eventsTab);
+  const activeCategory = useUiStore((s) => s.activeCategory);
   const activeMode = useUiStore((s) => s.activeMode);
   const pinnedSelection = useUiStore((s) => s.pinnedSelection);
   const scope = useUiStore((s) => s.scope);
   const timeRange = useUiStore((s) => s.timeRange);
   const { data: crises } = useVisibleCrises(scope, timeRange);
+  const { data: stormData } = useStormsQuery(activeMode === 'weather');
+  const { data: watchData } = useWatchQuery();
   const satellite = useUiStore((s) => s.satellite);
   const relief = useUiStore((s) => s.relief);
   const { premium } = useEntitlements();
   const selectCrisisRef = useRef(selectCrisis);
   const selectCountryRef = useRef(selectCountry);
+  const selectHazardRef = useRef(selectHazard);
+  const selectPointRef = useRef(selectPoint);
+  const pointMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const placeMarkersRef = useRef<maplibregl.Marker[]>([]);
+  const stormPopupRef = useRef<maplibregl.Popup | null>(null);
   const activeModeRef = useRef(activeMode);
   selectCrisisRef.current = selectCrisis;
   selectCountryRef.current = selectCountry;
+  selectHazardRef.current = selectHazard;
+  selectPointRef.current = selectPoint;
   activeModeRef.current = activeMode;
   const crisesByIdRef = useRef(new Map<string, CrisisSummary>());
   const [mapReady, setMapReady] = useState(false);
@@ -139,7 +156,8 @@ export default function Globe() {
     // country Analysis view underneath the timezone popup — the two
     // invisible hit-test fill layers otherwise sit on top of each other.
     map.on('click', COUNTRY_HIT_LAYER_ID, (e) => {
-      if (activeModeRef.current !== 'events' && activeModeRef.current !== 'weather') return;
+      // Weather mode uses the click for a point forecast instead (below).
+      if (activeModeRef.current !== 'events') return;
       if (hitsCrisisLayer(map, e.point)) return;
       const feature = e.features?.[0];
       const props = feature?.properties as Record<string, unknown> | undefined;
@@ -147,6 +165,32 @@ export default function Globe() {
       if (iso2 && iso2 !== '-99') {
         selectCountryRef.current(iso2);
       }
+    });
+
+    // Dragging the globe closes both side panels so the map has the whole
+    // screen. Only a real drag (MapLibre's dragstart), never a plain click.
+    map.on('dragstart', () => {
+      const ui = useUiStore.getState();
+      if (ui.leftOpen) ui.setLeftOpen(false);
+      if (ui.rightOpen) ui.setRightOpen(false);
+    });
+
+    // Weather mode: a click anywhere that isn't a hazard pin (those stop the
+    // click themselves) asks for the forecast at that spot. The panel opens
+    // because showing the forecast is the whole point of the click. The country
+    // name, when the point is on land, is just a friendlier title.
+    map.on('click', (e) => {
+      if (activeModeRef.current !== 'weather') return;
+      let label: string | null = null;
+      try {
+        const hit = map.queryRenderedFeatures(e.point, { layers: [COUNTRY_HIT_LAYER_ID] })[0];
+        const props = hit?.properties as Record<string, unknown> | undefined;
+        label = (props?.NAME as string | undefined) ?? (props?.ADMIN as string | undefined) ?? null;
+      } catch {
+        /* hit-test layer not ready: no label */
+      }
+      selectPointRef.current(e.lngLat.lat, e.lngLat.lng, label);
+      useUiStore.getState().setRightOpen(true);
     });
 
     map.on('mouseenter', COUNTRY_HIT_LAYER_ID, () => {
@@ -163,7 +207,11 @@ export default function Globe() {
     // `move` fires continuously during pan/rotate/zoom. Only the handful of
     // storm markers go through this now — crisis pins are a GPU layer that
     // the globe projection occludes itself — so it's cheap.
-    map.on('move', () => updateMarkerVisibility(map, markersRef.current));
+    map.on('move', () => {
+      updateMarkerVisibility(map, markersRef.current);
+      if (pointMarkerRef.current) updateMarkerVisibility(map, [pointMarkerRef.current]);
+      updateMarkerVisibility(map, placeMarkersRef.current);
+    });
 
     return () => {
       markersRef.current.forEach((m) => m.remove());
@@ -182,7 +230,6 @@ export default function Globe() {
     const map = mapRef.current;
     if (!map || !mapReady) return;
 
-    let cancelled = false;
     markersRef.current.forEach((m) => m.remove());
     markersRef.current = [];
 
@@ -200,18 +247,7 @@ export default function Globe() {
       map.getCanvas().style.cursor = '';
     };
 
-    if (activeMode === 'weather') {
-      fetchActiveStorms()
-        .then((res) => {
-          if (cancelled) return;
-          addStormMarkers(map, res.storms, markersRef);
-          updateMarkerVisibility(map, markersRef.current);
-        })
-        .catch((err) => {
-          // eslint-disable-next-line no-console
-          console.error('Failed to load active storms:', err);
-        });
-    } else if (activeMode === 'timezone') {
+    if (activeMode === 'timezone') {
       addTimezoneLayer(map);
       map.getCanvas().style.cursor = '';
       timezoneClickHandler = (e) => {
@@ -230,7 +266,6 @@ export default function Globe() {
     }
 
     return () => {
-      cancelled = true;
       if (timezoneClickHandler) {
         map.off('click', TIMEZONE_HIT_LAYER_ID, timezoneClickHandler);
         map.off('mouseenter', TIMEZONE_HIT_LAYER_ID, timezoneEnterHandler);
@@ -239,6 +274,79 @@ export default function Globe() {
       timezonePopup?.remove();
     };
   }, [activeMode, mapReady]);
+
+  useRadar(mapRef, mapReady);
+
+  // Weather mode: one pin per active hazard (cyclone, flood, wildfire,
+  // drought). Rebuilt when the data or the legend's filter changes; the mode
+  // effect above already clears the markers when the mode itself changes.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || activeMode !== 'weather' || !stormData) return;
+    markersRef.current.forEach((m) => m.remove());
+    markersRef.current = [];
+    const visible = applyHazardFilter(stormData.storms, weatherTab, weatherCategory);
+    addStormMarkers(map, visible, markersRef, stormPopupRef, (storm) => selectHazardRef.current(storm));
+    updateMarkerVisibility(map, markersRef.current);
+    return () => {
+      stormPopupRef.current?.remove();
+      stormPopupRef.current = null;
+    };
+  }, [activeMode, mapReady, stormData, weatherTab, weatherCategory]);
+
+  // Weather mode: the user's watchlist places (premium), as small labelled
+  // squares so they stand apart from the round hazard badges.
+  useEffect(() => {
+    const map = mapRef.current;
+    placeMarkersRef.current.forEach((m) => m.remove());
+    placeMarkersRef.current = [];
+    if (!map || !mapReady || activeMode !== 'weather' || !premium || !watchData) return;
+    placeMarkersRef.current = watchData.places.map((place) => {
+      const el = document.createElement('div');
+      el.title = `${place.name} (watchlist, ${place.radius_km} km)`;
+      el.setAttribute('aria-label', `Watchlist place: ${place.name}`);
+      Object.assign(el.style, {
+        width: '12px',
+        height: '12px',
+        background: '#fff',
+        border: '3px solid #7c3aed',
+        borderRadius: '3px',
+        boxShadow: '0 0 6px rgba(0,0,0,0.6)',
+        pointerEvents: 'auto',
+      });
+      return new maplibregl.Marker({ element: el }).setLngLat([place.lon, place.lat]).addTo(map);
+    });
+    updateMarkerVisibility(map, placeMarkersRef.current);
+    return () => {
+      placeMarkersRef.current.forEach((m) => m.remove());
+      placeMarkersRef.current = [];
+    };
+  }, [activeMode, mapReady, premium, watchData]);
+
+  // Weather mode: a dot where the forecast point was clicked.
+  useEffect(() => {
+    const map = mapRef.current;
+    pointMarkerRef.current?.remove();
+    pointMarkerRef.current = null;
+    if (!map || !mapReady || activeMode !== 'weather' || pinnedSelection?.kind !== 'point') return;
+    const el = document.createElement('div');
+    Object.assign(el.style, {
+      width: '14px',
+      height: '14px',
+      borderRadius: '50%',
+      background: '#7dd3fc',
+      border: '2px solid #fff',
+      boxShadow: '0 0 0 3px rgba(125,211,252,0.35), 0 0 8px rgba(0,0,0,0.6)',
+      pointerEvents: 'none',
+    });
+    pointMarkerRef.current = new maplibregl.Marker({ element: el })
+      .setLngLat([pinnedSelection.lon, pinnedSelection.lat])
+      .addTo(map);
+    return () => {
+      pointMarkerRef.current?.remove();
+      pointMarkerRef.current = null;
+    };
+  }, [activeMode, mapReady, pinnedSelection]);
 
   // Premium layers (satellite imagery, topography). Premium is required here
   // too — not just in the UI — so stale toggle state can never render a
@@ -273,9 +381,11 @@ export default function Globe() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || activeMode !== 'events') return;
-    crisesByIdRef.current = new Map((crises ?? []).map((c) => [c.id, c]));
-    setCrisisData(map, crises ?? []);
-  }, [crises, activeMode, mapReady]);
+    // The same All / Major / Categories filter the left-hand list applies.
+    const shown = applyCrisisFilter(crises ?? [], eventsTab, activeCategory);
+    crisesByIdRef.current = new Map(shown.map((c) => [c.id, c]));
+    setCrisisData(map, shown);
+  }, [crises, eventsTab, activeCategory, activeMode, mapReady]);
 
   // Item 10.5: center the camera on a crisis pin whenever it becomes the
   // pinned selection. Implemented as a subscription to the shared
@@ -287,8 +397,8 @@ export default function Globe() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
-    if (!pinnedSelection || pinnedSelection.kind !== 'event') return;
-    const { crisis } = pinnedSelection;
+    if (!pinnedSelection || (pinnedSelection.kind !== 'event' && pinnedSelection.kind !== 'hazard')) return;
+    const crisis = pinnedSelection.kind === 'event' ? pinnedSelection.crisis : pinnedSelection.hazard;
     if (typeof crisis.lat !== 'number' || typeof crisis.lon !== 'number') return;
 
     // Center only — never change the zoom. easeTo pans straight to the pin
@@ -308,49 +418,55 @@ export default function Globe() {
   );
 }
 
-// Storm pins use a visually distinct marker (a solid triangle/spiral-ish
-// diamond in cyan-blue, vs. crisis pins' circular severity-colored dots)
-// so Weather mode is immediately distinguishable from Events mode, per the
-// plan's "pins used to pin point catastrophic storms" ask. For this step
-// clicking a pin just shows a real-data popup (name/category/date) — no
-// dedicated StormAnalysis sidebar view.
+// Weather pins: a round, alert-coloured badge with the hazard's icon, clearly
+// different from Events mode's severity dots. Clicking one selects it (so the
+// Analysis panel shows its details) and opens a small popup. MapLibre's own
+// marker-popup toggle doesn't fire here because the click must not bubble to
+// the map (it would also select the country underneath), so the popup is
+// opened by hand and a single shared popup is reused.
 function addStormMarkers(
   map: maplibregl.Map,
   storms: Storm[],
   markersRef: React.MutableRefObject<maplibregl.Marker[]>,
+  popupRef: React.MutableRefObject<maplibregl.Popup | null>,
+  onSelect: (storm: Storm) => void,
 ) {
   storms.forEach((storm) => {
     if (typeof storm.lat !== 'number' || typeof storm.lon !== 'number') return;
+    const lngLat: [number, number] = [storm.lon, storm.lat];
 
-    const el = document.createElement('div');
-    el.style.width = '14px';
-    el.style.height = '14px';
-    el.style.transform = 'rotate(45deg)';
-    el.style.backgroundColor = colorForAlertLevel(storm.alert_level);
-    el.style.border = '1px solid rgba(255,255,255,0.9)';
-    el.style.cursor = 'pointer';
-    el.style.boxShadow = '0 0 6px rgba(0,150,255,0.7)';
-
-    const category = storm.severity_text ?? 'Unknown category';
-    const dateLabel = storm.from_date ? new Date(storm.from_date).toLocaleDateString() : 'unknown date';
-
-    // Same stopPropagation reasoning as crisis markers — Weather mode keeps
-    // the country hit-test layer active, so an unguarded storm-pin click
-    // would also silently force-open a country Analysis selection.
-    el.addEventListener('click', (e) => {
-      e.stopPropagation();
+    const el = document.createElement('button');
+    el.type = 'button';
+    el.textContent = hazardIcon(storm.event_type);
+    el.setAttribute('aria-label', `${storm.hazard ?? 'Weather event'}: ${storm.name ?? 'unnamed'}`);
+    Object.assign(el.style, {
+      width: '24px',
+      height: '24px',
+      padding: '0',
+      borderRadius: '50%',
+      fontSize: '13px',
+      lineHeight: '22px',
+      textAlign: 'center',
+      cursor: 'pointer',
+      background: colorForAlertLevel(storm.alert_level),
+      border: '1.5px solid rgba(255,255,255,0.9)',
+      boxShadow: '0 0 6px rgba(0,0,0,0.5)',
     });
 
-    const marker = new maplibregl.Marker({ element: el })
-      .setLngLat([storm.lon, storm.lat])
-      .setPopup(
-        new maplibregl.Popup({ offset: 12 }).setHTML(
-          `<strong>${escapeHtml(storm.name ?? 'Unnamed storm')}</strong><br/>${escapeHtml(category)}<br/>Since ${escapeHtml(dateLabel)}`,
-        ),
-      )
-      .addTo(map);
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      onSelect(storm);
+      popupRef.current?.remove();
+      popupRef.current = new maplibregl.Popup({ offset: 14, closeButton: false })
+        .setLngLat(lngLat)
+        .setHTML(
+          `<strong>${escapeHtml(storm.name ?? storm.hazard ?? 'Weather event')}</strong><br/>` +
+            `${escapeHtml(storm.hazard ?? '')}${storm.alert_level ? ` · ${escapeHtml(storm.alert_level)} alert` : ''}`,
+        )
+        .addTo(map);
+    });
 
-    markersRef.current.push(marker);
+    markersRef.current.push(new maplibregl.Marker({ element: el }).setLngLat(lngLat).addTo(map));
   });
 }
 
@@ -372,12 +488,5 @@ function updateMarkerVisibility(map: maplibregl.Map, markers: maplibregl.Marker[
 }
 
 function colorForAlertLevel(level: string | null): string {
-  switch (level) {
-    case 'Red':
-      return '#ff2d55';
-    case 'Orange':
-      return '#ff9500';
-    default:
-      return '#0ac8ff';
-  }
+  return ALERT_COLORS[level ?? 'Unknown'] ?? ALERT_COLORS.Unknown;
 }

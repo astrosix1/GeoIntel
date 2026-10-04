@@ -1,0 +1,154 @@
+.nowRow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.nowIcon {
+  font-size: 40px;
+  line-height: 1;
+}
+
+.nowTemp {
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.nowLabel {
+  font-size: 13px;
+  color: rgba(230, 233, 239, 0.7);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 5px 14px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.facts dt {
+  color: rgba(230, 233, 239, 0.55);
+}
+
+.facts dd {
+  margin: 0;
+}
+
+.hours {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+}
+
+.hour {
+  flex: 0 0 auto;
+  min-width: 52px;
+  padding: 6px 4px;
+  text-align: center;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+}
+
+.hourTime {
+  color: rgba(230, 233, 239, 0.6);
+}
+
+.hourTemp {
+  font-weight: 600;
+}
+
+.hourRain {
+  min-height: 14px;
+  color: #7dd3fc;
+}
+
+.days {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.days td {
+  padding: 6px 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  white-space: nowrap;
+}
+
+.low {
+  color: rgba(230, 233, 239, 0.55);
+}
+
+.rain {
+  color: #7dd3fc;
+}
+
+.gust {
+  text-align: right;
+  color: rgba(230, 233, 239, 0.7);
+}
+
+.unitToggle {
+  display: inline-flex;
+  margin-left: auto;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.unitButton {
+  padding: 2px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: rgba(230, 233, 239, 0.7);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.unitActive {
+  color: #fff;
+  background: rgba(90, 160, 255, 0.35);
+}
+
+.retry {
+  padding: 0;
+  font: inherit;
+  color: #7dd3fc;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.watchRow {
+  margin-bottom: 14px;
+}
+
+.watchButton {
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 13px;
+  color: #fff;
+  background: rgba(90, 160, 255, 0.25);
+  border: 1px solid rgba(90, 160, 255, 0.6);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.watchButton:hover {
+  background: rgba(90, 160, 255, 0.4);
+}

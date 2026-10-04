@@ -1,7 +1,8 @@
 """A small in-memory stand-in for the PostgREST calls GeoIntel makes to its own
-Supabase tables (services/supabase_rest.rest), for tests. Supports eq/lt/gt
-filters, order, limit, select, upsert (merge / ignore duplicates), PATCH and
-DELETE, default column values, and the unique display-name rule."""
+Supabase tables (services/supabase_rest.rest), for tests. Supports eq/lt/gt/gte/
+in/is.null filters, order, limit, select, upsert (merge / ignore duplicates),
+PATCH and DELETE, default column values, cascading deletes, and the unique
+rules the real tables have (display name; watch-place name per user)."""
 import uuid
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -14,6 +15,9 @@ KEYS = {
     'geointel_profiles': ('user_id',),
     'geointel_comments': ('id',),
     'geointel_comment_reports': ('comment_id', 'reporter_id'),
+    'geointel_watch_places': ('id',),
+    'geointel_alerts': ('place_id', 'hazard_key'),
+    'geointel_user_prefs': ('user_id',),
 }
 
 
@@ -47,6 +51,18 @@ class FakePostgrest:
             row.setdefault('created_at', self.now())
         elif table == 'geointel_profiles':
             row.setdefault('created_at', self.now())
+        elif table == 'geointel_watch_places':
+            row.setdefault('id', str(uuid.uuid4()))
+            row.setdefault('created_at', self.now())
+        elif table == 'geointel_alerts':
+            row.setdefault('id', str(uuid.uuid4()))
+            row.setdefault('created_at', self.now())
+            row.setdefault('read_at', None)
+            row.setdefault('emailed_at', None)
+        elif table == 'geointel_user_prefs':
+            row.setdefault('hidden_outlets', [])
+            row.setdefault('alert_email', True)
+            row.setdefault('alert_min_level', 'orange')
         return row
 
     @staticmethod
@@ -62,8 +78,20 @@ class FakePostgrest:
             elif op == 'lt':
                 if not (actual is not None and str(actual) < value):
                     return False
-            elif op == 'gt':
-                if not (actual is not None and float(actual) > float(value)):
+            elif op in ('gt', 'gte'):
+                if actual is None:
+                    return False
+                try:
+                    a, b = float(actual), float(value)
+                except ValueError:
+                    a, b = str(actual), value  # timestamps compare as ISO strings
+                if not (a > b if op == 'gt' else a >= b):
+                    return False
+            elif op == 'in':
+                if str(actual) not in value.strip('()').split(','):
+                    return False
+            elif op == 'is':
+                if value == 'null' and actual is not None:
                     return False
             else:
                 raise AssertionError(f'unsupported filter {expr}')
@@ -75,6 +103,11 @@ class FakePostgrest:
         return {c: row.get(c) for c in select.split(',')} if select else dict(row)
 
     def _unique_name_taken(self, table, row, ignore_user=None):
+        if table == 'geointel_watch_places':
+            return any(
+                o['user_id'] == row['user_id'] and o['name'].lower() == row['name'].lower() and o is not row
+                for o in self.tables[table]
+            )
         if table != 'geointel_profiles':
             return False
         return any(
@@ -132,6 +165,11 @@ class FakePostgrest:
             self.tables[table] = [r for r in rows if r not in doomed]
             data = [self._project(r, params) for r in doomed]
             # cascade, as the real foreign keys do
+            if table == 'geointel_watch_places':
+                gone = {r['id'] for r in doomed}
+                self.tables['geointel_alerts'] = [
+                    r for r in self.tables['geointel_alerts'] if r['place_id'] not in gone
+                ]
             if table == 'geointel_comments':
                 gone = {r['id'] for r in doomed}
                 self.tables['geointel_comment_reports'] = [

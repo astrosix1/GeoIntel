@@ -214,12 +214,19 @@ export interface CountryProfile {
   generated_at: string;
 }
 
-// Verified live at GET /api/weather/storms (step 5 of the rewrite plan) —
-// real active tropical cyclones from GDACS.
+// Verified live at GET /api/weather/storms — real active weather hazards
+// (tropical cyclones, floods, wildfires, droughts) from GDACS.
+export type HazardType = 'TC' | 'FL' | 'WF' | 'DR';
+
 export interface Storm {
   id: number;
   name: string | null;
   event_type: string;
+  hazard: string | null;
+  description: string | null;
+  affected_countries: string[];
+  severity: number | null;
+  severity_unit: string | null;
   lat: number | null;
   lon: number | null;
   alert_level: string | null;
@@ -238,4 +245,116 @@ export interface StormsResponse {
   count: number;
   source: string;
   generated_at: string;
+}
+
+// GET /api/weather/forecast — current conditions, next 48 hours and 7 days.
+// Units come from the API (metric); the UI converts for display.
+export interface ForecastCurrent {
+  time: string | null;
+  temperature_2m: number | null;
+  apparent_temperature: number | null;
+  relative_humidity_2m: number | null;
+  precipitation: number | null;
+  weather_code: number | null;
+  wind_speed_10m: number | null;
+  wind_gusts_10m: number | null;
+  wind_direction_10m: number | null;
+  pressure_msl: number | null;
+  cloud_cover: number | null;
+  visibility: number | null;
+}
+
+export interface Forecast {
+  lat: number;
+  lon: number;
+  timezone: string | null;
+  elevation_m: number | null;
+  current: ForecastCurrent;
+  hourly: {
+    time: string[];
+    temperature_2m?: number[];
+    precipitation_probability?: (number | null)[];
+    precipitation?: number[];
+    wind_speed_10m?: number[];
+    wind_gusts_10m?: number[];
+    weather_code?: number[];
+  };
+  daily: {
+    time: string[];
+    weather_code?: number[];
+    temperature_2m_max?: number[];
+    temperature_2m_min?: number[];
+    precipitation_sum?: number[];
+    precipitation_probability_max?: (number | null)[];
+    wind_gusts_10m_max?: number[];
+  };
+  source: string;
+  generated_at: string;
+}
+
+// Watchlist places and hazard alerts (premium). `nearby` is computed by the
+// server from the live GDACS hazards within the place's radius.
+export interface NearbyHazard {
+  id: number | null;
+  event_type: string | null;
+  hazard: string | null;
+  name: string | null;
+  alert_level: string | null;
+  distance_km: number;
+}
+
+export interface WatchPlace {
+  id: string;
+  name: string;
+  lat: number;
+  lon: number;
+  radius_km: number;
+  created_at: string;
+  nearby: NearbyHazard[];
+}
+
+export interface WatchResponse {
+  places: WatchPlace[];
+  limit: number;
+  hazards_available: boolean;
+}
+
+export interface NewWatchPlace {
+  name: string;
+  lat: number;
+  lon: number;
+  radius_km: number;
+}
+
+export interface AlertItem {
+  id: string;
+  place_id: string;
+  place_name: string | null;
+  hazard_key: string;
+  hazard_type: string;
+  title: string;
+  alert_level: string;
+  distance_km: number;
+  created_at: string;
+  read_at: string | null;
+}
+
+export interface AlertsResponse {
+  alerts: AlertItem[];
+  unread: number;
+}
+
+export type AlertMinLevel = 'green' | 'orange' | 'red';
+
+export interface AlertSettings {
+  alert_email: boolean;
+  alert_min_level: AlertMinLevel;
+}
+
+export interface GeoResult {
+  name: string;
+  country: string | null;
+  admin1: string | null;
+  lat: number;
+  lon: number;
 }

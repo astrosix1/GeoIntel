@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { CrisisSummary } from '../api/types';
+import type { CrisisSummary, Storm } from '../api/types';
 
 // Globe mode switcher (steps 5-6 of the rewrite plan). 'events' shows
 // crisis pins, 'weather' shows GDACS storm pins, 'timezone' shows real IANA
@@ -11,10 +11,19 @@ export type GlobeMode = 'events' | 'weather' | 'timezone';
 export type PinnedSelection =
   | { kind: 'event'; crisis: CrisisSummary }
   | { kind: 'country'; countryCode: string }
+  | { kind: 'hazard'; hazard: Storm }
+  | { kind: 'point'; lat: number; lon: number; label: string | null }
   | null;
 
 export type EventsTab = 'all' | 'major' | 'categories';
-export type DashboardTab = 'saved' | 'sources';
+export type DashboardTab = 'saved' | 'sources' | 'watchlist' | 'alerts';
+
+// A point picked from the forecast panel, waiting to be named and added to the watchlist.
+export interface PendingWatchPoint {
+  lat: number;
+  lon: number;
+  name: string;
+}
 export type CrisisScopeFilter = 'global' | 'local';
 
 // How far back the globe and Events list reach. GDELT adds ~11k events/day,
@@ -31,6 +40,8 @@ interface UiState {
   pinnedSelection: PinnedSelection;
   selectCrisis: (crisis: CrisisSummary) => void;
   selectCountry: (countryCode: string) => void;
+  selectHazard: (hazard: Storm) => void;
+  selectPoint: (lat: number, lon: number, label: string | null) => void;
   clearPinnedSelection: () => void;
 
   // --- Visibility: WHETHER each sidebar is shown. `leftOpen`/`rightOpen`
@@ -53,6 +64,23 @@ interface UiState {
 
   activeMode: GlobeMode;
   setActiveMode: (mode: GlobeMode) => void;
+
+  // Weather mode's All / Major / Categories filter (the same shape as the
+  // Events one above, kept separate because the categories differ: here they
+  // are GDACS hazard codes). Applied to both the list and the globe.
+  weatherTab: EventsTab;
+  weatherCategory: string | null;
+  setWeatherTab: (tab: EventsTab) => void;
+  setWeatherCategory: (category: string | null) => void;
+
+  // Weather mode's radar overlay: on/off, playback, and the unix time of the
+  // frame currently showing (null when radar isn't drawn).
+  radarOn: boolean;
+  radarPlaying: boolean;
+  radarTime: number | null;
+  setRadarOn: (on: boolean) => void;
+  setRadarPlaying: (playing: boolean) => void;
+  setRadarTime: (time: number | null) => void;
 
   // --- 10.1: Events sidebar All/Major/Categories tabs (client-side filter
   // over the already-fetched crisis list, no new request).
@@ -80,6 +108,8 @@ interface UiState {
   dashboardTab: DashboardTab;
   setDashboardOpen: (open: boolean) => void;
   setDashboardTab: (tab: DashboardTab) => void;
+  pendingWatchPoint: PendingWatchPoint | null;
+  setPendingWatchPoint: (point: PendingWatchPoint | null) => void;
 
   satellite: boolean;
   relief: boolean;
@@ -96,6 +126,8 @@ export const useUiStore = create<UiState>((set) => ({
   // globe-hover listener) — this is intentional, not a bug.
   selectCrisis: (crisis) => set({ pinnedSelection: { kind: 'event', crisis } }),
   selectCountry: (countryCode) => set({ pinnedSelection: { kind: 'country', countryCode } }),
+  selectHazard: (hazard) => set({ pinnedSelection: { kind: 'hazard', hazard } }),
+  selectPoint: (lat, lon, label) => set({ pinnedSelection: { kind: 'point', lat, lon, label } }),
   clearPinnedSelection: () => set({ pinnedSelection: null }),
 
   leftOpen: false,
@@ -108,6 +140,18 @@ export const useUiStore = create<UiState>((set) => ({
   // visibility/hover state — it only changes what's rendered on the globe
   // itself (plan's explicit requirement).
   setActiveMode: (mode) => set({ activeMode: mode }),
+
+  radarOn: true,
+  radarPlaying: true,
+  radarTime: null,
+  setRadarOn: (on) => set({ radarOn: on }),
+  setRadarPlaying: (playing) => set({ radarPlaying: playing }),
+  setRadarTime: (time) => set({ radarTime: time }),
+
+  weatherTab: 'all',
+  weatherCategory: null,
+  setWeatherTab: (tab) => set({ weatherTab: tab }),
+  setWeatherCategory: (category) => set({ weatherCategory: category }),
 
   eventsTab: 'all',
   activeCategory: null,
@@ -124,6 +168,8 @@ export const useUiStore = create<UiState>((set) => ({
   dashboardTab: 'saved',
   setDashboardOpen: (open) => set({ dashboardOpen: open }),
   setDashboardTab: (tab) => set({ dashboardTab: tab }),
+  pendingWatchPoint: null,
+  setPendingWatchPoint: (point) => set({ pendingWatchPoint: point }),
 
   satellite: false,
   relief: false,

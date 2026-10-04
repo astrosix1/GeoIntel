@@ -1,7 +1,7 @@
 """
 GDACS (Global Disaster Alert and Coordination System, gdacs.org) connector —
 real, free, no-key GeoJSON feed of currently active global disasters, used
-here for the Weather mode's catastrophic-storm pins (step 5 of the rewrite
+here for the Weather mode's weather-hazard pins (step 5 of the rewrite
 plan).
 
 Live-verified at implementation time (2026-09-29): the "EVENTS4APP" GeoJSON
@@ -45,10 +45,16 @@ logger = logging.getLogger(__name__)
 
 GDACS_EVENTS_URL = "https://www.gdacs.org/gdacsapi/api/events/geteventlist/EVENTS4APP"
 
-# The only eventtype this connector surfaces — tropical cyclones. GDACS
-# tracks other disaster types (EQ, FL, WF, DR, VO, TS) but the plan's
-# explicit ask is catastrophic *storms*, not every hazard category.
-_STORM_EVENT_TYPES = {'TC'}
+# Weather-related hazards surfaced in Weather mode. GDACS also tracks
+# earthquakes, volcanoes and tsunamis, but those aren't weather, so they stay
+# out. Labels are GDACS's own category names.
+_HAZARD_LABELS = {
+    'TC': 'Tropical cyclone',
+    'FL': 'Flood',
+    'WF': 'Wildfire',
+    'DR': 'Drought',
+}
+_STORM_EVENT_TYPES = set(_HAZARD_LABELS)
 
 
 class GDACSConnector:
@@ -86,15 +92,27 @@ class GDACSConnector:
 
                 severity = props.get('severitydata') or {}
                 urls = props.get('url') or {}
+                event_type = props.get('eventtype')
+                unit = severity.get('severityunit') or None
+                value = severity.get('severity')
+                affected = [
+                    a.get('countryname') for a in (props.get('affectedcountries') or [])
+                    if a.get('countryname')
+                ]
 
                 storms.append({
                     'id': props.get('eventid'),
                     'name': props.get('eventname') or props.get('name'),
-                    'event_type': props.get('eventtype'),
+                    'event_type': event_type,
+                    'hazard': _HAZARD_LABELS.get(event_type),
+                    'description': props.get('htmldescription') or props.get('description'),
+                    'affected_countries': affected,
+                    'severity': value,
+                    'severity_unit': unit,
                     'lat': lat,
                     'lon': lon,
                     'alert_level': props.get('alertlevel'),
-                    'severity_kmh': severity.get('severity'),
+                    'severity_kmh': value if unit == 'km/h' else None,
                     'severity_text': severity.get('severitytext'),
                     'country': props.get('country'),
                     'from_date': props.get('fromdate'),

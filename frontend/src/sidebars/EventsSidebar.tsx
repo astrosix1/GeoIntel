@@ -2,8 +2,11 @@ import { useMemo, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useUiStore } from '../state/uiStore';
 import type { EventsTab, TimeRange } from '../state/uiStore';
-import { useVisibleCrises } from '../state/queries';
+import { useStormsQuery, useVisibleCrises } from '../state/queries';
 import { colorForSeverity } from '../globe/severity';
+import { ALERT_COLORS, HAZARD_TYPES, hazardIcon } from '../globe/hazards';
+import { applyCrisisFilter, applyHazardFilter } from '../lib/filters';
+import type { Storm } from '../api/types';
 import styles from './EventsSidebar.module.css';
 
 const TABS: { value: EventsTab; label: string }[] = [
@@ -18,8 +21,55 @@ const RANGES: { value: TimeRange; label: string }[] = [
   { value: '7d', label: '7 days' },
 ];
 
-export default function EventsSidebar() {
-  const leftOpen = useUiStore((s) => s.leftOpen);
+// The All / Major / Categories row, shared by Events and Weather mode so the
+// two look and behave the same.
+function FilterTabs({ value, onChange }: { value: EventsTab; onChange: (tab: EventsTab) => void }) {
+  return (
+    <div className={styles.tabRow}>
+      {TABS.map((tab) => (
+        <button
+          key={tab.value}
+          type="button"
+          className={`${styles.tabButton} ${value === tab.value ? styles.tabActive : ''}`}
+          onClick={() => onChange(tab.value)}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function CategoryChips({
+  items,
+  active,
+  onToggle,
+  emptyText,
+}: {
+  items: { value: string; label: string }[];
+  active: string | null;
+  onToggle: (value: string) => void;
+  emptyText: string;
+}) {
+  return (
+    <div className={styles.chipRow}>
+      {items.length === 0 && <span className={styles.chipEmpty}>{emptyText}</span>}
+      {items.map((item) => (
+        <button
+          key={item.value}
+          type="button"
+          aria-pressed={active === item.value}
+          className={`${styles.chip} ${active === item.value ? styles.chipActive : ''}`}
+          onClick={() => onToggle(item.value)}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function EventsList() {
   const selectCrisis = useUiStore((s) => s.selectCrisis);
   const pinnedSelection = useUiStore((s) => s.pinnedSelection);
   const eventsTab = useUiStore((s) => s.eventsTab);
@@ -36,23 +86,20 @@ export default function EventsSidebar() {
   // the list matches what the backend actually classified and bounded.
   const { data: crises, isLoading, isError } = useVisibleCrises(scope, timeRange);
 
-  const isOpen = leftOpen;
-
   // Real distinct `type` values present in the fetched data, not a
   // hardcoded list (10.1) — whatever categories actually show up.
   const categories = useMemo(() => {
     const distinct = new Set((crises ?? []).map((c) => c.type).filter(Boolean));
-    return Array.from(distinct).sort();
+    return Array.from(distinct)
+      .sort()
+      .map((value) => ({ value, label: value }));
   }, [crises]);
 
-  const filteredCrises = useMemo(() => {
-    const list = crises ?? [];
-    if (eventsTab === 'major') return list.filter((c) => c.severity >= 70);
-    if (eventsTab === 'categories' && activeCategory) {
-      return list.filter((c) => c.type === activeCategory);
-    }
-    return list;
-  }, [crises, eventsTab, activeCategory]);
+  // The same filter the globe applies, so list and pins always agree.
+  const filteredCrises = useMemo(
+    () => applyCrisisFilter(crises ?? [], eventsTab, activeCategory),
+    [crises, eventsTab, activeCategory],
+  );
 
   // Windowed list: only the rows on screen (plus a small overscan) exist in
   // the DOM, however many events the list holds. Rows wrap to a variable
@@ -70,15 +117,8 @@ export default function EventsSidebar() {
     if (tab !== 'categories') setActiveCategory(null);
   }
 
-  function handleCategoryClick(category: string) {
-    setActiveCategory(activeCategory === category ? null : category);
-  }
-
   return (
-    <aside
-      data-ui-hover-surface
-      className={`${styles.sidebar} ${isOpen ? styles.open : ''}`}
-    >
+    <>
       <div className={styles.header}>Events{filteredCrises ? ` (${filteredCrises.length})` : ''}</div>
 
       <div className={styles.scopeToggle}>
@@ -111,33 +151,15 @@ export default function EventsSidebar() {
         ))}
       </div>
 
-      <div className={styles.tabRow}>
-        {TABS.map((tab) => (
-          <button
-            key={tab.value}
-            type="button"
-            className={`${styles.tabButton} ${eventsTab === tab.value ? styles.tabActive : ''}`}
-            onClick={() => handleTabClick(tab.value)}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <FilterTabs value={eventsTab} onChange={handleTabClick} />
 
       {eventsTab === 'categories' && (
-        <div className={styles.chipRow}>
-          {categories.length === 0 && <span className={styles.chipEmpty}>No categories yet</span>}
-          {categories.map((category) => (
-            <button
-              key={category}
-              type="button"
-              className={`${styles.chip} ${activeCategory === category ? styles.chipActive : ''}`}
-              onClick={() => handleCategoryClick(category)}
-            >
-              {category}
-            </button>
-          ))}
-        </div>
+        <CategoryChips
+          items={categories}
+          active={activeCategory}
+          onToggle={(value) => setActiveCategory(activeCategory === value ? null : value)}
+          emptyText="No categories yet"
+        />
       )}
 
       {scope === 'local' && (
@@ -178,6 +200,120 @@ export default function EventsSidebar() {
           })}
         </div>
       </div>
+    </>
+  );
+}
+
+const ALERT_RANK: Record<string, number> = { Red: 0, Orange: 1, Green: 2 };
+
+// Most urgent first (GDACS alert level), then cyclones before the rest, then
+// most recently updated.
+function compareHazards(a: Storm, b: Storm): number {
+  const alert = (ALERT_RANK[a.alert_level ?? ''] ?? 3) - (ALERT_RANK[b.alert_level ?? ''] ?? 3);
+  if (alert) return alert;
+  const type = (a.event_type === 'TC' ? 0 : 1) - (b.event_type === 'TC' ? 0 : 1);
+  if (type) return type;
+  return (b.date_modified ?? '').localeCompare(a.date_modified ?? '');
+}
+
+const HAZARD_CATEGORIES = HAZARD_TYPES.map((t) => ({ value: t.code, label: `${t.icon} ${t.label}` }));
+
+// Weather mode's list: the same active hazards the globe shows, with the same
+// All / Major / Categories row as Events mode. The filter is shared with the
+// globe, so what's listed is what's drawn.
+function WeatherList() {
+  const selectHazard = useUiStore((s) => s.selectHazard);
+  const pinnedSelection = useUiStore((s) => s.pinnedSelection);
+  const tab = useUiStore((s) => s.weatherTab);
+  const setTab = useUiStore((s) => s.setWeatherTab);
+  const category = useUiStore((s) => s.weatherCategory);
+  const setCategory = useUiStore((s) => s.setWeatherCategory);
+  const { data, isLoading, isError, refetch } = useStormsQuery(true);
+
+  const hazards = useMemo(
+    () => applyHazardFilter(data?.storms ?? [], tab, category).sort(compareHazards),
+    [data, tab, category],
+  );
+
+  function handleTabClick(next: EventsTab) {
+    setTab(next);
+    if (next !== 'categories') setCategory(null);
+  }
+
+  return (
+    <>
+      <div className={styles.header}>Weather{data ? ` (${hazards.length})` : ''}</div>
+
+      <FilterTabs value={tab} onChange={handleTabClick} />
+
+      {tab === 'categories' && (
+        <CategoryChips
+          items={HAZARD_CATEGORIES}
+          active={category}
+          onToggle={(value) => setCategory(category === value ? null : value)}
+          emptyText="No categories yet"
+        />
+      )}
+      {tab === 'major' && <div className={styles.scopeCaveat}>Major = GDACS Orange and Red alerts.</div>}
+
+      {isLoading && <div className={styles.status}>Loading active events...</div>}
+      {isError && (
+        <div className={styles.status}>
+          Live hazard data isn&apos;t available right now.{' '}
+          <button type="button" className={styles.chip} onClick={() => refetch()}>
+            Try again
+          </button>
+        </div>
+      )}
+      {data && hazards.length === 0 && <div className={styles.status}>No active weather hazards to show.</div>}
+      <div className={styles.list}>
+        {hazards.map((hazard) => {
+          const active =
+            pinnedSelection?.kind === 'hazard' &&
+            pinnedSelection.hazard.id === hazard.id &&
+            pinnedSelection.hazard.event_type === hazard.event_type;
+          return (
+            <button
+              key={`${hazard.event_type}-${hazard.id}`}
+              type="button"
+              className={`${styles.item} ${active ? styles.itemActive : ''}`}
+              style={{ position: 'static' }}
+              onClick={() => selectHazard(hazard)}
+            >
+              <div className={styles.itemTitle}>
+                {hazardIcon(hazard.event_type)} {hazard.name ?? hazard.hazard ?? 'Weather event'}
+              </div>
+              <div className={styles.itemMeta}>
+                <span
+                  className={styles.severityDot}
+                  style={{ backgroundColor: ALERT_COLORS[hazard.alert_level ?? 'Unknown'] ?? ALERT_COLORS.Unknown }}
+                />
+                <span>{hazard.alert_level ?? 'Unknown'} alert</span>
+                {hazard.country && (
+                  <>
+                    <span>&middot;</span>
+                    <span>{hazard.country}</span>
+                  </>
+                )}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+export default function EventsSidebar() {
+  const leftOpen = useUiStore((s) => s.leftOpen);
+  const activeMode = useUiStore((s) => s.activeMode);
+
+  return (
+    <aside
+      data-ui-hover-surface
+      className={`${styles.sidebar} ${leftOpen ? styles.open : ''}`}
+    >
+      {activeMode === 'weather' ? <WeatherList /> : <EventsList />}
     </aside>
   );
 }

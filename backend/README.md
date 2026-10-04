@@ -129,6 +129,24 @@ curl -X POST -H "X-Admin-Key: $ADMIN_KEY" https://<api>/api/admin/comments/<comm
 
 Requires `backend/supabase/003_geointel_comments.sql` to be applied.
 
+### Weather forecasts, watchlist and alerts
+
+- `GET /api/weather/forecast?lat=&lon=`: point forecast (public, cached 15 minutes).
+- Premium: `/api/me/watch` (places), `/api/me/alerts`, `/api/me/alert-settings`, `/api/me/geo/search`.
+- A scheduler job (`alert_eval`, every 15 minutes) compares live GDACS hazards with
+  every watchlist place, records alerts, and emails each user one digest.
+
+Environment variables (Railway):
+
+| Variable | Purpose |
+|---|---|
+| `OPEN_METEO_API_KEY` | Commercial Open-Meteo plan key. **Required for a paid launch**: the free API is non-commercial only. Unset = free endpoint (development). |
+| `RESEND_API_KEY` | Resend API key (already set). |
+| `ALERT_FROM_EMAIL` | Sender for alert emails, on a domain verified in Resend, e.g. `GeoIntel <alerts@yourdomain.com>`. Unset = in-app alerts only. |
+| `APP_BASE_URL` | Link used in emails (default `https://geointel.asix.live`). |
+
+Requires `backend/supabase/004_geointel_watchlist.sql` to be applied (after 002).
+
 ## Data Sources
 
 ### ACLED (Armed Conflict Location & Event Data)

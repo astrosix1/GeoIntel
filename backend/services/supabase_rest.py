@@ -52,3 +52,22 @@ def rest(method, table, params=None, json_body=None, prefer=None):
         logger.error(f"Supabase {method} {table} failed: {e}")
         raise SupabaseUnavailable('request_failed') from e
     return response
+
+
+def auth_user_email(user_id):
+    """The user's sign-in email, via Supabase's auth admin API (service-role
+    key). None if the user has no email; SupabaseUnavailable on any failure."""
+    uid = check_uuid(user_id)
+    base = os.getenv('SUPABASE_URL', '').rstrip('/')
+    key = os.getenv('SUPABASE_SERVICE_ROLE_KEY', '')
+    if not (base and key):
+        raise SupabaseUnavailable('not_configured')
+    try:
+        response = requests.get(f'{base}/auth/v1/admin/users/{uid}',
+                                headers={'apikey': key, 'Authorization': f'Bearer {key}'}, timeout=8)
+        response.raise_for_status()
+        email = (response.json() or {}).get('email')
+    except (requests.RequestException, ValueError) as e:
+        logger.error(f"Supabase auth user lookup failed: {e}")
+        raise SupabaseUnavailable('request_failed') from e
+    return email or None

@@ -1,17 +1,16 @@
 import { useEntitlements } from '../state/queries';
-import { useUiStore } from '../state/uiStore';
-import PremiumGate from './PremiumGate';
-import { isDemoPremium, isSignInConfigured, signIn, signOut } from '../auth/session';
+import { isSignInConfigured, signIn, signOut } from '../auth/session';
 import styles from './AccountChip.module.css';
 
-// Small top-left chip under the logo: "Sign in" when anonymous, plan badge +
-// sign out when signed in. Renders nothing for anonymous visitors when the
-// asix.live login URL isn't configured (nowhere to send them yet).
+// Top-left Sign in / Sign out. The plan ("Premium") is shown by the logo, so
+// this only appears when there is an action to offer: Sign in for anonymous
+// visitors, Sign out for free members (premium members sign out from inside
+// their Dashboard, which free members can't open). Anonymous visitors see
+// nothing when the asix.live login URL isn't configured (nowhere to send them).
 export default function AccountChip() {
   const { signedIn, premium, loading } = useEntitlements();
-  const setDashboardOpen = useUiStore((s) => s.setDashboardOpen);
 
-  if (loading) return null;
+  if (loading || premium) return null;
 
   if (!signedIn) {
     if (!isSignInConfigured()) return null;
@@ -24,19 +23,8 @@ export default function AccountChip() {
     );
   }
 
-  // Locked for non-premium visitors, like every premium control.
-  const dashboardButton = (
-    <button type="button" className={styles.action} onClick={() => setDashboardOpen(true)}>
-      Dashboard
-    </button>
-  );
-
   return (
     <div className={styles.chip} data-ui-hover-surface>
-      <span className={`${styles.plan} ${premium ? styles.premium : ''}`}>
-        {premium ? (isDemoPremium() ? 'Premium (demo)' : 'Premium') : 'Free'}
-      </span>
-      {premium ? dashboardButton : <PremiumGate feature="Dashboard">{dashboardButton}</PremiumGate>}
       <button type="button" className={styles.action} onClick={signOut}>
         Sign out
       </button>

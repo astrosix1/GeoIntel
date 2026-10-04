@@ -31,6 +31,7 @@ from blueprints.economic import economic_bp
 from blueprints.health import health_bp
 from blueprints.countries import countries_bp
 from blueprints.weather import weather_bp
+from blueprints.watchlist import watchlist_bp
 from blueprints.me import me_bp
 from blueprints.dashboard import dashboard_bp
 from blueprints.comments import comments_bp
@@ -78,7 +79,7 @@ _CSP = (
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; "
     "font-src 'self' https://fonts.gstatic.com; "
     "img-src 'self' data: https:; "
-    "connect-src 'self' https://en.wikipedia.org https://*.supabase.co https://tiles.openfreemap.org https://cdn.jsdelivr.net https://tiles.maps.eox.at https://s3.amazonaws.com; "
+    "connect-src 'self' https://en.wikipedia.org https://*.supabase.co https://tiles.openfreemap.org https://cdn.jsdelivr.net https://tiles.maps.eox.at https://s3.amazonaws.com https://api.rainviewer.com https://tilecache.rainviewer.com; "
     "worker-src 'self' blob:; "
     "frame-ancestors 'none'; "
     "base-uri 'self'; "
@@ -191,6 +192,7 @@ def create_app():
     app.register_blueprint(me_bp)
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(comments_bp)
+    app.register_blueprint(watchlist_bp)
 
     # ════════════════════════════════════════════════════════════
     # APP INITIALIZATION
@@ -280,6 +282,15 @@ def scheduled_sync():
         logger.error(f"Multilingual sync error: {e}")
 
 
+def scheduled_alert_eval():
+    """Raise hazard alerts for watchlist places and email the digests."""
+    try:
+        from services.alerts import evaluate_alerts
+        evaluate_alerts()
+    except Exception as e:
+        logger.error(f"Scheduled alert evaluation error: {e}")
+
+
 def init_scheduler():
     """Initialize background scheduler"""
     # Sync ACLED every hour
@@ -290,6 +301,20 @@ def init_scheduler():
         id='data_sync',
         name='Sync geopolitical data',
         replace_existing=True
+    )
+
+    # Hazard alerts for users' watchlist places, every 15 minutes. One run at
+    # a time; a missed run is simply skipped (the next one catches up, and the
+    # database's unique key makes repeats harmless).
+    scheduler.add_job(
+        func=scheduled_alert_eval,
+        trigger="interval",
+        minutes=15,
+        id='alert_eval',
+        name='Evaluate watchlist hazard alerts',
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
     )
 
     scheduler.start()

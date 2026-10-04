@@ -6,6 +6,17 @@ import type { TimeRange } from './uiStore';
 import type { ReportReason } from '../api/types';
 import {
   deleteComment,
+  addWatchPlace,
+  deleteWatchPlace,
+  fetchActiveStorms,
+  fetchAlertSettings,
+  fetchAlerts,
+  fetchWatch,
+  markAlertsRead,
+  saveAlertSettings,
+  searchPlaces,
+  fetchForecast,
+  fetchRadarFrames,
   fetchComments,
   fetchProfile,
   postComment,
@@ -222,5 +233,134 @@ export function useCountryProfileQuery(countryCode: string | undefined) {
     queryFn: () => fetchCountryProfile(countryCode as string),
     enabled: !!countryCode,
     staleTime: 6 * 60 * 60 * 1000, // matches the backend's own 6h cache TTL
+  });
+}
+
+// Weather mode's active hazards. Shared by the globe pins and the legend so
+// they always agree; GDACS updates slowly, so a few minutes of staleness is fine.
+export function useStormsQuery(enabled: boolean) {
+  return useQuery({
+    queryKey: ['storms'],
+    queryFn: fetchActiveStorms,
+    enabled,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+// RainViewer's current radar frames (about two hours, 10 minutes apart).
+// The list is republished every ~10 minutes, so poll at that pace while radar
+// is showing.
+export function useRadarFramesQuery(enabled: boolean) {
+  return useQuery({
+    queryKey: ['radar-frames'],
+    queryFn: fetchRadarFrames,
+    enabled,
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: enabled ? 10 * 60 * 1000 : false,
+    refetchOnWindowFocus: false,
+  });
+}
+
+// Point forecast for Weather mode. The server rounds to a 0.1 degree grid and
+// caches 15 minutes, so a long staleTime here avoids pointless repeat calls.
+export function useForecastQuery(lat: number | null, lon: number | null) {
+  return useQuery({
+    queryKey: ['forecast', lat, lon],
+    queryFn: () => fetchForecast(lat as number, lon as number),
+    enabled: lat !== null && lon !== null,
+    retry: false,
+    staleTime: 15 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+}
+
+// ---- Watchlist places and hazard alerts (premium). No refetch on focus; the
+// alerts query polls every 5 minutes so the unread badge stays current.
+export function useWatchQuery() {
+  const { premium } = useEntitlements();
+  return useQuery({
+    queryKey: ['watch'],
+    queryFn: fetchWatch,
+    enabled: premium,
+    retry: false,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function useAddPlaceMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: addWatchPlace,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['watch'] }),
+  });
+}
+
+export function useDeletePlaceMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: deleteWatchPlace,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['watch'] });
+      queryClient.invalidateQueries({ queryKey: ['alerts'] });
+    },
+  });
+}
+
+export function useAlertsQuery() {
+  const { premium } = useEntitlements();
+  return useQuery({
+    queryKey: ['alerts'],
+    queryFn: fetchAlerts,
+    enabled: premium,
+    retry: false,
+    staleTime: 60_000,
+    refetchInterval: premium ? 5 * 60_000 : false,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function useMarkAlertsReadMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: markAlertsRead,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['alerts'] }),
+  });
+}
+
+export function useAlertSettingsQuery() {
+  const { premium } = useEntitlements();
+  return useQuery({
+    queryKey: ['alert-settings'],
+    queryFn: fetchAlertSettings,
+    enabled: premium,
+    retry: false,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function useSaveAlertSettingsMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: saveAlertSettings,
+    onSuccess: (settings) => queryClient.setQueryData(['alert-settings'], settings),
+  });
+}
+
+// Place-name search for the add-place form. Only runs for 2+ characters.
+export function usePlaceSearch(query: string) {
+  const { premium } = useEntitlements();
+  const q = query.trim();
+  return useQuery({
+    queryKey: ['place-search', q.toLowerCase()],
+    queryFn: () => searchPlaces(q),
+    enabled: premium && q.length >= 2,
+    retry: false,
+    staleTime: 24 * 60 * 60_000,
+    refetchOnWindowFocus: false,
   });
 }
