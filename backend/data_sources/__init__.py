@@ -17,6 +17,10 @@ from .utils import (
     _clean_article_title, fetch_real_page_metadata,
 )
 from .geocoding import NOMINATIM_BASE, _geocode_ai_client, NominatimGeocoder, _extract_incident_location
+
+# Fields a location refinement owns; sync leaves them alone on a refined row.
+_REFINED_LOCATION_FIELDS = ('latitude', 'longitude', 'country', 'location_confidence')
+from .gdelt import cameo_kind  # noqa: F401  (re-exported for callers and tests)
 from .acled import ACLED_OAUTH_URL, ACLED_BASE, ACLED_TYPE_MAP, _acled_token_cache, ACLEDConnector
 from .newsapi import NEWSAPI_BASE, NewsAPIConnector, NewsBasedCrisisDetector
 from .worldbank import WORLDBANK_BASE, WorldBankConnector
@@ -26,7 +30,6 @@ from .gdacs import GDACS_EVENTS_URL, GDACSConnector
 from .gdelt import (
     GDELT_LASTUPDATE_URL, GDELT_EVENT_URL_TEMPLATE, GDELT_TYPE_MAP, GDELT_EVENT_VERB,
     GDELT_OFFTOPIC_URL_SIGNALS, GDELT_POSSIBLY_OFFTOPIC_SIGNALS,
-    GDELT_MAX_CRISES_PER_SOURCE_URL, GDELT_MAX_CRISES_PER_EVENT_CLUSTER,
     GDELT_NONSTATE_ACTOR_TYPES, GDELT_GENERIC_ACTOR_NAMES, GDELT_DEMONYM_TO_COUNTRY,
     GDELT_BLANK_ACTOR_VIOLENT_ROOTS, GDELT_GENERIC_FALLBACK_TITLE_PREFIX, GDELTConnector,
 )
@@ -168,10 +171,21 @@ class DataAggregator:
             existing = session.query(Crisis).filter(Crisis.id == crisis_data['id']).first()
 
             if existing:
+                # A pin refined from its article (location_refined_at set) keeps
+                # that position; the feed's coarse coordinates must not undo it.
+                keep_location = existing.location_refined_at is not None
+                # A scored story keeps its severity; the feed's raw value must not undo it.
+                keep_severity = existing.severity_basis is not None
                 for key, value in crisis_data.items():
+                    if keep_location and key in _REFINED_LOCATION_FIELDS:
+                        continue
+                    if keep_severity and key == 'severity':
+                        continue
                     setattr(existing, key, value)
             else:
                 crisis = Crisis(**crisis_data)
+                from services.severity import rescore
+                rescore(crisis)     # provisional, headline-only until the article is read
                 session.add(crisis)
 
         except Exception as e:

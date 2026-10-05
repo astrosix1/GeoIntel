@@ -19,6 +19,7 @@ from data_sources import fetch_real_page_metadata
 from services.ai_client import anthropic_client, AI_MODEL
 from services.escalation import analyze_escalation
 from services.history import get_relevant_relationships
+from services.story_facts import story_stamp, story_context_lines
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +162,7 @@ def _build_context(crisis, escalation, description, relationships):
         lines.append(f"Observed severity trend: {trend}")
     else:
         lines.append("Observed severity trend: not enough history to say")
+    lines.extend(story_context_lines(crisis))
     if description:
         lines.append(f"Description from the source article: {description}")
     else:
@@ -176,8 +178,9 @@ def generate_scenarios(crisis_id):
     Raises ScenariosUnavailable when there's no API key or the model call or
     its output fails. Cached for 12 hours; failures are never cached."""
     cache_key = f"scenarios:{crisis_id}"
+    stamp = story_stamp(crisis_id)
     cached = cache_get(cache_key)
-    if cached is not None:
+    if cached is not None and cached.get('story_stamp') == stamp:
         return cached
 
     session = Session()
@@ -231,5 +234,6 @@ def generate_scenarios(crisis_id):
         'model': AI_MODEL,
         'timestamp': datetime.utcnow().isoformat(),
     }
+    result['story_stamp'] = stamp
     cache_set(cache_key, result, ttl=CACHE_TTL_SECONDS)
     return result

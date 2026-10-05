@@ -24,6 +24,30 @@ GDELT_EVENT_URL_TEMPLATE = "http://data.gdeltproject.org/gdeltv2/{ts}.export.CSV
 # that can actually appear under GDELTConnector's QuadClass 3/4 filter
 # (verbal + material conflict) are listed — codes 01-09 (cooperation) never
 # reach this map since those rows are filtered out before type lookup.
+# Roots whose events are things people SAY or announce (demand, disapprove, reject,
+# threaten, reduce relations), and CAMEO 172 (administrative sanctions, the one
+# non-physical part of root 17 "coerce"). They have no physical site, yet GDELT
+# still gives them a point, usually where the actors or the dateline are, so the
+# map draws them differently. Every other root we keep (protest, force posture,
+# arrests and seizures, assault, fight, mass violence) happened somewhere.
+GDELT_STATEMENT_ROOTS = frozenset({'10', '11', '12', '13', '16'})
+GDELT_STATEMENT_CODE_PREFIXES = ('172',)
+GDELT_PHYSICAL_ROOTS = frozenset({'14', '15', '17', '18', '19', '20'})
+
+
+def cameo_kind(code):
+    """'statement' | 'physical' for a CAMEO event code ("112", "1823"), or None
+    when the code is missing, malformed or outside the conflict roots we keep."""
+    text = str(code or '').strip()
+    if len(text) < 2 or not text[:2].isdigit():
+        return None
+    if text[:2] in GDELT_STATEMENT_ROOTS or text.startswith(GDELT_STATEMENT_CODE_PREFIXES):
+        return 'statement'
+    if text[:2] in GDELT_PHYSICAL_ROOTS:
+        return 'physical'
+    return None
+
+
 GDELT_TYPE_MAP = {
     '10': 'diplomatic',    # DEMAND
     '11': 'diplomatic',    # DISAPPROVE
@@ -102,37 +126,11 @@ GDELT_POSSIBLY_OFFTOPIC_SIGNALS = (
     'charged-with-murder', 'charged-with-manslaughter',
 )
 
-# GDELT sometimes explodes ONE real article into dozens of crisis rows —
-# one per permutation of the countries/entities it mentions — rather than
-# one row per genuinely distinct real event (confirmed directly: a single
-# non-political article produced 74 rows, each a different "country X
-# fights country Y" pairing invented from a tour itinerary). A real,
-# on-topic story covering an actual multi-country situation (a regional
-# conflict spilling across several neighbors) can legitimately produce
-# several real distinct rows from one article too, so this caps rather
-# than collapses to 1 — high enough to keep real multi-country coverage,
-# low enough that one misfired article can't flood the map with dozens of
-# near-duplicate pins citing the same single source. Lowered from 6 to 2
-# after confirming live (4,123 adjacent-GlobalEventID pairs sharing an
-# identical source_url) that 6 near-duplicate pins per single article was
-# still real, visible clutter — a real multi-country story only rarely
-# needs more than 2 distinct rows to be represented.
-GDELT_MAX_CRISES_PER_SOURCE_URL = 2
-
-# A second, broader fan-out cap alongside the one above: the SAME real
-# event is very often covered by many different outlets (different
-# source_urls, so the cap above doesn't help) and GDELT frequently resolves
-# unrelated real events to the same coarse country-centroid/capital point.
-# Confirmed live: one real event (a UN General Assembly speech) produced
-# 574 crisis rows across 217 distinct source_urls in a single day; 202
-# separate rows shared the exact same Washington DC coordinate on one day.
-# Grouping by (country, calendar day, coordinate rounded to 1 decimal
-# degree — roughly 11km, coarse enough to catch a shared country-centroid/
-# capital point without merging two real cities in the same country) and
-# keeping only the highest-severity handful per cluster directly targets
-# both patterns — the same "cap fan-out, keep the highest-severity rows"
-# shape as the per-URL cap above, just a coarser grouping key.
-GDELT_MAX_CRISES_PER_EVENT_CLUSTER = 5
+# GDELT often explodes ONE article into several rows (one per pairing of the places it
+# mentions) and lets many outlets repeat one wire story, so a third of the rows were repeats.
+# Those rows used to be capped and dropped here, which also threw away their sources. They are
+# now kept and merged into one story afterwards (services/stories.py), so the story names every
+# outlet that reported it.
 
 # GDELT's QuadClass/CAMEO-code gate has no text-relevance check at all (unlike
 # NewsBasedCrisisDetector.CRISIS_KEYWORDS for the NewsAPI path) — a CAMEO
@@ -527,6 +525,7 @@ class GDELTConnector:
             'severity': severity,
             'confidence': confidence,
             'location_confidence': location_confidence,
+            'event_kind': cameo_kind(fields[GDELTConnector._COL_EVENT_CODE]),
             'date_start': date_start,
             'analysis': f"GDELT-monitored event (CAMEO {fields[GDELTConnector._COL_EVENT_CODE]}), reported via {source_url}",
             'impact': f"{num_sources} source(s) reporting",
@@ -537,122 +536,6 @@ class GDELTConnector:
             'stakeholders': ','.join(stakeholders),
             'scope': scope,
         }
-
-    @staticmethod
-    def _cap_fanout_per_source_url(crises):
-        """Keep at most GDELT_MAX_CRISES_PER_SOURCE_URL crises citing the
-        same source_url, favoring the ones with the most independent
-        corroborating sources — see the constant's own docstring for why
-        this exists (GDELT sometimes explodes one article into dozens of
-        permutation-based rows). Rows with no source_url pass through
-        untouched.
-
-        Tie-break is `confidence` (derived from real NumSources), NOT
-        `severity` — confirmed live this actually matters: sorting by
-        severity instead systematically keeps whichever actor-pair
-        permutation happened to get the most inflated Goldstein-derived
-        score and discards the rest, which measurably INCREASED the
-        share of severity-90-100 rows in the surviving dataset (30.3% ->
-        39.2% in a real live sample) — the opposite of this phase's whole
-        point. `confidence` carries no such bias toward one particular
-        permutation's severity."""
-        by_url = defaultdict(list)
-        no_url = []
-        for c in crises:
-            (by_url[c['source_url']] if c.get('source_url') else no_url).append(c)
-
-        kept = list(no_url)
-        dropped = 0
-        for url, group in by_url.items():
-            if len(group) <= GDELT_MAX_CRISES_PER_SOURCE_URL:
-                kept.extend(group)
-                continue
-            group.sort(key=lambda c: c['confidence'], reverse=True)
-            kept.extend(group[:GDELT_MAX_CRISES_PER_SOURCE_URL])
-            dropped += len(group) - GDELT_MAX_CRISES_PER_SOURCE_URL
-
-        if dropped:
-            logger.info(f"Capped GDELT fan-out: dropped {dropped} excess crises sharing an over-represented source_url")
-        return kept
-
-    @staticmethod
-    def _cap_fanout_per_event_cluster(crises):
-        """Keep at most GDELT_MAX_CRISES_PER_EVENT_CLUSTER crises per
-        (country, day, ~11km-rounded coordinate) cluster, favoring the ones
-        with the most independent corroborating sources — see the
-        constant's own docstring for why this exists (many outlets
-        covering one real event, or GDELT resolving unrelated events to
-        the same coarse point). Rows missing country/date/lat/lon pass
-        through untouched rather than being dropped for a data gap
-        unrelated to duplication.
-
-        Tie-break is `confidence`, not `severity` — same reasoning and the
-        same confirmed-live measurement as _cap_fanout_per_source_url
-        above (sorting by severity here compounded that function's own
-        bias further, 39.2% -> 44.5% in the same real sample)."""
-        by_cluster = defaultdict(list)
-        no_key = []
-        for c in crises:
-            date_start = c.get('date_start')
-            lat, lon = c.get('latitude'), c.get('longitude')
-            country = c.get('country')
-            if not (country and date_start and lat is not None and lon is not None):
-                no_key.append(c)
-                continue
-            key = (country, date_start.date(), round(lat, 1), round(lon, 1))
-            by_cluster[key].append(c)
-
-        kept = list(no_key)
-        dropped = 0
-        for key, group in by_cluster.items():
-            if len(group) <= GDELT_MAX_CRISES_PER_EVENT_CLUSTER:
-                kept.extend(group)
-                continue
-            group.sort(key=lambda c: c.get('confidence', 0), reverse=True)
-            kept.extend(group[:GDELT_MAX_CRISES_PER_EVENT_CLUSTER])
-            dropped += len(group) - GDELT_MAX_CRISES_PER_EVENT_CLUSTER
-
-        if dropped:
-            logger.info(f"Capped GDELT fan-out: dropped {dropped} excess crises clustered on the same real-world event/point")
-        return kept
-
-    @staticmethod
-    def _cap_fanout_per_title_day(crises):
-        """Keep at most GDELT_MAX_CRISES_PER_EVENT_CLUSTER crises sharing
-        the same (title, day) — catches syndicated content republished
-        verbatim across many different regional-outlet domains, which
-        evades both caps above (confirmed live: one Australian PM/AI story
-        republished across 21+ distinct *.com.au regional-newspaper
-        domains, each its own source_url and often its own nearby
-        coordinate). Explicitly skips the generic blank-actor fallback
-        title (GDELT_GENERIC_FALLBACK_TITLE_PREFIX) — confirmed live that
-        rows sharing that one uninformative title are genuinely distinct
-        real events (888 distinct source_urls behind it), not syndication;
-        capping them would delete real, different data.
-
-        Tie-break is `confidence`, matching the two caps above."""
-        by_title_day = defaultdict(list)
-        kept = []
-        for c in crises:
-            title = c.get('title') or ''
-            date_start = c.get('date_start')
-            if title.startswith(GDELT_GENERIC_FALLBACK_TITLE_PREFIX) or not date_start:
-                kept.append(c)
-                continue
-            by_title_day[(title, date_start.date())].append(c)
-
-        dropped = 0
-        for key, group in by_title_day.items():
-            if len(group) <= GDELT_MAX_CRISES_PER_EVENT_CLUSTER:
-                kept.extend(group)
-                continue
-            group.sort(key=lambda c: c.get('confidence', 0), reverse=True)
-            kept.extend(group[:GDELT_MAX_CRISES_PER_EVENT_CLUSTER])
-            dropped += len(group) - GDELT_MAX_CRISES_PER_EVENT_CLUSTER
-
-        if dropped:
-            logger.info(f"Capped GDELT fan-out: dropped {dropped} excess crises sharing a syndicated (title, day) pair")
-        return kept
 
     _CAMEO_CODE_RE = re.compile(r'CAMEO (\d+)')
 
@@ -765,24 +648,31 @@ class GDELTConnector:
         if not crises:
             return crises
 
-        def resolve_one(crisis):
-            url = crisis.get('source_url')
-            if not url:
-                return
-            metadata = fetch_real_page_metadata(url)
-            real_title = metadata.get('title') if metadata else None
-            if real_title:
-                crisis['title'] = real_title
+        # One fetch per distinct article, however many rows cite it (one article can be
+        # behind several rows, and many rows share a wire story's URL).
+        urls = sorted({c['source_url'] for c in crises if c.get('source_url')})
+        titles = {}
 
-        resolved = 0
+        def fetch_one(url):
+            metadata = fetch_real_page_metadata(url)
+            return url, (metadata.get('title') if metadata else None)
+
         with ThreadPoolExecutor(max_workers=GDELTConnector._TITLE_RESOLUTION_WORKERS) as pool:
-            futures = {pool.submit(resolve_one, c): c for c in crises}
+            futures = [pool.submit(fetch_one, url) for url in urls]
             for future in as_completed(futures):
                 try:
-                    future.result()
-                    resolved += 1
+                    url, title = future.result()
+                    if title:
+                        titles[url] = title
                 except Exception as e:
-                    logger.warning(f"Real title resolution failed for a crisis: {e}")
+                    logger.warning(f"Real title resolution failed for an article: {e}")
+
+        resolved = 0
+        for crisis in crises:
+            real_title = titles.get(crisis.get('source_url'))
+            if real_title:
+                crisis['title'] = real_title
+                resolved += 1
 
         logger.info(f"Resolved real titles for {resolved}/{len(crises)} GDELT crises")
         return crises
@@ -808,13 +698,9 @@ class GDELTConnector:
                     seen_ids.add(crisis['id'])
                     crises.append(crisis)
 
-        crises = GDELTConnector._cap_fanout_per_source_url(crises)
-        crises = GDELTConnector._cap_fanout_per_event_cluster(crises)
-        crises = GDELTConnector._cap_fanout_per_title_day(crises)
-
-        # Real title resolution runs LAST, only against survivors of every
-        # dedup pass above — resolving a title for a row about to be
-        # dropped as a duplicate would be pure wasted network traffic.
+        # Nothing is dropped here: repeats are merged into stories after they are
+        # saved (services/stories.py), so their sources are kept. Titles are
+        # resolved once per distinct article, so repeats cost no extra fetches.
         start = datetime.utcnow()
         crises = GDELTConnector._resolve_real_titles(crises)
         elapsed = (datetime.utcnow() - start).total_seconds()

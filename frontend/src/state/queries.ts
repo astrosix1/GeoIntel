@@ -3,7 +3,7 @@ import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClie
 import type { CrisisScope } from '../api/client';
 import { TIME_RANGE_DAYS } from './uiStore';
 import type { TimeRange } from './uiStore';
-import type { ReportReason } from '../api/types';
+import type { CrisisDetail, CrisisSummary, ReportReason } from '../api/types';
 import {
   deleteComment,
   addWatchPlace,
@@ -13,6 +13,7 @@ import {
   fetchAlerts,
   fetchWatch,
   markAlertsRead,
+  refineCrisisLocation,
   saveAlertSettings,
   searchPlaces,
   fetchForecast,
@@ -362,5 +363,36 @@ export function usePlaceSearch(query: string) {
     retry: false,
     staleTime: 24 * 60 * 60_000,
     refetchOnWindowFocus: false,
+  });
+}
+
+// Refine one event's pin from its article (premium). When the pin moves, the
+// cached event lists are patched in place, so the globe updates without
+// refetching the whole (large) list, and the detail cache is marked refined so
+// the lookup isn't asked for again.
+export function useRefineLocationMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: refineCrisisLocation,
+    onSuccess: (result, id) => {
+      if (result.status === 'refined') {
+        const { lat, lon } = result.location;
+        queryClient.setQueriesData<CrisisSummary[]>({ queryKey: ['crises'] }, (list) =>
+          list?.map((crisis) => (crisis.id === id ? { ...crisis, lat, lon } : crisis)),
+        );
+      }
+      queryClient.setQueryData<CrisisDetail>(['crisis', id], (detail) =>
+        detail
+          ? {
+              ...detail,
+              ...(result.status === 'refined'
+                ? { lat: result.location.lat, lon: result.location.lon, location_confidence: 90 }
+                : {}),
+              location_refined_name: result.status === 'refined' ? result.location.name : null,
+              location_refined_at: new Date().toISOString(),
+            }
+          : detail,
+      );
+    },
   });
 }

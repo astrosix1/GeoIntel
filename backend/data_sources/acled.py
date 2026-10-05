@@ -18,19 +18,21 @@ ACLED_BASE = "https://acleddata.com/api/acled/read"
 # be needlessly slow and hits ACLED's rate limits harder than necessary.
 _acled_token_cache = {'access_token': None, 'refresh_token': None, 'expires_at': None}
 
-# Mapping ACLED event types to our crisis types
+# Mapping ACLED's event types to our crisis types. These are ACLED's six real
+# `event_type` values; the connector has still never run against a live account,
+# so check a first real sync before relying on it.
 ACLED_TYPE_MAP = {
+    'Battles': 'conflict',
     'Violence against civilians': 'conflict',
-    'Battle': 'conflict',
     'Explosions/Remote violence': 'conflict',
     'Protests': 'civil_unrest',
     'Riots': 'civil_unrest',
     'Strategic developments': 'military',
-    'Armed clash': 'conflict',
-    'Cyber attack': 'cyber',
-    'Infrastructure attack': 'infrastructure',
-    'Displacement': 'migration',
 }
+
+# ACLED's own `geo_precision` (1 = the exact place, 2 = near it, 3 = the wider
+# region) as this app's location_confidence, matching the 55/70/85/90+ scale.
+ACLED_GEO_PRECISION_CONFIDENCE = {1: 92, 2: 85, 3: 70}
 
 
 class ACLEDConnector:
@@ -97,13 +99,15 @@ class ACLEDConnector:
         """
         Fetch recent conflict events from ACLED
         https://acleddata.com/api-documentation/getting-started
-        Falls back to sample data if ACLED isn't configured or unavailable.
+        Returns [] when ACLED isn't configured or the request fails: never
+        invented "sample" events (they used to be returned here and were saved
+        to the database on every sync).
         """
         try:
             token = ACLEDConnector._get_access_token()
             if not token:
-                logger.warning("ACLED not configured — using sample crisis data")
-                return ACLEDConnector._get_sample_crises()
+                logger.warning("ACLED not configured, skipping it")
+                return []
 
             end_date = datetime.utcnow().date()
             start_date = end_date - timedelta(days=days)
@@ -134,9 +138,7 @@ class ACLEDConnector:
 
         except Exception as e:
             logger.error(f"ACLED fetch error: {e}")
-            logger.warning("Using sample crisis data instead")
-            # Return sample data so platform is still usable
-            return ACLEDConnector._get_sample_crises()
+            return []
 
     @staticmethod
     def _build_title(event, country):
@@ -161,6 +163,14 @@ class ACLEDConnector:
         if actor1:
             return f"{event_type}: {actor1} in {country}"
         return f"{event_type} in {country}"
+
+    @staticmethod
+    def _location_confidence(event):
+        """From ACLED's geo_precision; 85 when it is missing or unrecognised."""
+        try:
+            return ACLED_GEO_PRECISION_CONFIDENCE.get(int(event.get('geo_precision')), 85)
+        except (TypeError, ValueError):
+            return 85
 
     @staticmethod
     def _parse_event(event):
@@ -201,7 +211,8 @@ class ACLEDConnector:
                 'longitude': float(event.get('longitude', 0)),
                 'severity': severity,
                 'confidence': 85,  # ACLED is well-documented
-                'location_confidence': 85,  # ACLED provides precise coordinates
+                'location_confidence': ACLEDConnector._location_confidence(event),
+                'event_kind': 'physical',
                 'date_start': date_start,  # Crisis model field is date_start, not date
                 'analysis': event.get('notes', ''),
                 'impact': f"{event.get('fatalities', 0)} fatalities, {event.get('event_type')}",
@@ -216,7 +227,8 @@ class ACLEDConnector:
 
     @staticmethod
     def _get_sample_crises():
-        """Return sample crisis data when API is unavailable"""
+        """Invented sample events for load_sample_data.py, a manual dev tool.
+        Never used by sync or startup: the map must not show made-up events."""
         from datetime import datetime
         now = datetime.utcnow()
 

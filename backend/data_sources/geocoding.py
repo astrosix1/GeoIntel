@@ -2,7 +2,7 @@ import os
 import requests
 
 from ._shared import logger
-from services.ai_client import AI_MODEL
+from services.ai_client import AI_LOCATION_MODEL
 
 NOMINATIM_BASE = "https://nominatim.openstreetmap.org/search"
 
@@ -40,15 +40,27 @@ class NominatimGeocoder:
     @staticmethod
     def geocode(place_name):
         """Real (lat, lon, country) for `place_name`, or None if Nominatim
+        has nothing for it or the request fails. See geocode_status() when
+        the caller must tell those two apart."""
+        return NominatimGeocoder.geocode_status(place_name)[0]
+
+    @staticmethod
+    def geocode_status(place_name):
+        """(result, failed): like geocode(), but `failed` is True when the
+        request itself failed (network error, bad status) rather than
+        Nominatim having no match. A failure is NOT cached, so a transient
+        outage doesn't poison later lookups of the same name.
+
+        Real (lat, lon, country) for `place_name`, or None if Nominatim
         has nothing for it or the request fails. Cached in-process by exact
         place name — the same landmark (the UN, the Kremlin) recurs across
         many articles over time, and repeating the network call for an
         identical string would just burn the shared rate limit."""
         if not place_name:
-            return None
+            return None, False
         key = place_name.strip().lower()
         if key in NominatimGeocoder._cache:
-            return NominatimGeocoder._cache[key]
+            return NominatimGeocoder._cache[key], False
 
         import time
         elapsed = time.monotonic() - NominatimGeocoder._last_request_at
@@ -57,6 +69,7 @@ class NominatimGeocoder:
         NominatimGeocoder._last_request_at = time.monotonic()
 
         result = None
+        failed = False
         try:
             response = requests.get(
                 NOMINATIM_BASE,
@@ -81,27 +94,43 @@ class NominatimGeocoder:
                     'country': (match.get('address') or {}).get('country'),
                 }
         except Exception as e:
+            failed = True
             logger.warning(f"Nominatim geocode failed for '{place_name}': {e}")
 
-        NominatimGeocoder._cache[key] = result
-        return result
+        if not failed:
+            NominatimGeocoder._cache[key] = result
+        return result, failed
+
+
+def ai_location_available():
+    """True when an Anthropic key is configured for incident-location extraction."""
+    return bool(_geocode_ai_client and _geocode_ai_client.api_key)
 
 
 def _extract_incident_location(text):
-    """
-    Ask Claude for the single most specific real-world location (a
-    building, landmark, city, or region) genuinely associated with the
-    EVENT this article describes — not just any place named in passing.
-    Returns a location name string, or None when no ANTHROPIC_API_KEY is
+    """The location name from extract_incident_location_status(), or None.
+    None here always means "fall back", whatever the reason."""
+    return extract_incident_location_status(text)[0]
+
+
+def extract_incident_location_status(text):
+    """(name, failed): `failed` is True when the model call itself errored
+    (outage, rate limit) as opposed to the model finding no clear location,
+    so callers can retry the former and not the latter.
+
+    Ask Claude (a small, cheap model) for the single most specific
+    real-world location (a building, landmark, city, or region) genuinely
+    associated with the EVENT this article describes, not just any place
+    named in passing. The name is None when no ANTHROPIC_API_KEY is
     configured, the model finds no clear location, or anything goes wrong.
-    None here always means "fall back to LOCATION_MAP city-matching below"
-    — never a guessed location.
+    None here always means "fall back to LOCATION_MAP city-matching" and
+    never a guessed location.
     """
     if not _geocode_ai_client or not _geocode_ai_client.api_key:
-        return None
+        return None, False
     try:
         message = _geocode_ai_client.messages.create(
-            model=AI_MODEL,
+            model=AI_LOCATION_MODEL,
             max_tokens=40,
             messages=[{
                 "role": "user",
@@ -119,8 +148,8 @@ def _extract_incident_location(text):
         )
         answer = message.content[0].text.strip()
         if not answer or answer.upper() == 'NONE':
-            return None
-        return answer
+            return None, False
+        return answer, False
     except Exception as e:
         logger.warning(f"AI location extraction failed: {e}")
-        return None
+        return None, True

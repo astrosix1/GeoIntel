@@ -89,7 +89,8 @@ export default function Globe() {
   selectHazardRef.current = selectHazard;
   selectPointRef.current = selectPoint;
   activeModeRef.current = activeMode;
-  const crisesByIdRef = useRef(new Map<string, CrisisSummary>());
+  // Events behind each location pin (several can share one coordinate).
+  const crisisGroupsRef = useRef(new Map<string, CrisisSummary[]>());
   const [mapReady, setMapReady] = useState(false);
 
   useEffect(() => {
@@ -369,7 +370,7 @@ export default function Globe() {
     if (!map || !mapReady || activeMode !== 'events') return;
     addCrisisLayers(map);
     const detach = attachCrisisInteractions(map, {
-      getById: (id) => crisesByIdRef.current.get(id),
+      getGroup: (key) => crisisGroupsRef.current.get(key),
       onSelect: (crisis) => selectCrisisRef.current(crisis),
     });
     return () => {
@@ -383,8 +384,7 @@ export default function Globe() {
     if (!map || !mapReady || activeMode !== 'events') return;
     // The same All / Major / Categories filter the left-hand list applies.
     const shown = applyCrisisFilter(crises ?? [], eventsTab, activeCategory);
-    crisesByIdRef.current = new Map(shown.map((c) => [c.id, c]));
-    setCrisisData(map, shown);
+    crisisGroupsRef.current = setCrisisData(map, shown);
   }, [crises, eventsTab, activeCategory, activeMode, mapReady]);
 
   // Item 10.5: center the camera on a crisis pin whenever it becomes the

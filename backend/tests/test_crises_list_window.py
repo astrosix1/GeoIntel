@@ -9,7 +9,8 @@ import blueprints.crises as crises_module
 from cache import cache_clear_prefix
 from models import Crisis
 
-LEAN_KEYS = {'id', 'title', 'country', 'type', 'severity', 'scope', 'date', 'lat', 'lon', 'source_url'}
+LEAN_KEYS = {'id', 'title', 'country', 'type', 'severity', 'scope', 'date', 'lat', 'lon', 'source_url',
+             'location_confidence'}
 
 
 @pytest.fixture(autouse=True)
@@ -26,11 +27,12 @@ def clean_crises(app_module, client, db_session):
     cache_clear_prefix('crises:list:')
 
 
-def seed(db_session, id, age_hours=1, severity=50, scope='global'):
+def seed(db_session, id, age_hours=1, severity=50, scope='global', event_kind=None, location_confidence=70):
     db_session.add(Crisis(
         id=id, type='conflict', title=f'Crisis {id}', country='Testland',
         latitude=1.5, longitude=2.5, severity=severity, scope=scope,
         source='GDELT', source_url=f'https://example.com/{id}', is_active=True,
+        event_kind=event_kind, location_confidence=location_confidence,
         date_start=datetime.utcnow() - timedelta(hours=age_hours),
         analysis='long analysis text', impact='impact text',
     ))
@@ -47,6 +49,15 @@ class TestLeanView:
         body = client.get('/api/crises?view=map').get_json()
         assert set(body['crises'][0].keys()) == LEAN_KEYS
         assert body['count'] == 1
+
+    def test_statement_flag_is_present_only_for_statements(self, app_module, client, db_session):
+        seed(db_session, 'talk', event_kind='statement', location_confidence=55)
+        seed(db_session, 'fight', event_kind='physical', location_confidence=85)
+        seed(db_session, 'unknown', event_kind=None)
+        rows = {r['id']: r for r in client.get('/api/crises?view=map').get_json()['crises']}
+        assert rows['talk']['statement'] is True and rows['talk']['location_confidence'] == 55
+        assert 'statement' not in rows['fight'] and rows['fight']['location_confidence'] == 85
+        assert 'statement' not in rows['unknown']
 
     def test_map_view_values_match_the_row(self, app_module, client, db_session):
         seed(db_session, 'a', severity=77, scope='local')

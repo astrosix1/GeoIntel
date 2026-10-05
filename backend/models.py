@@ -6,6 +6,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from datetime import datetime
+import json
 import os
 
 _DEFAULT_DB = 'sqlite:///' + os.path.join(os.path.dirname(os.path.abspath(__file__)), 'geointel.db')
@@ -54,6 +55,26 @@ class Crisis(Base):
     severity = Column(Integer, default=50)  # 0-100
     confidence = Column(Integer, default=70)  # 0-100 (source reliability)
     location_confidence = Column(Integer, default=70)  # 0-100 (how certain is the location?)
+    # Set once a definitive attempt to refine the pin from the source article
+    # has finished, so it is never repeated. location_refined_name is the
+    # specific place found; NULL with refined_at set means "tried, none usable".
+    location_refined_at = Column(DateTime, nullable=True)
+    location_refined_name = Column(String(200), nullable=True)
+    # 'statement' (talks, criticism, threats: no physical site, so its pin is only
+    # approximate by nature) | 'physical' (it happened somewhere) | NULL (unknown).
+    event_kind = Column(String(12), nullable=True)
+    # Stage 2 of the story pipeline (services/story_facts.py): a short body excerpt of the
+    # source article, the facts extracted from it (JSON text), and when that finished.
+    article_excerpt = Column(Text, nullable=True)
+    facts = Column(Text, nullable=True)
+    facts_extracted_at = Column(DateTime, nullable=True)
+    # Strict severity (services/severity.py): level 1-5 and the JSON reasons behind it.
+    severity_level = Column(Integer, nullable=True)
+    severity_basis = Column(Text, nullable=True)
+    # Story merging (services/stories.py): a duplicate points at the story's primary
+    # event and is inactive; `source_count` is the number of distinct outlets behind a story.
+    merged_into = Column(String(50), nullable=True, index=True)
+    source_count = Column(Integer, nullable=False, default=1, server_default='1')
 
     date_start = Column(DateTime, default=datetime.utcnow)
     date_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -111,6 +132,13 @@ class Crisis(Base):
             'severity': self.severity,
             'confidence': self.confidence,
             'location_confidence': self.location_confidence,
+            'location_refined_name': self.location_refined_name,
+            'severity_level': self.severity_level,
+            'severity_basis': json.loads(self.severity_basis) if self.severity_basis else None,
+            'event_kind': self.event_kind,
+            'source_count': self.source_count or 1,
+            'merged_into': self.merged_into,
+            'location_refined_at': self.location_refined_at.isoformat() if self.location_refined_at else None,
             'date': self.date_start.isoformat() if self.date_start else None,
             'date_scheduled': self.date_scheduled.isoformat() if self.date_scheduled else None,
             'status': self.status,
@@ -266,6 +294,16 @@ class Relationship(Base):
             'strength': self.strength,
             'stability': self.stability,
         }
+
+
+class StoryMergeCheck(Base):
+    """One AI verdict on whether two borderline events are the same story, so a pair
+    is never judged twice. pair_key is the two event ids, sorted and joined with '|'."""
+    __tablename__ = 'story_merge_checks'
+
+    pair_key = Column(String(120), primary_key=True)
+    same_event = Column(Boolean, nullable=False)
+    checked_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
 class News(Base):

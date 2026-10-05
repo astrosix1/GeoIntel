@@ -205,30 +205,9 @@ def create_app():
                 init_actors()
                 init_relationships()
                 init_scheduled_events()
-                # Load sample crises without full sync (sync can hang on external APIs)
-                try:
-                    session = Session()
-                    # Excludes curated scheduled events (elections/summits,
-                    # added by init_scheduled_events() just above) from
-                    # this count — otherwise, on a brand-new database,
-                    # those rows alone would make this non-zero and
-                    # permanently skip seeding the sample reactive crises,
-                    # leaving the Crises tab empty forever.
-                    existing_crises = session.query(Crisis).filter(Crisis.source != 'CURATED').count()
-                    session.close()
-                    if existing_crises == 0:
-                        # Only populate sample data if database is empty
-                        from data_sources import ACLEDConnector
-                        sample_data = ACLEDConnector._get_sample_crises()
-                        session = Session()
-                        for crisis_data in sample_data:
-                            c = Crisis(**crisis_data)
-                            session.merge(c)
-                        session.commit()
-                        session.close()
-                        logger.info(f"Loaded {len(sample_data)} sample crises")
-                except Exception as e:
-                    logger.warning(f"Sample crisis load failed: {e}")
+                # No invented sample crises are seeded here any more: an empty
+                # database stays empty until the first real sync (GDELT needs no key).
+                # (`load_sample_data.py` is still there as an explicit dev tool.)
 
                 logger.info("Database initialized")
                 app.db_initialized = True
@@ -258,6 +237,14 @@ def scheduled_sync():
             cache_clear_prefix('crises:')
     except Exception as e:
         logger.error(f"Crisis archive error: {e}")
+
+    # Merge repeats and near-repeats into stories (keeps every source). Its own
+    # try/except so a merge problem never blocks the rest of the sync.
+    try:
+        from services.stories import merge_recent
+        merge_recent()
+    except Exception as e:
+        logger.error(f"Story merge error: {e}")
 
     # Snapshot current severity for every active crisis, once per sync run —
     # this is the real history analyze_escalation() needs. Its own
@@ -291,6 +278,15 @@ def scheduled_alert_eval():
         logger.error(f"Scheduled alert evaluation error: {e}")
 
 
+def scheduled_location_refine():
+    """Refine pins of the most important new events from their articles."""
+    try:
+        from services.location_refine import refine_pending
+        refine_pending()
+    except Exception as e:
+        logger.error(f"Scheduled location refinement error: {e}")
+
+
 def init_scheduler():
     """Initialize background scheduler"""
     # Sync ACLED every hour
@@ -312,6 +308,19 @@ def init_scheduler():
         minutes=15,
         id='alert_eval',
         name='Evaluate watchlist hazard alerts',
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+
+    # Pin refinement every 20 minutes (a capped batch; LOCATION_REFINE_PER_RUN=0
+    # turns it off). Separate from the sync so it never lengthens it.
+    scheduler.add_job(
+        func=scheduled_location_refine,
+        trigger="interval",
+        minutes=20,
+        id='location_refine',
+        name='Refine event locations from articles',
         replace_existing=True,
         max_instances=1,
         coalesce=True,

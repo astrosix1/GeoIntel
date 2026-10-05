@@ -1,14 +1,31 @@
-import { useEffect, useState } from 'react';
-import type { CrisisSummary } from '../../api/types';
-import { useCrisisBriefingQuery } from '../../state/queries';
+import { useEffect, useRef, useState } from 'react';
+import type { CrisisDetail, CrisisSummary } from '../../api/types';
+import { useCrisisBriefingQuery, useCrisisDetailQuery, useEntitlements, useRefineLocationMutation } from '../../state/queries';
+import { useUiStore } from '../../state/uiStore';
 import Scenarios from './Scenarios';
 import Comments from './Comments';
 import SaveButton from '../../components/SaveButton';
 import { colorForSeverity, labelForSeverity } from '../../globe/severity';
 import styles from './EventAnalysis.module.css';
 
+// How the pin's position was found, in words. Only GDELT events carry the
+// feed's coarse positions; other sources have their own and get no note.
+function describeLocation(detail: CrisisDetail): string | null {
+  if (detail.event_kind === 'statement') {
+    return 'Statement or talks: the pin shows where the story is set, not where it happened';
+  }
+  if (detail.location_refined_name) return `Location: from the article, ${detail.location_refined_name}`;
+  if (detail.source !== 'GDELT') return null;
+  const level = detail.location_confidence >= 85 ? 'city' : detail.location_confidence >= 70 ? 'region' : 'country';
+  return `Location: approximate (${level} level)`;
+}
+
 export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
   const { data: briefing, isLoading, isError } = useCrisisBriefingQuery(crisis.id);
+  const { premium } = useEntitlements();
+  const { data: detail } = useCrisisDetailQuery(crisis.id);
+  const refine = useRefineLocationMutation();
+  const refineAsked = useRef(false);
   const [imageFailed, setImageFailed] = useState(false);
   const [tab, setTab] = useState<'analysis' | 'comments'>('analysis');
 
@@ -24,6 +41,28 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
   const imageSrc = briefing?.source_media?.image_url || briefing?.image?.src;
   const imageCaption = briefing?.source_media?.image_url ? null : briefing?.image?.caption;
   const videoUrl = briefing?.source_media?.video_url;
+
+  // A premium user opening a GDELT event whose pin hasn't been refined yet
+  // asks the server to refine it (once per opening; the server remembers the
+  // answer, so everyone then sees the better pin). When it moves, re-select
+  // the event at its new spot so the globe recentres, but only if the user
+  // is still looking at this event.
+  useEffect(() => {
+    if (!premium || !detail || refineAsked.current) return;
+    if (detail.source !== 'GDELT' || detail.location_refined_at || detail.event_kind === 'statement') return;
+    refineAsked.current = true;
+    refine.mutate(crisis.id, {
+      onSuccess: (result) => {
+        const ui = useUiStore.getState();
+        if (result.status === 'refined' && ui.pinnedSelection?.kind === 'event' && ui.pinnedSelection.crisis.id === crisis.id) {
+          ui.selectCrisis({ ...crisis, lat: result.location.lat, lon: result.location.lon });
+        }
+      },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [premium, detail, crisis.id]);
+
+  const locationNote = refine.isPending ? 'Refining location from the article\u2026' : detail ? describeLocation(detail) : null;
 
   // A newly-selected crisis's image may fail differently than the last
   // one's — reset the "hide broken image" flag whenever the underlying URL
@@ -54,6 +93,7 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
         <span className={styles.badge}>{new Date(crisis.date).toLocaleDateString()}</span>
         <SaveButton crisisId={crisis.id} />
       </div>
+      {locationNote && <div className={styles.locationNote}>{locationNote}</div>}
 
       <div className={styles.tabs} role="tablist">
         {(['analysis', 'comments'] as const).map((value) => (
@@ -99,7 +139,34 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
         </div>
       )}
 
-      {crisis.source_url && (
+      {detail?.severity_basis && !isLocalScope && (
+        <div className={styles.section}>
+          <div className={styles.sectionTitle}>Why this rating ({detail.severity_basis.name})</div>
+          <ul className={styles.sourceList}>
+            {detail.severity_basis.basis.map((reason) => (
+              <li key={reason}>{reason}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {detail && detail.news.length > 1 ? (
+        <div className={styles.section}>
+          <div className={styles.sectionTitle}>
+            Sources ({detail.source_count} outlet{detail.source_count === 1 ? '' : 's'})
+          </div>
+          <ul className={styles.sourceList}>
+            {detail.news.map((item) => (
+              <li key={item.url}>
+                <a className={styles.sourceLink} href={item.url} target="_blank" rel="noopener noreferrer">
+                  {item.title || item.url}
+                </a>
+                <span className={styles.sourceOutlet}>{item.source}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : crisis.source_url && (
         <div className={styles.section}>
           <div className={styles.sectionTitle}>Source</div>
           <a

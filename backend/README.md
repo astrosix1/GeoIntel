@@ -147,6 +147,40 @@ Environment variables (Railway):
 
 Requires `backend/supabase/004_geointel_watchlist.sql` to be applied (after 002).
 
+### Pin location refinement
+
+GDELT places an event at the centre of the place its article names, so many pins
+share one point. A background job (every 20 minutes) and premium users opening an
+event refine important GDELT events from the article: a small model names the
+specific place, Nominatim geocodes it, and the position is saved only if it is in
+the same country as the event. Each event is looked up once.
+
+| Variable | Purpose |
+|---|---|
+| `ANTHROPIC_API_KEY` | Needed for the place-extraction step; without it nothing is refined. |
+| `ANTHROPIC_LOCATION_MODEL` | Model used for it (default `claude-haiku-4-5-20251001`). |
+| `LOCATION_REFINE_PER_RUN` | Events refined per background run (default 60; `0` turns the job off). |
+| `ANTHROPIC_FACTS_MODEL` | Model that reads each story once and records place, casualty counts and scale cues (default: the location model). The place it finds drives pin refinement. |
+| `STORY_MERGE_AI_PER_RUN` | Borderline headline pairs the merge step may ask the AI about per run (default 40). `ANTHROPIC_MERGE_MODEL` picks the model. Run a backfill with `python -m services.stories --days 7 [--no-ai]`. |
+
+Requires the Alembic migration `f3c9a1d7e502` (`alembic upgrade head`).
+
+### Statements, precision and ACLED
+
+- **`event_kind`**: every GDELT event is classed from its CAMEO code as a `statement`
+  (demand, criticise, reject, threaten, reduce relations, administrative sanctions: no
+  physical place) or `physical` (it happened somewhere). The map draws statements as
+  hollow pins and shows a ring for approximate positions (wider = less precise, from
+  `location_confidence`: country 55, state 70, city 85, specific place 90+). Background
+  refinement now covers every physical event, never statements.
+- **ACLED** (real incident coordinates, with `geo_precision` mapped to confidence) is off
+  unless `ACLED_EMAIL` and `ACLED_PASSWORD` are set. Its data is free only for
+  non-commercial use, so confirm licensing for a paid product. The connector has not been
+  run against a live account yet. When it is unconfigured or fails it now returns nothing;
+  it no longer invents "sample" events, and startup no longer seeds any.
+- Requires migration `a5d8c2f1b934` (`alembic upgrade head`): adds `event_kind`, backfills it,
+  and hides the old invented "Sample Data" rows.
+
 ## Data Sources
 
 ### ACLED (Armed Conflict Location & Event Data)

@@ -23,6 +23,17 @@ export interface Crisis {
   is_verified: boolean;
   lat: number;
   location_confidence: number;
+  // Set when the pin was refined from its source article (see refineCrisisLocation).
+  location_refined_name: string | null;
+  location_refined_at: string | null;
+  // 'statement' = talks, criticism or threats (no physical site); 'physical' = it happened somewhere.
+  event_kind: 'statement' | 'physical' | null;
+  // How many distinct outlets back this story (1 unless duplicate reports were merged into it).
+  source_count: number;
+  merged_into: string | null;
+  // Strict severity: level 1-5 and the reasons it was scored that way (GDELT stories).
+  severity_level?: number | null;
+  severity_basis?: { feed: number; name: string; basis: string[] } | null;
   lon: number;
   severity: number;
   source: string;
@@ -44,7 +55,15 @@ export interface Crisis {
 export type CrisisSummary = Pick<
   Crisis,
   'id' | 'title' | 'country' | 'type' | 'severity' | 'scope' | 'date' | 'lat' | 'lon' | 'source_url'
->;
+> & {
+  // How precisely the position is known (see lib/precision.ts); absent on summaries built
+  // from a saved event, which don't carry it.
+  location_confidence?: number;
+  // Present (true) only for statements.
+  statement?: boolean;
+  // Number of outlets behind the story; present only when above 1.
+  sources?: number;
+};
 
 // GET /api/crises/<id>/scenarios (premium). Likelihood is a qualitative word on
 // purpose — the backend never returns a numeric probability.
@@ -127,8 +146,18 @@ export interface CrisesResponse {
 }
 
 // Verified live at GET /api/crises/<id> — same shape as a list item plus `news`.
+// One article behind a story (GET /api/crises/<id> returns every source, earliest first).
+export interface StorySource {
+  title: string;
+  url: string;
+  source: string;
+  published_at: string | null;
+}
+
 export interface CrisisDetail extends Crisis {
-  news: unknown[];
+  news: StorySource[];
+  // Set when the id that was asked for had been merged into this story.
+  merged_from?: string;
 }
 
 // Verified live at GET /api/crises/<id>/briefing.
@@ -358,3 +387,9 @@ export interface GeoResult {
   lat: number;
   lon: number;
 }
+
+// POST /api/crises/<id>/refine-location (premium). 'none' is a normal answer:
+// the article gave no usable, same-country place, and the pin stays as it was.
+export type RefineLocationResult =
+  | { status: 'refined'; location: { lat: number; lon: number; name: string; country: string } }
+  | { status: 'none' };

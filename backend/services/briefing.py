@@ -14,6 +14,7 @@ except Exception:
 from models import Session, Crisis, News
 from cache import cache_get, cache_set
 from data_sources import fetch_real_page_metadata
+from services.story_facts import story_stamp, story_context_lines
 from services.ai_client import anthropic_client, AI_MODEL
 from services.escalation import analyze_escalation
 from services.economic import get_economic_impact
@@ -75,8 +76,9 @@ def generate_ai_briefing(crisis_id):
     """
     # ── Cache check ──────────────────────────────────────────────────────────
     cache_key = f"briefing:{crisis_id}"
+    stamp = story_stamp(crisis_id)
     cached = cache_get(cache_key)
-    if cached is not None:
+    if cached is not None and cached.get('story_stamp') == stamp:
         logger.info(f"[Briefing] Cache hit for crisis {crisis_id}")
         return cached
 
@@ -96,7 +98,7 @@ def generate_ai_briefing(crisis_id):
         news = (session.query(News)
                 .filter(News.crisis_id == crisis_id)
                 .order_by(News.published_at.desc())
-                .limit(10).all())
+                .limit(20).all())
         escalation = analyze_escalation(crisis_id)
         economic = get_economic_impact(crisis_id)
         reliability = calculate_source_reliability(crisis_id)
@@ -139,6 +141,8 @@ def generate_ai_briefing(crisis_id):
         # metadata to cite, not anything to expand a real explanation
         # from — the direct cause of "bland, severity-only" briefings.
         excerpt_parts = []
+        if crisis.article_excerpt:
+            excerpt_parts.append(f"Primary article excerpt: {crisis.article_excerpt}")
         for i, n in enumerate(news[:3], 1):
             if n.content:
                 excerpt_parts.append(f"[{i}] {n.content[:600]}")
@@ -168,6 +172,7 @@ Confidence: {crisis.confidence}%
 Source Reliability: {reliability['reliability']} ({reliability['source_count']} sources)
 
 Analysis: {crisis.analysis}
+{chr(10).join(story_context_lines(crisis))}
 
 Escalation Trend: {escalation['trend']}{f" (velocity: {escalation['velocity']} points/day)" if escalation.get('velocity') is not None else ""}
 Economic Impact: {economic['impact_severity']}
@@ -200,6 +205,7 @@ CITATION RULES (this will be published under this outlet's name, so sourcing dis
 - A single sentence may carry multiple citations if it draws on more than one source, e.g. "[2][5]".
 - Only cite numbers that appear in the provided source list. Never invent a source, a number, a quote, or a statistic that isn't backed by the list, the excerpts, or the structured Crisis Context data.
 - Analytical judgment that comes from your own reasoning rather than a listed source should NOT carry a citation — present it plainly as analysis.
+- If several sources report the same event and they differ on a fact (a figure, a cause, who is responsible), say so and cite each version.
 - If the source list and excerpts are thin, say so explicitly rather than filling the gap with an uncited "fact" — a shorter, honest explanation is better than a padded one.
 
 Format your response as flowing prose — no section headers, no bullet points, just the explanation itself (do not add a "Sources" section yourself — one is appended automatically after your response).
@@ -227,6 +233,7 @@ Be specific — name actors, places, and figures rather than speaking in general
                 # Cache for 1 hour — briefings change slowly and each API call
                 # costs real money. TTL 3600 means at most one Claude call per
                 # crisis per hour across all concurrent users.
+                result['story_stamp'] = stamp
                 cache_set(cache_key, result, ttl=3600)
                 logger.info(f"[Briefing] Cached briefing for crisis {crisis_id} (TTL 3600s)")
                 return result
@@ -237,6 +244,7 @@ Be specific — name actors, places, and figures rather than speaking in general
             logger.info("ANTHROPIC_API_KEY not set — generating static briefing")
             result = _generate_static_briefing(crisis, escalation, economic, reliability, numbered_sources, image, excerpt_parts, source_media)
             if result:
+                result['story_stamp'] = stamp
                 cache_set(cache_key, result, ttl=3600)
             return result
     finally:

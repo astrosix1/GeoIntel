@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, request
 
 from models import Session, Crisis, News
-from data_sources import fetch_real_page_metadata, _extract_incident_location, NominatimGeocoder
+from data_sources import fetch_real_page_metadata
 from cache import cache_get, cache_set
 from extensions import limiter
 from services.auth import check_admin_key
@@ -19,6 +19,8 @@ from services.economic import get_economic_impact
 from services.briefing import generate_ai_briefing
 from services.history import generate_deep_history
 from services.scenarios import generate_scenarios, ScenariosUnavailable
+from services.location_refine import refine_crisis_location
+from services.stories import canonical_id
 from services.gating import require_premium
 from services.realtime import broadcast_new_crisis
 
@@ -118,7 +120,7 @@ def get_crises():
             rows = query.with_entities(
                 Crisis.id, Crisis.title, Crisis.country, Crisis.type, Crisis.severity,
                 Crisis.scope, Crisis.date_start, Crisis.latitude, Crisis.longitude,
-                Crisis.source_url,
+                Crisis.source_url, Crisis.location_confidence, Crisis.event_kind, Crisis.source_count,
             ).all()
             result = [
                 {
@@ -132,6 +134,10 @@ def get_crises():
                     'lat': r.latitude,
                     'lon': r.longitude,
                     'source_url': r.source_url,
+                    'location_confidence': r.location_confidence,
+                    # Only present when true, to keep the payload small.
+                    **({'statement': True} if r.event_kind == 'statement' else {}),
+                    **({'sources': r.source_count} if (r.source_count or 1) > 1 else {}),
                 }
                 for r in rows
             ]
@@ -262,11 +268,22 @@ def get_crisis_detail(crisis_id):
             session.close()
             return jsonify({'error': 'Crisis not found'}), 404
 
-        # Fetch related news
-        news = session.query(News).filter(News.crisis_id == crisis_id).limit(10).all()
+        # An event that was merged into a story opens as that story, so old links,
+        # saved ids and bookmarks keep working.
+        requested_id = crisis_id
+        if crisis.merged_into:
+            story = session.query(Crisis).filter(Crisis.id == crisis.merged_into).first()
+            if story:
+                crisis, crisis_id = story, story.id
+
+        # Every source behind the story, earliest first.
+        news = (session.query(News).filter(News.crisis_id == crisis_id)
+                .order_by(News.published_at.asc()).limit(50).all())
 
         result = crisis.to_dict()
         result['news'] = [n.to_dict() for n in news]
+        if requested_id != crisis_id:
+            result['merged_from'] = requested_id
 
         session.close()
 
@@ -400,35 +417,13 @@ def get_related_crises(crisis_id):
 @limiter.limit("30 per minute")
 def get_crisis_real_headline(crisis_id):
     """
-    Real article title/description for a crisis whose stored title is
-    auto-generated (currently only GDELT-sourced crises — see
-    GDELTConnector._build_title), fetched lazily from the crisis's real
-    source_url and cached — rather than during every sync, since that
-    would mean scraping an arbitrary news site for every one of ~1,300+
-    GDELT events per hour.
+    Real article title for a crisis whose stored title is auto-generated,
+    fetched from the crisis's real source_url and cached. (GDELT titles are
+    now resolved at sync time; this remains for older rows.) Locations are
+    refined separately, see refine_crisis_location / POST .../refine-location.
 
-    For GDELT crises specifically, this ALSO attempts to refine the pin's
-    coordinates: GDELT's own geocoding often resolves verbal-conflict
-    events (a "threat" or "demand" has no clear physical location) to a
-    coarse country/capital-level point, which is why pins cluster so
-    heavily on a handful of coordinates (confirmed directly against this
-    app's live data: dozens of unrelated GDELT crises sharing the exact
-    same point). The real article text just fetched is run through the
-    same AI-extraction + Nominatim pipeline Phase 5 built for NewsAPI
-    (_extract_incident_location, NominatimGeocoder) to find a more
-    specific real location. When one is found, it's written back to the
-    Crisis row itself (not just cached) — unlike the headline, a pin's
-    position is part of the shared map everyone sees before ever opening
-    that crisis, so the fix should persist and benefit every later load,
-    not just this one cached response. This still only runs once per
-    crisis (lazily, on first open, lands in the shared response cache
-    below) rather than during sync — a full bulk re-geocode of ~2,000
-    events would mean ~2,000 Nominatim calls at its enforced 1 req/sec
-    limit alone, well over 30 minutes, plus that many AI calls.
-
-    Returns {title: None, location: None} (not an error) when there's no
-    source_url, the fetch fails, or no refined location is found — all
-    expected, non-fatal outcomes, not crashes.
+    Returns {title: None} (not an error) when there's no source_url or the
+    fetch fails.
     """
     try:
         cache_key = f"real_headline:{crisis_id}"
@@ -439,7 +434,6 @@ def get_crisis_real_headline(crisis_id):
         session = Session()
         crisis = session.query(Crisis).filter(Crisis.id == crisis_id).first()
         source_url = crisis.source_url if crisis else None
-        source = crisis.source if crisis else None
         session.close()
 
         if not crisis:
@@ -450,39 +444,34 @@ def get_crisis_real_headline(crisis_id):
         if page:
             result['title'] = page.get('title')
 
-            if source == 'GDELT':
-                text = ' '.join(filter(None, [page.get('title'), page.get('description')]))
-                place_name = _extract_incident_location(text) if text else None
-                geocoded = NominatimGeocoder.geocode(place_name) if place_name else None
-                if geocoded and geocoded.get('country'):
-                    result['location'] = {
-                        'lat': geocoded['lat'], 'lon': geocoded['lon'],
-                        'country': geocoded['country'], 'name': place_name,
-                    }
-                    write_session = Session()
-                    try:
-                        row = write_session.query(Crisis).filter(Crisis.id == crisis_id).first()
-                        if row:
-                            row.latitude = geocoded['lat']
-                            row.longitude = geocoded['lon']
-                            row.country = geocoded['country']
-                            row.location_confidence = 90
-                            write_session.commit()
-                    except Exception as e:
-                        write_session.rollback()
-                        logger.error(f"Error persisting refined location for {crisis_id}: {e}")
-                    finally:
-                        write_session.close()
-
-        # Cache even a fully-empty result — an unreachable/paywalled URL, or
-        # an article with no extractable location, isn't going to start
-        # working on the next request a minute later, and this avoids
-        # re-scraping/re-geocoding the same one on every open.
-        cache_set(cache_key, result, ttl=2592000)  # 30 days — a real article's own metadata doesn't change
+        # Cache even an empty result: an unreachable or paywalled URL will not
+        # start working a minute later.
+        cache_set(cache_key, result, ttl=2592000)  # 30 days
         return jsonify(result)
     except Exception as e:
         logger.error(f"Error fetching real headline for {crisis_id}: {e}")
         return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
+
+
+@crises_bp.route('/<crisis_id>/refine-location', methods=['POST'])
+@limiter.limit("20 per minute")
+@require_premium
+def post_refine_location(crisis_id):
+    """Refine one event's pin from its source article (premium: it can cost an
+    AI call and a geocoder lookup). Idempotent: an event that already has a
+    definite answer returns it without any external call. Returns
+    {status: 'refined'|'none', location?}; 503 when the AI or geocoder is
+    unavailable right now (try again later)."""
+    try:
+        result = refine_crisis_location(crisis_id)
+    except Exception as e:
+        logger.error(f"Error refining location for {crisis_id}: {e}")
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
+    if result['status'] == 'not_found':
+        return jsonify({'error': 'Crisis not found'}), 404
+    if result['status'] == 'unavailable':
+        return jsonify({'error': 'location_refinement_unavailable', 'reason': result.get('reason')}), 503
+    return jsonify(result)
 
 
 @crises_bp.route('/<crisis_id>/escalation', methods=['GET'])
@@ -517,7 +506,7 @@ def get_crisis_economic_impact(crisis_id):
 def get_crisis_briefing(crisis_id):
     """Get AI-generated briefing summary for a crisis"""
     try:
-        briefing = generate_ai_briefing(crisis_id)
+        briefing = generate_ai_briefing(canonical_id(crisis_id))
         if briefing:
             return jsonify(briefing)
         else:
@@ -539,7 +528,7 @@ def get_crisis_scenarios(crisis_id):
     locked button. 503 when the model isn't configured or fails — there is no
     static fallback, so the UI shows an honest 'unavailable'."""
     try:
-        result = generate_scenarios(crisis_id)
+        result = generate_scenarios(canonical_id(crisis_id))
         if result is None:
             return jsonify({'error': 'Crisis not found'}), 404
         return jsonify(result)

@@ -18,6 +18,7 @@ import type {
   AlertsResponse,
   GeoResult,
   NewWatchPlace,
+  RefineLocationResult,
   WatchPlace,
   WatchResponse,
 } from './types';
@@ -339,4 +340,12 @@ export function saveAlertSettings(changes: Partial<AlertSettings>): Promise<Aler
 
 export async function searchPlaces(query: string): Promise<GeoResult[]> {
   return (await userDataRequest<{ results: GeoResult[] }>(`/api/me/geo/search?q=${encodeURIComponent(query)}`)).results;
+}
+
+// Ask the server to refine one event's pin from its article. Idempotent: an
+// event that already has an answer returns it without any lookup.
+export function refineCrisisLocation(id: string): Promise<RefineLocationResult> {
+  return userDataRequest<RefineLocationResult>(`/api/crises/${encodeURIComponent(id)}/refine-location`, {
+    method: 'POST',
+  });
 }

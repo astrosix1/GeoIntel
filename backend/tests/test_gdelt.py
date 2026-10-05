@@ -271,98 +271,6 @@ def test_offtopic_filter_is_case_insensitive(app_module):
     assert ds.GDELTConnector._parse_row(row) is None
 
 
-# ── Per-source-URL fan-out cap (GDELT_MAX_CRISES_PER_SOURCE_URL) ─────────
-# Grounded in the same real finding: dozens of rows citing one identical
-# source_url almost always means GDELT invented permutations from a single
-# article, not dozens of genuinely distinct real events.
-
-def _crisis(id, source_url, severity, confidence=50):
-    return {'id': id, 'source_url': source_url, 'severity': severity, 'confidence': confidence}
-
-
-def test_fanout_cap_keeps_all_when_under_the_limit(app_module):
-    n = ds.GDELT_MAX_CRISES_PER_SOURCE_URL
-    crises = [_crisis(f'c{i}', 'https://example.com/a', 50) for i in range(n)]
-    result = ds.GDELTConnector._cap_fanout_per_source_url(crises)
-    assert len(result) == n
-
-
-def test_fanout_cap_trims_to_the_limit_when_over(app_module):
-    crises = [_crisis(f'c{i}', 'https://example.com/a', 50) for i in range(20)]
-    result = ds.GDELTConnector._cap_fanout_per_source_url(crises)
-    assert len(result) == ds.GDELT_MAX_CRISES_PER_SOURCE_URL
-
-
-def test_fanout_cap_keeps_the_highest_confidence_ones(app_module):
-    # Tie-break is confidence, NOT severity — confirmed live that sorting
-    # by severity instead systematically inflates the surviving dataset's
-    # severity distribution (see the function's own docstring for the real
-    # before/after numbers). Severity is deliberately uniform here so a
-    # regression back to severity-sorting wouldn't accidentally pass.
-    n = ds.GDELT_MAX_CRISES_PER_SOURCE_URL
-    crises = [_crisis(f'c{i}', 'https://example.com/a', 50, confidence=i) for i in range(20)]  # confidence 0..19
-    result = ds.GDELTConnector._cap_fanout_per_source_url(crises)
-    kept_confidences = sorted(c['confidence'] for c in result)
-    assert kept_confidences == list(range(20 - n, 20))  # the top n by confidence
-
-
-def test_fanout_cap_applies_independently_per_url(app_module):
-    crises = (
-        [_crisis(f'a{i}', 'https://example.com/a', 50) for i in range(10)]
-        + [_crisis(f'b{i}', 'https://example.com/b', 50) for i in range(2)]
-    )
-    result = ds.GDELTConnector._cap_fanout_per_source_url(crises)
-    from_a = [c for c in result if c['source_url'] == 'https://example.com/a']
-    from_b = [c for c in result if c['source_url'] == 'https://example.com/b']
-    assert len(from_a) == ds.GDELT_MAX_CRISES_PER_SOURCE_URL
-    assert len(from_b) == 2
-
-
-def test_fanout_cap_passes_through_crises_with_no_source_url(app_module):
-    crises = [{'id': 'no-url', 'source_url': None, 'severity': 50, 'confidence': 50}]
-    result = ds.GDELTConnector._cap_fanout_per_source_url(crises)
-    assert len(result) == 1
-
-
-def test_get_recent_timestamps_derives_correct_real_url_pattern(app_module):
-    fake_response = MagicMock()
-    fake_response.text = (
-        "12345 abc123 http://data.gdeltproject.org/gdeltv2/20260924120000.export.CSV.zip\n"
-        "67890 def456 http://data.gdeltproject.org/gdeltv2/20260924120000.mentions.CSV.zip\n"
-        "11111 ghi789 http://data.gdeltproject.org/gdeltv2/20260924120000.gkg.csv.zip\n"
-    )
-    fake_response.raise_for_status = lambda: None
-
-    with patch('data_sources.gdelt.requests.get', return_value=fake_response) as mock_get:
-        timestamps = ds.GDELTConnector._get_recent_timestamps()
-
-    mock_get.assert_called_once_with(ds.GDELT_LASTUPDATE_URL, timeout=10)
-    assert timestamps == ['20260924120000', '20260924114500', '20260924113000', '20260924111500']
-
-
-def test_fetch_event_rows_returns_empty_on_network_failure_not_a_crash(app_module):
-    with patch('data_sources.gdelt.requests.get', side_effect=Exception('network down')):
-        assert ds.GDELTConnector._fetch_event_rows('20260924120000') == []
-
-
-def test_fetch_recent_events_returns_empty_when_lastupdate_fails(app_module):
-    with patch('data_sources.gdelt.requests.get', side_effect=Exception('network down')):
-        assert ds.GDELTConnector.fetch_recent_events() == []
-
-
-def test_fetch_recent_events_dedups_across_overlapping_windows(app_module):
-    # The same GlobalEventID appearing in more than one of the 4 fetched
-    # files (real overlap since GDELT's windows aren't perfectly disjoint
-    # in practice) must only produce one crisis record.
-    row = make_row(global_event_id='555')
-    with patch.object(ds.GDELTConnector, '_get_recent_timestamps', return_value=['t1', 't2']), \
-         patch.object(ds.GDELTConnector, '_fetch_event_rows', return_value=[row]):
-        crises = ds.GDELTConnector.fetch_recent_events()
-
-    assert len(crises) == 1
-    assert crises[0]['id'] == 'gdelt_555'
-
-
 # ── Self-referential and generic-actor-name rejection ────────────────────
 # Both verified against real live GDELT data before implementing (same
 # discipline as GDELT_NONSTATE_ACTOR_TYPES): every one of 7 real
@@ -450,63 +358,6 @@ def test_city_level_geo_gets_high_confidence(app_module):
     row = make_row(action_geo_fullname='Kyiv, Kyiv, Ukraine')
     crisis = ds.GDELTConnector._parse_row(row)
     assert crisis['location_confidence'] == 85
-
-
-# ── Per-event-cluster fan-out cap (GDELT_MAX_CRISES_PER_EVENT_CLUSTER) ────
-# Grounded in real findings: 574 rows for one real event across 217
-# distinct source URLs (the per-URL cap doesn't help there), and 202 rows
-# sharing the exact same coordinate on one day.
-
-from datetime import datetime as _dt  # noqa: E402
-
-
-def _cluster_crisis(id, country, date_start, lat, lon, severity, source_url=None, confidence=50):
-    return {
-        'id': id, 'country': country, 'date_start': date_start,
-        'latitude': lat, 'longitude': lon, 'severity': severity,
-        'source_url': source_url, 'confidence': confidence,
-    }
-
-
-def test_event_cluster_cap_keeps_all_when_under_the_limit(app_module):
-    n = ds.GDELT_MAX_CRISES_PER_EVENT_CLUSTER
-    day = _dt(2026, 9, 24, 12, 0, 0)
-    crises = [_cluster_crisis(f'c{i}', 'United States', day, 38.9, -77.0, 50) for i in range(n)]
-    result = ds.GDELTConnector._cap_fanout_per_event_cluster(crises)
-    assert len(result) == n
-
-
-def test_event_cluster_cap_trims_to_the_limit_and_keeps_highest_confidence(app_module):
-    # Tie-break is confidence, NOT severity — same reasoning/measurement as
-    # the per-source-url cap's equivalent test above. Severity is
-    # deliberately uniform here so a regression back to severity-sorting
-    # wouldn't accidentally pass.
-    day = _dt(2026, 9, 24, 12, 0, 0)
-    crises = [_cluster_crisis(f'c{i}', 'United States', day, 38.9, -77.0, 50, confidence=i) for i in range(20)]
-    result = ds.GDELTConnector._cap_fanout_per_event_cluster(crises)
-    n = ds.GDELT_MAX_CRISES_PER_EVENT_CLUSTER
-    assert len(result) == n
-    assert sorted(c['confidence'] for c in result) == list(range(20 - n, 20))
-
-
-def test_event_cluster_cap_applies_independently_per_cluster(app_module):
-    day = _dt(2026, 9, 24, 12, 0, 0)
-    n = ds.GDELT_MAX_CRISES_PER_EVENT_CLUSTER
-    crises = (
-        [_cluster_crisis(f'us{i}', 'United States', day, 38.9, -77.0, 50) for i in range(20)]
-        + [_cluster_crisis(f'ru{i}', 'Russia', day, 55.75, 37.6, 50) for i in range(2)]
-    )
-    result = ds.GDELTConnector._cap_fanout_per_event_cluster(crises)
-    from_us = [c for c in result if c['country'] == 'United States']
-    from_ru = [c for c in result if c['country'] == 'Russia']
-    assert len(from_us) == n
-    assert len(from_ru) == 2
-
-
-def test_event_cluster_cap_passes_through_rows_missing_geo_or_date(app_module):
-    crises = [{'id': 'no-geo', 'country': None, 'date_start': None, 'latitude': None, 'longitude': None, 'severity': 50}]
-    result = ds.GDELTConnector._cap_fanout_per_event_cluster(crises)
-    assert len(result) == 1
 
 
 # ── _clean_article_title ──────────────────────────────────────────────────
@@ -610,55 +461,6 @@ def test_named_actor_under_violent_root_still_passes(app_module):
     # named actor (even alone) must still pass.
     row = make_row(actor1_name='UKRAINE', actor2_name='', event_code='190', quad_class='4')
     assert ds.GDELTConnector._parse_row(row) is not None
-
-
-# ── Per-(title, day) syndication fan-out cap ──────────────────────────────
-# Grounded in a real finding: one Australian PM/AI story was republished
-# verbatim across 21+ distinct *.com.au regional-newspaper domains, each its
-# own source_url (evading the per-URL cap) and often its own nearby
-# coordinate (evading the per-cluster cap too).
-
-def _title_day_crisis(id, title, date_start, confidence=50):
-    return {'id': id, 'title': title, 'date_start': date_start, 'confidence': confidence}
-
-
-def test_title_day_cap_keeps_all_when_under_the_limit(app_module):
-    n = ds.GDELT_MAX_CRISES_PER_EVENT_CLUSTER
-    day = _dt(2026, 9, 24, 12, 0, 0)
-    crises = [_title_day_crisis(f'c{i}', 'Regional Paper Runs Same AP Story', day) for i in range(n)]
-    result = ds.GDELTConnector._cap_fanout_per_title_day(crises)
-    assert len(result) == n
-
-
-def test_title_day_cap_trims_to_the_limit_and_keeps_highest_confidence(app_module):
-    day = _dt(2026, 9, 24, 12, 0, 0)
-    crises = [
-        _title_day_crisis(f'c{i}', 'Regional Paper Runs Same AP Story', day, confidence=i)
-        for i in range(20)
-    ]
-    result = ds.GDELTConnector._cap_fanout_per_title_day(crises)
-    n = ds.GDELT_MAX_CRISES_PER_EVENT_CLUSTER
-    assert len(result) == n
-    assert sorted(c['confidence'] for c in result) == list(range(20 - n, 20))
-
-
-def test_title_day_cap_excludes_the_generic_blank_actor_fallback_title(app_module):
-    # These share one uninformative title across genuinely distinct real
-    # events (confirmed live: 888 distinct source_urls behind it) — capping
-    # by shared title here would wrongly delete real, different data.
-    day = _dt(2026, 9, 24, 12, 0, 0)
-    crises = [
-        _title_day_crisis(f'c{i}', 'Conflict-related event in France', day)
-        for i in range(20)
-    ]
-    result = ds.GDELTConnector._cap_fanout_per_title_day(crises)
-    assert len(result) == 20
-
-
-def test_title_day_cap_passes_through_rows_missing_a_date(app_module):
-    crises = [{'id': 'no-date', 'title': 'Some Title', 'date_start': None, 'confidence': 50}]
-    result = ds.GDELTConnector._cap_fanout_per_title_day(crises)
-    assert len(result) == 1
 
 
 # ── Retroactive content-quality detectors (for cleanup_duplicate_crises.py) ─
@@ -843,16 +645,23 @@ def test_resolve_real_titles_does_not_crash_on_empty_list(app_module):
     assert ds.GDELTConnector._resolve_real_titles([]) == []
 
 
-def test_fetch_recent_events_calls_title_resolution_after_the_fanout_caps(app_module):
-    # Order matters: title resolution must run on the SURVIVORS of the
-    # fan-out caps, not on every raw parsed row, or it wastes real network
-    # calls resolving titles for rows about to be dropped as duplicates.
-    with patch('data_sources.gdelt.GDELTConnector._get_recent_timestamps', return_value=['20260101000000']), \
-         patch('data_sources.gdelt.GDELTConnector._fetch_event_rows', return_value=[make_row()]), \
-         patch('data_sources.gdelt.GDELTConnector._resolve_real_titles', side_effect=lambda c: c) as mock_resolve:
-        ds.GDELTConnector.fetch_recent_events()
-    assert mock_resolve.called
-    # Called with a list (the post-cap survivors), not raw TSV field lists.
-    call_arg = mock_resolve.call_args[0][0]
-    assert isinstance(call_arg, list)
-    assert all(isinstance(c, dict) for c in call_arg)
+def test_fetch_recent_events_resolves_titles_and_drops_nothing(app_module):
+    # Repeats are merged into stories after they are saved (services/stories.py), so ingest
+    # no longer drops them: every parsed row reaches title resolution, and titles are
+    # resolved once per distinct article.
+    rows = [make_row(global_event_id=str(i), source_url='https://example.com/same-article') for i in range(5)]
+    with patch('data_sources.gdelt.GDELTConnector._get_recent_timestamps', return_value=['20260101000000']),          patch('data_sources.gdelt.GDELTConnector._fetch_event_rows', return_value=rows),          patch('data_sources.gdelt.GDELTConnector._resolve_real_titles', side_effect=lambda c: c) as mock_resolve:
+        crises = ds.GDELTConnector.fetch_recent_events()
+    assert len(crises) == 5
+    assert all(isinstance(c, dict) for c in mock_resolve.call_args[0][0])
+
+
+def test_resolve_real_titles_fetches_each_distinct_article_once(app_module):
+    crises = [{'id': f'r{i}', 'title': 'auto', 'source_url': 'https://example.com/a'} for i in range(4)]
+    crises.append({'id': 'other', 'title': 'auto', 'source_url': 'https://example.com/b'})
+    with patch('data_sources.gdelt.fetch_real_page_metadata',
+               side_effect=lambda url: {'title': 'Real ' + url[-1], 'description': None}) as fetch:
+        ds.GDELTConnector._resolve_real_titles(crises)
+    assert fetch.call_count == 2
+    assert [c['title'] for c in crises] == ['Real a'] * 4 + ['Real b']
+

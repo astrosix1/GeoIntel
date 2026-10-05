@@ -275,3 +275,30 @@ class TestEndpoint:
     def test_unknown_crisis_is_404(self, client, crisis_id, user_id):
         res = _get(client, 'does-not-exist', user_id, plan_status='active')
         assert res.status_code == 404
+
+
+class TestStoryAware:
+    def test_prompt_carries_the_extracted_facts_and_every_source_count(self, crisis_id, db_session):
+        import json
+        db_session.query(Crisis).filter(Crisis.id == crisis_id).update({
+            'facts': json.dumps({'summary': 'A tunnel collapsed.', 'place': 'Obuasi', 'killed': 5, 'injured': None,
+                                 'scale_cues': []}),
+            'source_count': 3,
+        })
+        db_session.commit()
+        fake = FakeAnthropic(response=payload(3))
+        with patch.object(scenarios, 'anthropic_client', fake):
+            generate_scenarios(crisis_id)
+        prompt = fake.calls[0]['messages'][0]['content']
+        assert 'Killed (stated in the article): 5' in prompt and 'merges reports from 3 outlets' in prompt
+
+    def test_a_new_source_or_new_facts_rebuilds_the_cached_scenarios(self, crisis_id, db_session):
+        fake = FakeAnthropic(response=payload(3))
+        with patch.object(scenarios, 'anthropic_client', fake):
+            generate_scenarios(crisis_id)
+            generate_scenarios(crisis_id)
+            assert len(fake.calls) == 1
+            db_session.query(Crisis).filter(Crisis.id == crisis_id).update({'source_count': 2})
+            db_session.commit()
+            generate_scenarios(crisis_id)
+        assert len(fake.calls) == 2

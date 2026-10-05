@@ -1,20 +1,10 @@
 """
-Tests for fetch_real_page_metadata() (data_sources.py) and
-GET /api/crises/<id>/real-headline (app.py) — the lazy real-headline +
-pin-refinement fetch for GDELT-sourced crises.
+Tests for fetch_real_page_metadata() (data_sources) and
+GET /api/crises/<id>/real-headline — the lazy real-headline fetch for
+crises whose stored title is auto-generated.
 
-GDELT's raw export has no article text at all (copyright reasons), so a
-crisis's stored title is auto-generated (see GDELTConnector._build_title)
-and its pin sits wherever GDELT's own geocoding resolved it — often a
-coarse country/capital point for verbal-conflict events, confirmed
-directly against this app's live data (dozens of unrelated crises sharing
-one exact coordinate). This endpoint fetches the crisis's real source_url
-once, lazily, the first time it's opened: extracts a real title, and for
-GDELT crises, feeds the real title+description through the same
-AI-extraction + Nominatim pipeline Phase 5 built for NewsAPI to find (and
-persist) a more specific pin location. Deliberately NOT run during sync —
-that would mean scraping + geocoding every one of ~1,300+ GDELT events per
-hour.
+Pin-location refinement used to live in this endpoint; it is now its own
+service (services/location_refine.py, tests in test_location_refine.py).
 """
 from unittest.mock import patch, MagicMock
 
@@ -63,7 +53,7 @@ def _html_response(title_html=None, description_html=None, image_url=None, video
 def test_extracts_real_title_and_description(app_module):
     with patch('data_sources.utils.requests.get', return_value=_html_response('Real Headline', 'A real summary')):
         result = ds.fetch_real_page_metadata('https://example.com/a')
-    assert result == {'title': 'Real Headline', 'description': 'A real summary', 'image_url': None, 'video_url': None}
+    assert result == {'title': 'Real Headline', 'description': 'A real summary', 'image_url': None, 'video_url': None, 'excerpt': None}
 
 
 def test_extracts_og_image_and_video(app_module):
@@ -125,7 +115,7 @@ def test_collapses_whitespace(app_module):
 def test_missing_title_but_present_description_is_not_none(app_module):
     with patch('data_sources.utils.requests.get', return_value=_html_response(None, 'Only a description')):
         result = ds.fetch_real_page_metadata('https://example.com/a')
-    assert result == {'title': None, 'description': 'Only a description', 'image_url': None, 'video_url': None}
+    assert result == {'title': None, 'description': 'Only a description', 'image_url': None, 'video_url': None, 'excerpt': None}
 
 
 def test_returns_none_when_page_has_neither_title_nor_description(app_module):
@@ -188,67 +178,3 @@ def test_endpoint_caches_result_and_does_not_refetch(client, db_session):
         client.get('/api/crises/rh-cached/real-headline')
         client.get('/api/crises/rh-cached/real-headline')
     assert mock_fetch.call_count == 1
-
-
-def test_location_refinement_only_attempted_for_gdelt_crises(client, db_session):
-    # A NewsAPI-sourced crisis already has its own real geocoding path
-    # (LOCATION_MAP / Phase 5's AI+Nominatim on ingest) — this endpoint's
-    # location refinement is specifically for GDELT's coarser pins.
-    seed_crisis(db_session, id='rh-newsapi', source='NewsAPI')
-    with patch('blueprints.crises.fetch_real_page_metadata',
-               return_value={'title': 'Some Headline', 'description': 'Some description'}), \
-         patch('blueprints.crises._extract_incident_location') as mock_extract:
-        resp = client.get('/api/crises/rh-newsapi/real-headline')
-    assert resp.get_json()['location'] is None
-    mock_extract.assert_not_called()
-
-
-def test_location_refinement_updates_and_persists_for_gdelt_crisis(client, db_session):
-    seed_crisis(db_session, id='rh-gdelt-refine', source='GDELT', latitude=38.9, longitude=-77.0, country='United States')
-    with patch('blueprints.crises.fetch_real_page_metadata',
-               return_value={'title': 'Clashes reported', 'description': 'Fighting broke out near the border town'}), \
-         patch('blueprints.crises._extract_incident_location', return_value='Some Border Town'), \
-         patch('blueprints.crises.NominatimGeocoder') as mock_geocoder:
-        mock_geocoder.geocode.return_value = {'lat': 12.34, 'lon': 56.78, 'country': 'Ukraine'}
-        resp = client.get('/api/crises/rh-gdelt-refine/real-headline')
-
-    body = resp.get_json()
-    assert body['location'] == {'lat': 12.34, 'lon': 56.78, 'country': 'Ukraine', 'name': 'Some Border Town'}
-
-    # Persisted to the DB, not just returned — a pin's position is part of
-    # the shared map everyone sees, unlike the headline.
-    refreshed = db_session.query(Crisis).filter(Crisis.id == 'rh-gdelt-refine').first()
-    assert refreshed.latitude == 12.34
-    assert refreshed.longitude == 56.78
-    assert refreshed.country == 'Ukraine'
-    assert refreshed.location_confidence == 90
-
-
-def test_no_location_refinement_when_extraction_finds_nothing(client, db_session):
-    seed_crisis(db_session, id='rh-gdelt-noextract', source='GDELT', latitude=1.0, longitude=1.0)
-    with patch('blueprints.crises.fetch_real_page_metadata',
-               return_value={'title': 'A generic statement', 'description': None}), \
-         patch('blueprints.crises._extract_incident_location', return_value=None):
-        resp = client.get('/api/crises/rh-gdelt-noextract/real-headline')
-
-    assert resp.get_json()['location'] is None
-    unchanged = db_session.query(Crisis).filter(Crisis.id == 'rh-gdelt-noextract').first()
-    assert unchanged.latitude == 1.0
-    assert unchanged.longitude == 1.0
-
-
-def test_no_location_refinement_when_geocoding_has_no_country(client, db_session):
-    # Guards the same real edge case NominatimGeocoder callers elsewhere
-    # already guard: a geocode hit with no country must not overwrite a
-    # crisis's real, existing country with a blank one.
-    seed_crisis(db_session, id='rh-gdelt-nocountry', source='GDELT', latitude=1.0, longitude=1.0)
-    with patch('blueprints.crises.fetch_real_page_metadata',
-               return_value={'title': 'Clashes reported', 'description': 'Somewhere'}), \
-         patch('blueprints.crises._extract_incident_location', return_value='Somewhere'), \
-         patch('blueprints.crises.NominatimGeocoder') as mock_geocoder:
-        mock_geocoder.geocode.return_value = {'lat': 5.0, 'lon': 5.0, 'country': None}
-        resp = client.get('/api/crises/rh-gdelt-nocountry/real-headline')
-
-    assert resp.get_json()['location'] is None
-    unchanged = db_session.query(Crisis).filter(Crisis.id == 'rh-gdelt-nocountry').first()
-    assert unchanged.latitude == 1.0

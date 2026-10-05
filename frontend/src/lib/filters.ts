@@ -5,8 +5,8 @@ import type { EventsTab } from '../state/uiStore';
 // list and to what the globe draws, in both Events and Weather mode. Keeping
 // the rules here (not inside each component) is what keeps the two in sync.
 
-// Events: "Major" is a GDELT severity of 70 or more.
-export const MAJOR_SEVERITY = 70;
+// Events: "Major" is Severe or Critical on the five-level scale (60 or more).
+export const MAJOR_SEVERITY = 60;
 
 export function applyCrisisFilter(list: CrisisSummary[], tab: EventsTab, category: string | null): CrisisSummary[] {
   if (tab === 'major') return list.filter((c) => c.severity >= MAJOR_SEVERITY);

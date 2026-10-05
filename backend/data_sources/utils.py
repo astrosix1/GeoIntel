@@ -100,6 +100,31 @@ def _clean_article_title(title, source_name=None):
     return title
 
 
+EXCERPT_CHARS = 1500
+_SCRIPT_STYLE_RE = re.compile(r'<(script|style|noscript|svg|nav|header|footer|aside|form)\b[^>]*>.*?</\1>',
+                              re.IGNORECASE | re.DOTALL)
+_PARAGRAPH_RE = re.compile(r'<p\b[^>]*>(.*?)</p>', re.IGNORECASE | re.DOTALL)
+_TAG_RE = re.compile(r'<[^>]+>')
+
+
+def _body_excerpt(page_html):
+    """The first ~1,500 characters of the article's paragraph text, or None.
+    Only <p> text of reasonable length is kept, which skips menus and captions."""
+    import html as html_module
+    stripped = _SCRIPT_STYLE_RE.sub(' ', page_html[:400000])
+    parts, total = [], 0
+    for raw in _PARAGRAPH_RE.findall(stripped):
+        text = re.sub(r'\s+', ' ', html_module.unescape(_TAG_RE.sub(' ', raw))).strip()
+        if len(text) < 60:
+            continue
+        parts.append(text)
+        total += len(text)
+        if total >= EXCERPT_CHARS:
+            break
+    excerpt = ' '.join(parts)[:EXCERPT_CHARS].strip()
+    return excerpt or None
+
+
 def fetch_real_page_metadata(url):
     """Real {'title', 'description'} for a live web page (either may be
     None if the page doesn't have one), or None if the fetch fails or the
@@ -134,9 +159,11 @@ def fetch_real_page_metadata(url):
         description = _clean(desc_match.group(1)) if desc_match else None
         image_url = _clean_url(_extract_og_content(response.text, 'og:image'))
         video_url = _clean_url(_extract_og_content(response.text, 'og:video'))
-        if title is None and description is None and image_url is None and video_url is None:
+        excerpt = _body_excerpt(response.text)
+        if title is None and description is None and image_url is None and video_url is None and not excerpt:
             return None
-        return {'title': title, 'description': description, 'image_url': image_url, 'video_url': video_url}
+        return {'title': title, 'description': description, 'image_url': image_url, 'video_url': video_url,
+                'excerpt': excerpt}
     except Exception as e:
         logger.warning(f"Real page metadata fetch failed for '{url}': {e}")
         return None
