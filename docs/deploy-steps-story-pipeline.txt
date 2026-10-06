@@ -1,0 +1,42 @@
+DEPLOY STEPS FOR THE STORY PIPELINE (commit 3f3e3e5)
+
+1. MIGRATIONS - automatic
+   The start command (backend/Procfile) runs scripts/ensure_db.py before the app,
+   and that runs "alembic upgrade head". Railway should redeploy from the push, and
+   the five new migrations apply on that start:
+     f3c9a1d7e502, a5d8c2f1b934, c7e1b4a9d256, d4b7e9a1c836, e2a6c8d4f917
+   Check the deploy logs for lines like "Running upgrade ... -> e2a6c8d4f917".
+   (Also still pending from earlier work, if not done: the 004 watchlist SQL in Supabase.)
+
+2. SET ANTHROPIC_API_KEY
+   a. Railway dashboard -> your backend service -> Variables tab.
+   b. New Variable: name ANTHROPIC_API_KEY, value = your key
+      (console.anthropic.com -> API Keys).
+   c. Save. Railway redeploys on its own.
+   Optional caps that exist now:
+     LOCATION_REFINE_PER_RUN   events read and refined per 20-minute run (default 60)
+     STORY_MERGE_AI_PER_RUN    borderline headline pairs the AI may judge per run (default 40)
+     ANTHROPIC_FACTS_MODEL / ANTHROPIC_LOCATION_MODEL / ANTHROPIC_MERGE_MODEL
+       (default: Haiku, the small cheap model)
+
+3. RESCORE EXISTING EVENTS - once, after the deploy is up
+   In the service: three-dot menu -> Run command, then run:
+
+     python -m services.severity
+
+   With the Railway CLI: railway run python -m services.severity
+   (note: "railway run" executes on your own machine against the production
+   variables. Fine for this, but be careful with other commands.)
+   New events are scored on ingest, so this only fixes the existing ones.
+   Optional merge backfill: python -m services.stories --days 7
+   (the hourly sync merges new events on its own).
+
+4. CHECK IT WORKED
+   About 20 minutes after the key is set, open an event. Events whose article has
+   been read show a rating level and a "Why this rating" list. Until then they stay
+   capped at Serious, so the "Major" filter (Severe and above) will be empty at first.
+
+OTHER OWNER ACTIONS STILL OPEN
+   - Set ALERT_FROM_EMAIL and OPEN_METEO_API_KEY if not already set.
+   - Confirm ACLED commercial licensing and credentials.
+   - Check RainViewer commercial terms.

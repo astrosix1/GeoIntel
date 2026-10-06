@@ -3,7 +3,7 @@ import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { CrisisSummary, Storm } from '../api/types';
 import { useUiStore } from '../state/uiStore';
-import { useEntitlements, useStormsQuery, useVisibleCrises, useWatchQuery } from '../state/queries';
+import { useEntitlements, useHazardDetailQuery, useStormsQuery, useVisibleCrises, useWatchQuery } from '../state/queries';
 import { isLiteDevice } from '../lite';
 import { syncBaseLayers } from './baseLayers';
 import {
@@ -19,6 +19,7 @@ import { isOnNearHemisphere } from './hemisphere';
 import { ALERT_COLORS, hazardIcon } from './hazards';
 import { useRadar } from './useRadar';
 import { applyCrisisFilter, applyHazardFilter } from '../lib/filters';
+import { clearHazardGeometry, setHazardGeometry } from './hazardGeometry';
 
 // Real, current OpenFreeMap style URL (no API key required).
 // See https://openfreemap.org/quick_start/ — "liberty" is OpenFreeMap's full-detail style.
@@ -73,6 +74,11 @@ export default function Globe() {
   const { data: crises } = useVisibleCrises(scope, timeRange);
   const { data: stormData } = useStormsQuery(activeMode === 'weather');
   const { data: watchData } = useWatchQuery();
+  const selectedHazard = pinnedSelection?.kind === 'hazard' ? pinnedSelection.hazard : null;
+  const { data: hazardDetail } = useHazardDetailQuery(
+    activeMode === 'weather' && selectedHazard ? selectedHazard.event_type : null,
+    activeMode === 'weather' && selectedHazard ? selectedHazard.id : null,
+  );
   const satellite = useUiStore((s) => s.satellite);
   const relief = useUiStore((s) => s.relief);
   const { premium } = useEntitlements();
@@ -323,6 +329,20 @@ export default function Globe() {
       placeMarkersRef.current = [];
     };
   }, [activeMode, mapReady, premium, watchData]);
+
+  // Weather mode: the selected hazard's track, wind zones, cone or affected area.
+  // Redrawn after a base-style change (satellite, relief), which clears custom layers.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    const show = activeMode === 'weather' && selectedHazard ? hazardDetail : null;
+    const draw = () => (show ? setHazardGeometry(map, show) : clearHazardGeometry(map));
+    draw();
+    map.on('style.load', draw);
+    return () => {
+      map.off('style.load', draw);
+    };
+  }, [activeMode, mapReady, selectedHazard, hazardDetail]);
 
   // Weather mode: a dot where the forecast point was clicked.
   useEffect(() => {

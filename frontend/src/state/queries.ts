@@ -9,6 +9,7 @@ import {
   addWatchPlace,
   deleteWatchPlace,
   fetchActiveStorms,
+  fetchHazardDetail,
   fetchAlertSettings,
   fetchAlerts,
   fetchWatch,
@@ -245,6 +246,19 @@ export function useStormsQuery(enabled: boolean) {
     queryFn: fetchActiveStorms,
     enabled,
     staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+// Track, footprint and exposure for one hazard. Shared by the map layers and the
+// Analysis panel. GDACS revises these a few times a day.
+export function useHazardDetailQuery(eventType: string | null, id: number | null) {
+  return useQuery({
+    queryKey: ['hazard-detail', eventType, id],
+    queryFn: () => fetchHazardDetail(eventType as string, id as number),
+    enabled: eventType !== null && id !== null,
+    retry: false,
+    staleTime: 15 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
 }

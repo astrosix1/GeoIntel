@@ -13,6 +13,7 @@ import type {
   SavedEvent,
   ScenariosResponse,
   StormsResponse,
+  HazardDetail,
   UserPrefs,
   AlertSettings,
   AlertsResponse,
@@ -245,6 +246,14 @@ export async function fetchCountryProfile(countryCode: string): Promise<CountryP
   const res = await fetch(`${API_BASE_URL}/api/countries/${encodeURIComponent(countryCode)}`);
   if (!res.ok) {
     throw new Error(`Failed to fetch country profile for ${countryCode}: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function fetchHazardDetail(eventType: string, id: number): Promise<HazardDetail> {
+  const res = await fetch(`${API_BASE_URL}/api/weather/storms/${encodeURIComponent(eventType)}/${id}`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch hazard detail: ${res.status} ${res.statusText}`);
   }
   return res.json();
 }

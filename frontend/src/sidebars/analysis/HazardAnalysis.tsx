@@ -1,5 +1,7 @@
+import { Fragment } from 'react';
 import type { Storm } from '../../api/types';
 import { ALERT_COLORS, hazardIcon } from '../../globe/hazards';
+import { useHazardDetailQuery } from '../../state/queries';
 import styles from './EventAnalysis.module.css';
 import hazardStyles from './HazardAnalysis.module.css';
 
@@ -18,6 +20,7 @@ function formatSeverity(hazard: Storm): string | null {
 // Analysis view for a Weather-mode pin. Everything shown is a real GDACS
 // field; anything GDACS didn't report is simply left out.
 export default function HazardAnalysis({ hazard }: { hazard: Storm }) {
+  const { data: detail, isLoading: detailLoading, isError: detailError } = useHazardDetailQuery(hazard.event_type, hazard.id);
   const alert = hazard.alert_level ?? 'Unknown';
   const severity = formatSeverity(hazard);
   const from = formatDate(hazard.from_date);
@@ -73,6 +76,45 @@ export default function HazardAnalysis({ hazard }: { hazard: Storm }) {
             </>
           )}
         </dl>
+      </div>
+
+      <div className={styles.section}>
+        <div className={styles.sectionTitle}>Track and exposure</div>
+        {detailLoading && <span className={styles.loading}>Loading what GDACS publishes for this event...</span>}
+        {!detailLoading && (detailError || (detail && detail.unavailable.length > 0)) && (
+          <div className={styles.mediaCaption}>
+            {detailError || detail?.unavailable.includes('geometry') ? 'Track and area are unavailable right now. ' : ''}
+            {detailError || detail?.unavailable.includes('exposure') ? 'Exposure figures are unavailable right now. ' : ''}
+            Try again shortly.
+          </div>
+        )}
+        {detail && !detail.unavailable.includes('geometry') && (
+          <div className={styles.mediaCaption}>
+            {hazard.event_type === 'TC'
+              ? detail.track
+                ? 'Map: past path (solid), forecast path (dashed), wind zones and the forecast uncertainty cone.'
+                : 'GDACS has not published a track for this event.'
+              : detail.area
+                ? 'Map: the affected area as outlined by GDACS (simplified for display).'
+                : 'GDACS has not published an affected area for this event.'}
+          </div>
+        )}
+        {detail?.exposure && detail.exposure.length > 0 && (
+          <dl className={hazardStyles.facts}>
+            {detail.exposure.map((item) => (
+              <Fragment key={item.label}>
+                <dt>{item.label}</dt>
+                <dd title={item.note ?? undefined}>
+                  {item.value === null ? 'Not reported' : item.value.toLocaleString()}
+                  <span className={styles.sourceOutlet}> {item.basis}</span>
+                </dd>
+              </Fragment>
+            ))}
+          </dl>
+        )}
+        {detail && !detail.unavailable.includes('exposure') && detail.exposure && detail.exposure.length === 0 && (
+          <div className={styles.mediaCaption}>GDACS has not published exposure figures for this event.</div>
+        )}
       </div>
 
       <div className={styles.section}>

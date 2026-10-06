@@ -102,6 +102,7 @@ class GDACSConnector:
 
                 storms.append({
                     'id': props.get('eventid'),
+                    'episode_id': props.get('episodeid'),
                     'name': props.get('eventname') or props.get('name'),
                     'event_type': event_type,
                     'hazard': _HAZARD_LABELS.get(event_type),

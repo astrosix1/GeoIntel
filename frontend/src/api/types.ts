@@ -269,6 +269,35 @@ export interface Storm {
   source: string;
 }
 
+// GET /api/weather/storms/<type>/<id>: what GDACS publishes around one hazard.
+// Any part GDACS does not publish for the event is null.
+export interface HazardFeature {
+  type: 'Feature';
+  geometry: import('geojson').Geometry;
+  properties: Record<string, unknown>;
+}
+
+export interface HazardExposureItem {
+  label: string;
+  value: number | null;
+  note: string | null;
+  basis: string;
+}
+
+export interface HazardDetail {
+  id: number;
+  event_type: string;
+  track: HazardFeature[] | null;
+  wind_zones: HazardFeature[] | null;
+  cone: HazardFeature[] | null;
+  area: HazardFeature[] | null;
+  exposure: HazardExposureItem[] | null;
+  // Parts that could not be fetched this time ('geometry' / 'exposure'), as opposed to not published.
+  unavailable: string[];
+  source: string;
+  generated_at: string;
+}
+
 export interface StormsResponse {
   storms: Storm[];
   count: number;

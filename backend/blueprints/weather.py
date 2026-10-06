@@ -10,6 +10,7 @@ from flask import Blueprint, jsonify, request
 
 from extensions import limiter
 from services.forecast import ForecastUnavailable, InvalidCoordinates, get_forecast
+from services.hazard_detail import get_hazard_detail
 from services.weather import get_active_storms
 
 logger = logging.getLogger(__name__)
@@ -45,4 +46,23 @@ def get_point_forecast():
     except Exception as e:
         logger.error(f"Error fetching forecast: {e}")
         return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
+    return jsonify(result)
+
+
+@weather_bp.route('/storms/<event_type>/<event_id>', methods=['GET'])
+@limiter.limit("30 per minute")
+def get_storm_detail(event_type, event_id):
+    """Track, footprint and people exposed for one active hazard (GDACS data).
+    Parts GDACS does not publish for this event come back as null."""
+    if event_type not in ('TC', 'FL', 'WF', 'DR') or not event_id.isdigit():
+        return jsonify({'error': 'Unknown hazard'}), 400
+    try:
+        result = get_hazard_detail(event_type, event_id)
+    except Exception as e:
+        logger.error(f"Error fetching hazard detail: {e}")
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
+    if result == 'not_found':
+        return jsonify({'error': 'Hazard not found or no longer active'}), 404
+    if result == 'unavailable':
+        return jsonify({'error': 'hazard_detail_unavailable'}), 503
     return jsonify(result)
