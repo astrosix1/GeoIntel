@@ -34,6 +34,18 @@ def run_alembic(*args):
     return subprocess.run(['alembic', *args], cwd=BACKEND_DIR).returncode
 
 
+def score_unscored():
+    """Gives a severity score to any story that has none (events saved before scoring existed, or by an
+    older version). Only touches unscored rows, so on an already-scored database it does nothing, and a
+    problem here is reported but never stops the app from starting. Returns the number scored, or None."""
+    try:
+        from services.severity import rescore_all
+        return rescore_all(only_missing=True)
+    except Exception as e:  # never block start-up over a scoring problem
+        print(f'Skipped scoring unscored stories: {e}')
+        return None
+
+
 def main():
     tables = set(inspect(engine).get_table_names())
     has_app_tables = 'crises' in tables
@@ -46,6 +58,11 @@ def main():
         code = run_alembic('stamp', 'head')
     else:
         code = run_alembic('upgrade', 'head')
+
+    if code == 0:
+        scored = score_unscored()
+        if scored:
+            print(f'Scored {scored} stories that had no severity score yet.')
 
     sys.exit(code)
 

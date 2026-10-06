@@ -19,15 +19,12 @@ DEPLOY STEPS FOR THE STORY PIPELINE (commit 3f3e3e5)
      ANTHROPIC_FACTS_MODEL / ANTHROPIC_LOCATION_MODEL / ANTHROPIC_MERGE_MODEL
        (default: Haiku, the small cheap model)
 
-3. RESCORE EXISTING EVENTS - once, after the deploy is up
-   In the service: three-dot menu -> Run command, then run:
-
-     python -m services.severity
-
-   With the Railway CLI: railway run python -m services.severity
-   (note: "railway run" executes on your own machine against the production
-   variables. Fine for this, but be careful with other commands.)
-   New events are scored on ingest, so this only fixes the existing ones.
+3. RESCORING EXISTING EVENTS - automatic
+   Every start-up (after the migrations) now gives a severity score to any event that has none.
+   It only touches unscored events, so on an already-scored database it does nothing, and a problem
+   there never stops the app starting. Nothing for you to run. The deploy log prints
+   "Scored N stories that had no severity score yet." the first time.
+   To run it by hand anyway: python -m services.severity --missing   (without --missing it rescores everything)
    Optional merge backfill: python -m services.stories --days 7
    (the hourly sync merges new events on its own).
 

@@ -1,6 +1,7 @@
 """The strict severity scale, row by row."""
 import json
 import uuid
+from unittest.mock import patch
 
 import pytest
 
@@ -113,3 +114,72 @@ class TestStored:
         db_session.commit()
         db_session.expire_all()
         assert db_session.query(Crisis).filter(Crisis.id == cid).first().severity <= 59
+
+
+class TestScoreMissing:
+    def test_only_unscored_stories_are_touched(self, app_module, db_session):
+        scored = db_session.query(Crisis).filter(Crisis.id == seed(db_session)).first()
+        sev.rescore(scored)
+        # a score a human can recognise: if it were rescored it would go back to a headline-only estimate
+        scored.severity = 77
+        unscored = seed(db_session)
+        db_session.commit()
+        before = scored.date_updated
+        assert sev.rescore_all(only_missing=True) >= 1
+        db_session.expire_all()
+        kept = db_session.query(Crisis).filter(Crisis.id == scored.id).first()
+        assert kept.severity == 77 and kept.date_updated == before
+        fixed = db_session.query(Crisis).filter(Crisis.id == unscored).first()
+        assert fixed.severity_basis is not None and fixed.severity <= 59
+
+    def test_running_it_again_scores_nothing(self, app_module, db_session):
+        seed(db_session)
+        assert sev.rescore_all(only_missing=True) >= 1
+        assert sev.rescore_all(only_missing=True) == 0
+
+    def test_inactive_and_other_sources_are_left_alone(self, app_module, db_session):
+        other = db_session.query(Crisis).filter(Crisis.id == seed(db_session)).first()
+        other.source = 'ACLED'
+        gone = db_session.query(Crisis).filter(Crisis.id == seed(db_session)).first()
+        gone.is_active = False
+        db_session.commit()
+        sev.rescore_all(only_missing=True)
+        db_session.expire_all()
+        assert db_session.query(Crisis).filter(Crisis.id == other.id).first().severity_basis is None
+        assert db_session.query(Crisis).filter(Crisis.id == gone.id).first().severity_basis is None
+
+
+class TestStartupScoring:
+    @staticmethod
+    def load():
+        import importlib.util
+        from pathlib import Path
+        path = Path(__file__).resolve().parent.parent / 'scripts' / 'ensure_db.py'
+        spec = importlib.util.spec_from_file_location('ensure_db_under_test', path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_scores_after_a_successful_migration(self, app_module, db_session):
+        module = self.load()
+        cid = seed(db_session)
+        with patch.object(module, 'run_alembic', return_value=0):
+            with pytest.raises(SystemExit) as done:
+                module.main()
+        assert done.value.code == 0
+        db_session.expire_all()
+        assert db_session.query(Crisis).filter(Crisis.id == cid).first().severity_basis is not None
+
+    def test_a_failed_migration_skips_scoring_and_keeps_its_exit_code(self, app_module, db_session):
+        module = self.load()
+        with patch.object(module, 'run_alembic', return_value=3), patch.object(module, 'score_unscored') as score:
+            with pytest.raises(SystemExit) as done:
+                module.main()
+        assert done.value.code == 3
+        assert score.call_count == 0
+
+    def test_a_scoring_problem_never_stops_start_up(self, app_module, capsys):
+        module = self.load()
+        with patch('services.severity.rescore_all', side_effect=RuntimeError('db busy')):
+            assert module.score_unscored() is None
+        assert 'Skipped scoring' in capsys.readouterr().out

@@ -148,16 +148,28 @@ def rescore(crisis):
     return result
 
 
-def rescore_all(session=None):
-    """Rescore every active GDELT story. Idempotent; CLI: python -m services.severity."""
+COMMIT_EVERY = 2000
+
+
+def rescore_all(session=None, only_missing=False):
+    """Rescore active GDELT stories and return how many were scored. Idempotent.
+
+    With only_missing=True, stories that already have a severity basis are left alone (and their
+    updated-at time untouched), so it is cheap to run on every start-up.
+    CLI: python -m services.severity [--missing]"""
     from models import Session, Crisis
     own = session is None
     session = session or Session()
     count = 0
     try:
-        for crisis in session.query(Crisis).filter(Crisis.source == 'GDELT', Crisis.is_active.is_(True)):
+        query = session.query(Crisis).filter(Crisis.source == 'GDELT', Crisis.is_active.is_(True))
+        if only_missing:
+            query = query.filter(Crisis.severity_basis.is_(None))
+        for crisis in query:
             rescore(crisis)
             count += 1
+            if count % COMMIT_EVERY == 0:
+                session.commit()
         session.commit()
     finally:
         if own:
@@ -166,4 +178,6 @@ def rescore_all(session=None):
 
 
 if __name__ == '__main__':
-    print(f'Rescored {rescore_all()} stories')
+    import sys
+    missing = '--missing' in sys.argv[1:]
+    print(f"Scored {rescore_all(only_missing=missing)} stories{' that had no score' if missing else ''}")
