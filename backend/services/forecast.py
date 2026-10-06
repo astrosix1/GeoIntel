@@ -25,6 +25,7 @@ GEOCODING_FREE_BASE = 'https://geocoding-api.open-meteo.com'
 GEOCODING_COMMERCIAL_BASE = 'https://customer-geocoding-api.open-meteo.com'
 
 CACHE_TTL = 15 * 60
+RECENT_HOURS = 24      # the hours just gone, for "what just happened here"
 HOURS_SHOWN = 168   # the whole 7 days, for the timeline scrubber
 TIMEOUT = 8
 
@@ -37,6 +38,7 @@ HOURLY_FIELDS = [
     'temperature_2m', 'precipitation_probability', 'precipitation',
     'wind_speed_10m', 'wind_gusts_10m', 'weather_code',
 ]
+RECENT_FIELDS = ['temperature_2m', 'precipitation']
 DAILY_FIELDS = [
     'weather_code', 'temperature_2m_max', 'temperature_2m_min', 'precipitation_sum',
     'precipitation_probability_max', 'wind_gusts_10m_max', 'uv_index_max',
@@ -111,6 +113,7 @@ def get_forecast(lat, lon):
                 'hourly': ','.join(HOURLY_FIELDS),
                 'daily': ','.join(DAILY_FIELDS),
                 'forecast_days': 7,
+                'past_hours': RECENT_HOURS,
                 'timezone': 'auto',
             }),
             timeout=TIMEOUT,
@@ -127,14 +130,18 @@ def get_forecast(lat, lon):
 
     start = _first_hour_index(hourly_times, current.get('time', ''))
     end = start + HOURS_SHOWN
+    recent_start = max(0, start - RECENT_HOURS)
     result = {
         'lat': body.get('latitude', lat),
         'lon': body.get('longitude', lon),
         'timezone': body.get('timezone'),
         'elevation_m': body.get('elevation'),
+        'utc_offset_seconds': body.get('utc_offset_seconds'),
         'current': {'time': current.get('time'), **{k: current.get(k) for k in CURRENT_FIELDS}},
         'hourly': {'time': hourly_times[start:end], **_slice(hourly, HOURLY_FIELDS, start, end)},
         'daily': {'time': daily.get('time', []), **_slice(daily, DAILY_FIELDS)},
+        # The model's own values for the hours just gone (analysis, not station readings).
+        'recent': {'time': hourly_times[recent_start:start], **_slice(hourly, RECENT_FIELDS, recent_start, start)},
         'units': {
             'current': body.get('current_units', {}),
             'hourly': body.get('hourly_units', {}),

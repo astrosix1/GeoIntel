@@ -73,6 +73,10 @@ interface UiState {
   activeMode: GlobeMode;
   setActiveMode: (mode: GlobeMode) => void;
 
+  // A one-line note shown in Weather mode, for example when a shared link points at a hazard that has ended.
+  weatherNotice: string | null;
+  setWeatherNotice: (notice: string | null) => void;
+
   // Weather mode's All / Major / Categories filter (the same shape as the
   // Events one above, kept separate because the categories differ: here they
   // are GDACS hazard codes). Applied to both the list and the globe.
@@ -154,6 +158,8 @@ export const useUiStore = create<UiState>((set) => ({
   // visibility/hover state — it only changes what's rendered on the globe
   // itself (plan's explicit requirement).
   setActiveMode: (mode) => set({ activeMode: mode }),
+  weatherNotice: null,
+  setWeatherNotice: (notice) => set({ weatherNotice: notice }),
 
   radarOn: true,
   radarPlaying: true,

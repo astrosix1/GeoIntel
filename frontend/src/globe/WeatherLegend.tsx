@@ -1,3 +1,4 @@
+import { timeAgo } from '../lib/time';
 import { useRadarFramesQuery, useStormsQuery } from '../state/queries';
 import { useUiStore } from '../state/uiStore';
 import { HAZARD_TYPES } from './hazards';
@@ -20,6 +21,8 @@ export default function WeatherLegend() {
   const setRadarPlaying = useUiStore((s) => s.setRadarPlaying);
   const radarTime = useUiStore((s) => s.radarTime);
   const radarError = useRadarFramesQuery(activeMode === 'weather' && radarOn).isError;
+  const notice = useUiStore((s) => s.weatherNotice);
+  const setNotice = useUiStore((s) => s.setWeatherNotice);
 
   if (activeMode !== 'weather') return null;
 
@@ -82,6 +85,14 @@ export default function WeatherLegend() {
             : `Radar ${new Date((radarTime as number) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · past 2 hours`}
         </div>
       )}
+      {notice && (
+        <div className={styles.note}>
+          {notice}{' '}
+          <button type="button" className={styles.retry} onClick={() => setNotice(null)}>
+            Dismiss
+          </button>
+        </div>
+      )}
       <div className={styles.note}>
         {isLoading && 'Loading active events…'}
         {isError && (
@@ -93,7 +104,7 @@ export default function WeatherLegend() {
           </>
         )}
         {data && data.count === 0 && 'No active weather hazards reported right now.'}
-        {data && data.count > 0 && 'Live data from GDACS. Click a pin for details.'}
+        {data && data.count > 0 && `Live data from GDACS, checked ${timeAgo(data.generated_at)}. Click a pin for details.`}
       </div>
     </div>
   );

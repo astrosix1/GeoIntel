@@ -2,7 +2,7 @@
 
 Plan for the next round of Weather mode work. Everything here uses free data or data the app already has, apart from the optional AI items at the end. Earlier phases are in `docs/roadmap-phases-1-21-archive.md`. The story pipeline is in `docs/story-pipeline-plan.md`.
 
-Status: **Stages 1 (add6697), 2 (c45d945) and 3 (d3e2a03) committed. Stage 4 alert triggers implemented** (not committed); Stage 4 map layers and Stage 5 not started.
+Status: **Stages 1 (add6697), 2 (c45d945), 3 (d3e2a03) and 4 alert triggers (f7202e6) committed. Stage 5 implemented** (not committed). Only the Stage 4 map layers (and air quality) remain, both waiting on an owner decision.
 
 Stage 2 as built: the forecast now returns every remaining hour of the 7 days (about 164, was 48) and the point panel has a **Forecast timeline** scrubber that steps through them, labelled "Forecast, not observed". **Compare places** holds up to three places in the UI (not saved): now, today's high/low, 7-day rain, strongest gust, and any hazard whose pin is within 300 km (stated as pin distance, not footprint). It reuses the existing forecast endpoint, so no new backend route was needed; each place loads on its own so one failure does not hide the others. The scrubber moves the panel only, not the map layers. Free versus premium limits for compare were not set: it is three places for everyone.
 
@@ -82,6 +82,8 @@ Stage 4, alert triggers, as built: users set forecast limits in Dashboard > Aler
 - **Units and time:** °C or °F, km/h or mph, local or UTC time, remembered per user.
 - **Shareable links:** a URL that opens the map on a given hazard or place with the same view and layers.
 - **Honest states:** radar unavailable, forecast provider down, data age, shown plainly everywhere.
+
+Stage 5 as built: **Last 24 hours** block in the point panel (rain total, temperature range, hourly rain bars), from Open-Meteo's `past_hours` so the forecast and daily lists are unchanged; labelled as the model's analysis, not station readings. **Units and time:** one toggle for metric (°C, km/h) or imperial (°F, mph), and a Local time / UTC toggle that shifts every hour label; both remembered in the browser. **Shareable links:** Copy link on hazards and places; `?view=weather&hazard=TC-123` or `&lat=..&lon=..&label=..` opens Weather mode on it (validated, then removed from the address bar); a hazard that has ended opens Weather mode with a dismissible notice. **Honest states:** radar-unavailable, hazard-feed-down and forecast-unavailable messages already existed; added data age ("Updated 4 min ago", "checked just now") to the forecast and hazard legend. Not done: sharing a link with the radar or layer choices, and observed station data (a different provider).
 
 ## Optional AI features (need `ANTHROPIC_API_KEY`, premium, on demand)
 

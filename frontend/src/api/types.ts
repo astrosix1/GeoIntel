@@ -369,6 +369,8 @@ export interface Forecast {
   lon: number;
   timezone: string | null;
   elevation_m: number | null;
+  // Offset of the place's local time from UTC, in seconds (for the Local / UTC toggle).
+  utc_offset_seconds?: number | null;
   current: ForecastCurrent;
   hourly: {
     time: string[];
@@ -379,6 +381,8 @@ export interface Forecast {
     wind_gusts_10m?: number[];
     weather_code?: number[];
   };
+  // The model's own values for the hours just gone (analysis, not station readings); oldest first.
+  recent?: { time: string[]; temperature_2m?: (number | null)[]; precipitation?: (number | null)[] };
   daily: {
     time: string[];
     weather_code?: number[];

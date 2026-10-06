@@ -54,6 +54,30 @@ def _ok(body):
     return response
 
 
+class TestRecentHours:
+    def test_returns_the_hours_just_gone_without_shifting_the_rest(self):
+        body = _body()
+        body['utc_offset_seconds'] = -18000
+        with patch('services.forecast.requests.get', return_value=_ok(body)) as get:
+            result = get_forecast(29.8, -95.4)
+        assert get.call_args.kwargs['params']['past_hours'] == 24
+        # current hour is 10:00, so the 10 earlier hours supplied (00:00-09:00) are the recent block
+        assert result['recent']['time'][0] == '2026-10-03T00:00' and result['recent']['time'][-1] == '2026-10-03T09:00'
+        assert result['recent']['precipitation'] == [0.0] * 10 and len(result['recent']['temperature_2m']) == 10
+        assert result['hourly']['time'][0] == '2026-10-03T10:00'          # the forecast still starts now
+        assert result['utc_offset_seconds'] == -18000
+
+    def test_is_capped_at_24_hours_and_may_be_empty(self):
+        body = _body()
+        body['current']['time'] = '2026-10-04T10:15'                      # 34 hours of history available
+        with patch('services.forecast.requests.get', return_value=_ok(body)):
+            assert len(get_forecast(29.8, -95.4)['recent']['time']) == 24
+        body = _body()
+        body['current']['time'] = '2026-10-03T00:15'
+        with patch('services.forecast.requests.get', return_value=_ok(body)):
+            assert get_forecast(29.8, -95.5)['recent']['time'] == []
+
+
 class TestCheckCoordinates:
     def test_rounds_to_a_tenth_of_a_degree(self):
         assert check_coordinates('29.7604', '-95.3698') == (29.8, -95.4)

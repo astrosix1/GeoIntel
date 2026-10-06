@@ -1,12 +1,15 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { Forecast } from '../../api/types';
-import { compass, formatRain, formatSpeed, formatTemp, loadUnits, saveUnits } from '../../lib/units';
-import type { UnitSystem } from '../../lib/units';
+import { compass, formatRain, formatSpeed, formatTemp, loadTimeZone, loadUnits, saveTimeZone, saveUnits, toDisplayTime } from '../../lib/units';
+import type { TimeZoneMode, UnitSystem } from '../../lib/units';
+import { timeAgo } from '../../lib/time';
+import CopyLinkButton from '../../components/CopyLinkButton';
 import { describeWeather } from '../../lib/weatherCodes';
 import PremiumGate from '../../components/PremiumGate';
 import { useEntitlements, useForecastQuery } from '../../state/queries';
 import ComparePlaces from './ComparePlaces';
 import ForecastTimeline from './ForecastTimeline';
+import RecentHours from './RecentHours';
 import { MAX_COMPARE_PLACES, useUiStore } from '../../state/uiStore';
 import styles from './EventAnalysis.module.css';
 import forecastStyles from './PointForecast.module.css';
@@ -126,15 +129,32 @@ function Daily({ forecast, units }: { forecast: Forecast; units: UnitSystem }) {
 // from the forecast provider; anything it didn't return shows as a dash.
 export default function PointForecast({ lat, lon, label }: { lat: number; lon: number; label: string | null }) {
   const [units, setUnits] = useState<UnitSystem>(loadUnits);
+  const [timeZone, setTimeZone] = useState<TimeZoneMode>(loadTimeZone);
   const { premium } = useEntitlements();
   const setPendingWatchPoint = useUiStore((s) => s.setPendingWatchPoint);
   const setDashboardTab = useUiStore((s) => s.setDashboardTab);
   const setDashboardOpen = useUiStore((s) => s.setDashboardOpen);
-  const { data, isLoading, isError, refetch } = useForecastQuery(lat, lon);
+  const { data: forecast, isLoading, isError, refetch } = useForecastQuery(lat, lon);
+  // Hour labels come from these times, so shifting them once here makes every block follow the clock choice.
+  const data = useMemo(() => {
+    if (!forecast || timeZone === 'local') return forecast;
+    const shift = (iso: string) => toDisplayTime(iso, forecast.utc_offset_seconds, timeZone);
+    return {
+      ...forecast,
+      current: { ...forecast.current, time: forecast.current.time ? shift(forecast.current.time) : null },
+      hourly: { ...forecast.hourly, time: forecast.hourly.time.map(shift) },
+      recent: forecast.recent ? { ...forecast.recent, time: forecast.recent.time.map(shift) } : forecast.recent,
+    };
+  }, [forecast, timeZone]);
   const comparePlaces = useUiStore((s) => s.comparePlaces);
   const addComparePlace = useUiStore((s) => s.addComparePlace);
   const comparing = comparePlaces.some((p) => p.lat === lat && p.lon === lon);
   const compareFull = comparePlaces.length >= MAX_COMPARE_PLACES;
+
+  function chooseTimeZone(next: TimeZoneMode) {
+    setTimeZone(next);
+    saveTimeZone(next);
+  }
 
   function chooseUnits(next: UnitSystem) {
     setUnits(next);
@@ -169,7 +189,20 @@ export default function PointForecast({ lat, lon, label }: { lat: number; lon: n
               className={`${forecastStyles.unitButton} ${units === u ? forecastStyles.unitActive : ''}`}
               onClick={() => chooseUnits(u)}
             >
-              {u === 'metric' ? '°C' : '°F'}
+              {u === 'metric' ? '°C · km/h' : '°F · mph'}
+            </button>
+          ))}
+        </span>
+        <span className={forecastStyles.unitToggle} role="group" aria-label="Time zone">
+          {(['local', 'utc'] as const).map((z) => (
+            <button
+              key={z}
+              type="button"
+              aria-pressed={timeZone === z}
+              className={`${forecastStyles.unitButton} ${timeZone === z ? forecastStyles.unitActive : ''}`}
+              onClick={() => chooseTimeZone(z)}
+            >
+              {z === 'local' ? 'Local time' : 'UTC'}
             </button>
           ))}
         </span>
@@ -188,6 +221,9 @@ export default function PointForecast({ lat, lon, label }: { lat: number; lon: n
         </button>
       </div>
       <ComparePlaces units={units} />
+      <div className={forecastStyles.watchRow}>
+        <CopyLinkButton className={forecastStyles.watchButton} target={{ kind: 'point', lat, lon, label }} />
+      </div>
 
       {isLoading && <div className={styles.loading}>Loading forecast…</div>}
       {isError && (
@@ -202,10 +238,12 @@ export default function PointForecast({ lat, lon, label }: { lat: number; lon: n
         <>
           <Current forecast={data} units={units} />
           <ForecastTimeline forecast={data} units={units} />
+          <RecentHours forecast={data} units={units} />
           <Hourly forecast={data} units={units} />
           <Daily forecast={data} units={units} />
           <div className={styles.mediaCaption}>
-            Forecast for the nearest model grid point, in the place&apos;s local time. Data:{' '}
+            Forecast for the nearest model grid point, shown in {timeZone === 'utc' ? 'UTC' : "the place's local time"}. Updated{' '}
+            {forecast ? timeAgo(forecast.generated_at) : ''}. Data:{' '}
             <a className={styles.sourceLink} href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">
               Open-Meteo
             </a>{' '}

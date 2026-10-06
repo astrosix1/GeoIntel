@@ -1,4 +1,5 @@
 import { Fragment } from 'react';
+import CopyLinkButton from '../../components/CopyLinkButton';
 import type { Storm } from '../../api/types';
 import { ALERT_COLORS, hazardIcon } from '../../globe/hazards';
 import { useHazardDetailQuery, useHazardEventsQuery } from '../../state/queries';
@@ -44,6 +45,7 @@ export default function HazardAnalysis({ hazard }: { hazard: Storm }) {
           {alert} alert
         </span>
         {countries.length > 0 && <span className={styles.badge}>{countries.join(', ')}</span>}
+        <CopyLinkButton className={styles.badge} target={{ kind: 'hazard', eventType: hazard.event_type, id: hazard.id }} />
       </div>
 
       {hazard.description && (

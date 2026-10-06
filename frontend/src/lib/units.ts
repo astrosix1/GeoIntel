@@ -46,3 +46,35 @@ export function compass(degrees: number | null | undefined): string {
   if (degrees == null) return '';
   return COMPASS[Math.round((((degrees % 360) + 360) % 360) / 22.5) % 16];
 }
+
+// Which clock forecast times are shown in: the place's own, or UTC. Remembered like the units.
+export type TimeZoneMode = 'local' | 'utc';
+
+const TZ_KEY = 'geointel.timezone';
+
+export function loadTimeZone(): TimeZoneMode {
+  try {
+    return localStorage.getItem(TZ_KEY) === 'utc' ? 'utc' : 'local';
+  } catch {
+    return 'local';
+  }
+}
+
+export function saveTimeZone(mode: TimeZoneMode): void {
+  try {
+    localStorage.setItem(TZ_KEY, mode);
+  } catch {
+    /* storage unavailable: the choice just lasts for this visit */
+  }
+}
+
+// "2026-10-05T22:00" in the place's own time -> the same moment as a UTC "2026-10-06T03:00".
+// Unchanged in local mode or when the offset is unknown.
+export function toDisplayTime(iso: string, offsetSeconds: number | null | undefined, mode: TimeZoneMode): string {
+  if (mode !== 'utc' || typeof offsetSeconds !== 'number') return iso;
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(iso);
+  if (!match) return iso;
+  const [, y, mo, d, h, mi] = match.map(Number);
+  const utc = new Date(Date.UTC(y, mo - 1, d, h, mi) - offsetSeconds * 1000);
+  return utc.toISOString().slice(0, 16);
+}
