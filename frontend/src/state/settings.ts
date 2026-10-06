@@ -11,7 +11,7 @@ import { useUiStore } from './uiStore';
 // The Light theme is built into the tokens and shows in the component kit (?ui), but the app's own screens are
 // converted to the tokens one stage at a time (docs/ui-redesign-plan.md). Until they all are, choosing Light in the
 // app would leave unreadable panels, so the choice is offered but switched off. Flip this when the last screen is done.
-export const LIGHT_THEME_READY = false;
+export const LIGHT_THEME_READY = true;
 
 interface SettingsState {
   panels: PanelsMode;

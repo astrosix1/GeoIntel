@@ -77,6 +77,16 @@ Status: **Stage 0 (foundations) committed (91be044). Stage 1 (shell and Settings
 - **Checked at 375 x 812 and 1440 x 900 in the browser:** no sideways scroll, top bar fits, events sheet opening with 44 px rows, selection swapping to the details sheet, half and full height, close, the Time Zone sheet, and no console errors. Desktop measurements unchanged (panel 300 px, rows 35 px, bar 40 px). Every button, link and field has an accessible name.
 - **Not done here:** a real-device touch test (the pane emulates touch but clicks arrive as mouse clicks), swipe gestures on the sheet (the grab bar is tap only), and re-centring the globe above an open sheet.
 
+## Stage 7 as built (polish: Light theme on, guard widened)
+
+- **Light theme is on** (`LIGHT_THEME_READY = true`): Settings, Theme now offers Dark, Light and Match my system; the saved choice is applied at start-up. Dark stays the default.
+- **Checked in Light** at 1440 x 900: Events with the analysis panel, Weather with a pin popup and the hazard panel, Time Zone, the Settings, Layers and Filters menus. A script measured the contrast of every visible piece of text against its real background in each view and found nothing under 4.5:1 (the token pairs are also covered by `contrast.test.ts`).
+- **Style guard now covers every stylesheet except the token file itself** (28 files: `src/ui`, `shell`, `sidebars`, `components`, `globe`, `index.css`, `base.css`, `map.css`). Any new hard-coded colour, off-scale font size or radius fails `npm run lint`.
+- **Leftovers:** a scan found no unreferenced source or stylesheet files; the starter `App.css` and old rules went in Stage 0.
+- **Performance:** the app chunk is 202 KB gzipped, the map library 281 KB (unavoidable) and the draw tool 64 KB, still loaded after the map. The lists were already virtualised in Stage 2.
+- **Known roughness:** the weather pins render their icon with `react-dom/server` (a few KB) rather than a hand-built SVG string; the map's own paint colours (land, ocean, labels) do not change with the theme, which reads fine in both.
+- **Not done:** a real-device pass on a phone and a screen reader run-through; both are worth doing before announcing the redesign.
+
 ## What is wrong today (measured)
 
 - **Too few events per screen.** The first event starts 304 px down the left panel, and each event row is 107 px tall. At 900 px high, about five events are visible.

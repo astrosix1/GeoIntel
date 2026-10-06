@@ -12,14 +12,11 @@ import { fileURLToPath } from 'node:url';
 export const CONVERTED = [
   'src/ui',
   'src/shell',
-  'src/globe/TimeBar.module.css',
-  'src/sidebars/EventsSidebar.module.css',
-  'src/sidebars/AnalysisSidebar.module.css',
-  'src/sidebars/EdgeTab.module.css',
-  'src/sidebars/WorldClock.module.css',
-  'src/sidebars/Planner.module.css',
-  'src/sidebars/analysis',
+  'src/sidebars',
   'src/components',
+  'src/globe',
+  'src/index.css',
+  'src/styles/base.css',
   'src/styles/map.css',
 ];
 
