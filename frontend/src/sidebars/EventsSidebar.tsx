@@ -1,5 +1,6 @@
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import SheetHandle from './SheetHandle';
 import { useUiStore } from '../state/uiStore';
 import type { EventsTab, TimeRange } from '../state/uiStore';
 import { useStormsQuery, useVisibleCrises } from '../state/queries';
@@ -297,12 +298,14 @@ function WeatherList() {
 export default function EventsSidebar({ docked }: { docked: boolean }) {
   const leftOpen = useUiStore((s) => s.leftOpen);
   const activeMode = useUiStore((s) => s.activeMode);
+  const [full, setFull] = useState(false);
 
   return (
     <aside
       data-ui-hover-surface
-      className={`${styles.sidebar} ${docked ? styles.docked : styles.overlay} ${leftOpen ? styles.open : styles.closed}`}
+      className={`${styles.sidebar} ${docked ? styles.docked : styles.overlay} ${leftOpen ? styles.open : styles.closed} ${full ? styles.full : ''}`}
     >
+      <SheetHandle full={full} onToggle={() => setFull(!full)} onClose={() => useUiStore.getState().setLeftOpen(false)} />
       {activeMode === 'weather' ? <WeatherList /> : activeMode === 'timezone' ? <WorldClock /> : <EventsList />}
     </aside>
   );

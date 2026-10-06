@@ -61,3 +61,16 @@
 .icon.sm {
   width: 24px;
 }
+
+/* Touch: 44 px targets. */
+@media (pointer: coarse) {
+  .button,
+  .sm {
+    min-height: 44px;
+  }
+
+  .icon,
+  .icon.sm {
+    width: 44px;
+  }
+}

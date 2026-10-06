@@ -129,3 +129,44 @@
 .statusError {
   color: var(--warn);
 }
+
+/* Phones: the wordmark and button labels give way to icons so the bar fits one line. */
+@media (max-width: 768px) {
+  .top {
+    gap: var(--space-2);
+    padding: 0 var(--space-2);
+  }
+
+  .hideSmall {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .group {
+    gap: var(--space-1);
+  }
+}
+
+@media (max-width: 768px) {
+  /* The legend and chip strips scroll sideways instead of stacking into several lines. */
+  .strip {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  .key,
+  .stripChips {
+    flex-wrap: nowrap;
+  }
+}
+
+@media (max-width: 420px) {
+  .brand {
+    display: none;
+  }
+}

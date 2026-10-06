@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { useUiStore } from '../state/uiStore';
 import EventAnalysis from './analysis/EventAnalysis';
 import CountryAnalysis from './analysis/CountryAnalysis';
 import HazardAnalysis from './analysis/HazardAnalysis';
 import PointForecast from './analysis/PointForecast';
 import ZoneAnalysis from './analysis/ZoneAnalysis';
+import SheetHandle from './SheetHandle';
 import styles from './AnalysisSidebar.module.css';
 
 export default function AnalysisSidebar({ docked }: { docked: boolean }) {
@@ -14,12 +16,14 @@ export default function AnalysisSidebar({ docked }: { docked: boolean }) {
   // its × button) — pinnedSelection controls WHAT is shown, never WHETHER
   // the panel is shown.
   const isOpen = rightOpen;
+  const [full, setFull] = useState(false);
 
   return (
     <aside
       data-ui-hover-surface
-      className={`${styles.sidebar} ${docked ? styles.docked : styles.overlay} ${isOpen ? styles.open : styles.closed}`}
+      className={`${styles.sidebar} ${docked ? styles.docked : styles.overlay} ${isOpen ? styles.open : styles.closed} ${full ? styles.full : ''}`}
     >
+      <SheetHandle full={full} onToggle={() => setFull(!full)} onClose={() => useUiStore.getState().setRightOpen(false)} />
       <div className={styles.header}>Analysis</div>
       <div className={styles.body}>
         {pinnedSelection?.kind === 'event' && (

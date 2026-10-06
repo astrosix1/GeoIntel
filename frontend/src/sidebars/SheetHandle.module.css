@@ -1,0 +1,39 @@
+.row {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .row {
+    position: relative;
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    height: 44px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .handle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .bar {
+    width: 36px;
+    height: 4px;
+    border-radius: var(--radius-pill);
+    background: var(--text-3);
+  }
+
+  .close {
+    position: absolute;
+    top: 0;
+    right: 0;
+  }
+}

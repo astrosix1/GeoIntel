@@ -55,7 +55,7 @@ export function Popover({
         aria-controls={open ? id : undefined}
         onClick={() => setOpen(!open)}
       >
-        {label}
+        <span className={styles.triggerLabel}>{label}</span>
         {badge ? <Badge tone="accent">{badge}</Badge> : null}
       </Button>
       {open && (

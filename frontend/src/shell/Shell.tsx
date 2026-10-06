@@ -33,6 +33,13 @@ export default function Shell() {
     if (docked && pinned) setRightOpen(true);
   }, [docked, pinned, setRightOpen]);
 
+  // Phones: panels are bottom sheets, so picking something swaps the list sheet for its details.
+  useEffect(() => {
+    if (!pinned || !window.matchMedia('(max-width: 768px)').matches) return;
+    setLeftOpen(false);
+    setRightOpen(true);
+  }, [pinned, setLeftOpen, setRightOpen]);
+
   return (
     <>
       {starfield && (

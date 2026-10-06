@@ -194,3 +194,29 @@
   margin: 0;
   accent-color: var(--accent);
 }
+
+/* Phones: the panel is a bottom sheet over the map (half height, or full with the handle). */
+@media (max-width: 768px) {
+  .overlay {
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: auto;
+    max-width: none;
+    height: 55dvh;
+    border-right: 0;
+    border-left: 0;
+    border-top: 1px solid var(--line-strong);
+    border-radius: var(--radius-2) var(--radius-2) 0 0;
+    transform: translateY(100%);
+  }
+
+  .overlay.open {
+    transform: translateY(0);
+  }
+
+  .overlay.full {
+    height: calc(100dvh - 72px);
+  }
+}

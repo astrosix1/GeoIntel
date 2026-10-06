@@ -67,3 +67,12 @@ a {
     scroll-behavior: auto !important;
   }
 }
+
+/* Phones: body text stays at 14 px or more (density is a desktop-pointer feature). */
+@media (max-width: 768px) {
+  :root {
+    --font-1: 12px;
+    --font-2: 14px;
+    --font-3: 14px;
+  }
+}

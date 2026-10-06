@@ -21,13 +21,14 @@ export default function EdgeTab({ side, docked = false }: EdgeTabProps) {
   const rightOpen = useUiStore((s) => s.rightOpen);
 
   const isOpen = side === 'left' ? leftOpen : rightOpen;
+  const otherOpen = side === 'left' ? rightOpen : leftOpen;
   const setOpen = side === 'left' ? setLeftOpen : setRightOpen;
 
   return (
     <button
       type="button"
       data-ui-hover-surface
-      className={`${styles.tab} ${styles[side]} ${isOpen ? styles.open : ''} ${docked ? styles.inMap : ''}`}
+      className={`${styles.tab} ${styles[side]} ${isOpen ? styles.open : ''} ${docked ? styles.inMap : ''} ${otherOpen ? styles.otherOpen : ''}`}
       aria-label={
         isOpen
           ? side === 'left' ? 'Close Events sidebar' : 'Close Analysis sidebar'
@@ -36,6 +37,7 @@ export default function EdgeTab({ side, docked = false }: EdgeTabProps) {
       onMouseEnter={docked ? undefined : () => setOpen(true)}
       onClick={() => setOpen(!isOpen)}
     >
+      <span className={styles.label}>{isOpen ? 'Close' : side === 'left' ? 'List' : 'Details'}</span>
       <span className={styles.chevron} aria-hidden="true">
         {docked ? ((side === 'left') === isOpen ? '‹' : '›') : isOpen ? '×' : side === 'left' ? '›' : '‹'}
       </span>

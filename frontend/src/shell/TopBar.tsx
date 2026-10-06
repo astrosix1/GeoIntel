@@ -31,12 +31,13 @@ export default function TopBar() {
   // loading or the backend is down, so the button is never missing.
   const dashboard = (
     <Button
+      icon="user"
       onClick={() => {
         if (premium && unread > 0) setDashboardTab('alerts');
         setDashboardOpen(true);
       }}
     >
-      Dashboard
+      <span className={styles.hideSmall}>Dashboard</span>
       {premium && unread > 0 && <span className={styles.unread}><Badge tone="accent">{unread}</Badge></span>}
     </Button>
   );
@@ -52,7 +53,7 @@ export default function TopBar() {
     <header className={styles.top}>
       <div className={styles.brand}>
         <Icon name="globe" size={18} />
-        <span>GeoIntel</span>
+        <span className={styles.hideSmall}>GeoIntel</span>
         {premium && <Badge tone="accent">{isDemoPremium() ? 'Premium (demo)' : 'Premium'}</Badge>}
       </div>
       <Segmented label="Mode" value={activeMode} onChange={setActiveMode} options={MODES} />

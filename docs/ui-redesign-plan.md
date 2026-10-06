@@ -67,6 +67,16 @@ Status: **Stage 0 (foundations) committed (91be044). Stage 1 (shell and Settings
 - **Checked in the browser:** switching Globe to Flat to Globe from Settings, Events, Weather (74 pins shown) and Time Zone (night shading, zone labels) on the flat map, the choice persisting, and no console errors. 4 new tests (160 in all).
 - **Known roughness:** the night shading is drawn once rather than repeated on each world copy, and the time bar can sit over the map attribution on a short window; neither was changed here.
 
+## Stage 6 as built (mobile and touch)
+
+- **Bottom sheets (under 769 px):** the events and analysis panels become sheets over the map, half height by default and full height with the grab bar; the sheet has its own Close button, only one is open at a time, and picking an event, hazard or pin swaps the list sheet for its details (`Shell.tsx`). Wider windows are untouched: docked columns or the side drawers, handle hidden.
+- **Edge tabs on phones** become labelled pills in the bottom corners (List, Details), above the map attribution, and step aside while a sheet is open.
+- **Top bar on phones:** the wordmark and the Layers, Settings and Dashboard labels give way to icons (kept as accessible names), the mode switch tightens, and the bar fits one line at 375 px with no sideways scroll. The legend and chip strips scroll sideways instead of stacking. Menus open full width under the bar.
+- **Touch (coarse pointer):** buttons, tabs, segmented options and list rows are at least 44 px; chips 36 px; the top bar is 48 px and the status bar 28 px.
+- **Type on phones:** the three body sizes rise to 14 px (labels stay 12 px); this is a token override in `base.css`.
+- **Checked at 375 x 812 and 1440 x 900 in the browser:** no sideways scroll, top bar fits, events sheet opening with 44 px rows, selection swapping to the details sheet, half and full height, close, the Time Zone sheet, and no console errors. Desktop measurements unchanged (panel 300 px, rows 35 px, bar 40 px). Every button, link and field has an accessible name.
+- **Not done here:** a real-device touch test (the pane emulates touch but clicks arrive as mouse clicks), swipe gestures on the sheet (the grab bar is tap only), and re-centring the globe above an open sheet.
+
 ## What is wrong today (measured)
 
 - **Too few events per screen.** The first event starts 304 px down the left panel, and each event row is 107 px tall. At 900 px high, about five events are visible.

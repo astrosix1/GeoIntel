@@ -288,3 +288,20 @@
     transform: rotate(360deg);
   }
 }
+
+/* Touch: 44 px rows and tabs, 36 px chips. */
+@media (pointer: coarse) {
+  .tab {
+    height: 44px;
+  }
+
+  .chip {
+    height: 36px;
+    padding: 0 var(--space-3);
+  }
+
+  .row,
+  .rowDense {
+    min-height: 44px;
+  }
+}

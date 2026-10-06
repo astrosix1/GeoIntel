@@ -67,3 +67,25 @@
   overflow-y: auto;
   padding: var(--space-3) var(--space-4);
 }
+
+/* Phones: menu buttons in the top bar show only their icon. */
+@media (max-width: 768px) {
+  .popoverWrap .triggerLabel {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .popover {
+    position: fixed;
+    top: 48px;
+    right: var(--space-2);
+    left: var(--space-2);
+    max-width: none;
+    max-height: calc(100dvh - 64px);
+    overflow-y: auto;
+  }
+}

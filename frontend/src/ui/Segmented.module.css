@@ -56,3 +56,15 @@
   background: transparent;
   color: var(--text-2);
 }
+
+@media (pointer: coarse) {
+  .option {
+    height: 44px;
+  }
+}
+
+@media (max-width: 768px) {
+  .option {
+    padding: 0 var(--space-1);
+  }
+}

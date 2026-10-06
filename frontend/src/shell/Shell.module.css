@@ -48,3 +48,10 @@
   position: absolute;
   inset: 0;
 }
+
+/* Touch: a taller top bar and status bar for 44 px targets. */
+@media (pointer: coarse) {
+  .shell {
+    grid-template-rows: 48px auto minmax(0, 1fr) 28px;
+  }
+}
