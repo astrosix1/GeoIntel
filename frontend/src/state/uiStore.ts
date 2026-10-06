@@ -85,6 +85,15 @@ interface UiState {
   clocks: string[];
   addClock: (tzid: string) => void;
   removeClock: (tzid: string) => void;
+  // Clocks that arrived in a shared link are shown but not saved over the user's own until they choose to keep them.
+  sharedClocks: boolean;
+  showSharedClocks: (zones: string[]) => void;
+  keepSharedClocks: () => void;
+  // A one-line note in Time Zone mode (a shared link that could not be fully opened), and the map label switch.
+  zoneNotice: string | null;
+  setZoneNotice: (notice: string | null) => void;
+  zoneLabelsOn: boolean;
+  setZoneLabelsOn: (on: boolean) => void;
   clockPrefs: ClockPrefs;
   setClockPrefs: (prefs: ClockPrefs) => void;
   // Minutes from now that Time Zone mode is showing (0 = now), and whether the night side is shaded.
@@ -188,19 +197,30 @@ export const useUiStore = create<UiState>((set) => ({
       if (s.clocks.includes(tzid) || s.clocks.length >= MAX_CLOCKS) return s;
       const clocks = cleanClocks([...s.clocks, tzid]);
       saveClocks(clocks);
-      return { clocks };
+      return { clocks, sharedClocks: false };
     }),
   removeClock: (tzid) =>
     set((s) => {
       const clocks = s.clocks.filter((z) => z !== tzid);
       saveClocks(clocks);
-      return { clocks };
+      return { clocks, sharedClocks: false };
     }),
   timeOffsetMinutes: 0,
   setTimeOffsetMinutes: (minutes) =>
     set({ timeOffsetMinutes: Math.max(-MAX_TIME_OFFSET_MINUTES, Math.min(MAX_TIME_OFFSET_MINUTES, Math.round(minutes) || 0)) }),
   nightOn: true,
   setNightOn: (on) => set({ nightOn: on }),
+  sharedClocks: false,
+  showSharedClocks: (zones) => set({ clocks: cleanClocks(zones), sharedClocks: true }),
+  keepSharedClocks: () =>
+    set((s) => {
+      saveClocks(s.clocks);
+      return { sharedClocks: false };
+    }),
+  zoneNotice: null,
+  setZoneNotice: (notice) => set({ zoneNotice: notice }),
+  zoneLabelsOn: true,
+  setZoneLabelsOn: (on) => set({ zoneLabelsOn: on }),
   clockPrefs: loadClockPrefs(),
   setClockPrefs: (prefs) => {
     saveClockPrefs(prefs);

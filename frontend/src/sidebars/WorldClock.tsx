@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import CopyLinkButton from '../components/CopyLinkButton';
 import { MAX_CLOCKS } from '../lib/clocks';
 import { nextChangeLine } from '../lib/dst';
 import { cityName, formatOffset, offsetMinutes, readClock, regionName, searchZones } from '../lib/timezones';
@@ -28,6 +29,10 @@ export default function WorldClock() {
   const selectZone = useUiStore((s) => s.selectZone);
   const now = useShownNow();
   const offset = useUiStore((s) => s.timeOffsetMinutes);
+  const shared = useUiStore((s) => s.sharedClocks);
+  const keepShared = useUiStore((s) => s.keepSharedClocks);
+  const notice = useUiStore((s) => s.zoneNotice);
+  const setNotice = useUiStore((s) => s.setZoneNotice);
   const [query, setQuery] = useState('');
   const [tab, setTab] = useState<Tab>('clocks');
   const results = useMemo(() => searchZones(query).filter((z) => !clocks.includes(z)), [query, clocks]);
@@ -116,6 +121,23 @@ export default function WorldClock() {
         {query.trim().length >= 2 && results.length === 0 && <div className={styles.note}>No matching city.</div>}
       </div>
 
+      {notice && (
+        <div className={styles.note}>
+          {notice}{' '}
+          <button type="button" className={styles.remove} style={{ fontSize: 12 }} onClick={() => setNotice(null)}>
+            Dismiss
+          </button>
+        </div>
+      )}
+      {shared && (
+        <div className={styles.note}>
+          These clocks came from a shared link and are not saved.{' '}
+          <button type="button" className={styles.remove} style={{ fontSize: 12, textDecoration: 'underline' }} onClick={keepShared}>
+            Keep them
+          </button>
+        </div>
+      )}
+
       <div className={sidebar.list}>
         {clocks.length === 0 && (
           <div className={styles.note}>
@@ -146,6 +168,7 @@ export default function WorldClock() {
         })}
         {clocks.length > 0 && (
           <div className={styles.note}>
+            <CopyLinkButton className={styles.remove} target={{ kind: 'clocks', zones: clocks, skipped: 0 }} />{' '}
             &ldquo;Tomorrow&rdquo; and &ldquo;yesterday&rdquo; compare each place&apos;s date with the date in UTC right now.
           </div>
         )}

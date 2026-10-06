@@ -15,6 +15,10 @@ import {
   setCrisisData,
 } from './crisisLayers';
 import { clearNight, setNight } from './nightLayer';
+import { clearZoneLabels, setZoneLabels } from './zoneLabelLayer';
+import { loadZoneGeoJson } from '../lib/zoneLookup';
+import { labelPoints } from '../lib/zoneLabels';
+import type { LabelPoint } from '../lib/zoneLabels';
 import { addTimezoneLayer, removeTimezoneLayer, timezonePopupHtml, TIMEZONE_HIT_LAYER_ID } from './TimezoneLayer';
 import { isOnNearHemisphere } from './hemisphere';
 import { ALERT_COLORS, hazardIcon } from './hazards';
@@ -67,6 +71,8 @@ export default function Globe() {
   const selectPoint = useUiStore((s) => s.selectPoint);
   const selectZone = useUiStore((s) => s.selectZone);
   const nightOn = useUiStore((s) => s.nightOn);
+  const zoneLabelsOn = useUiStore((s) => s.zoneLabelsOn);
+  const [labelPts, setLabelPts] = useState<LabelPoint[]>([]);
   const timeOffset = useUiStore((s) => s.timeOffsetMinutes);
   const weatherTab = useUiStore((s) => s.weatherTab);
   const weatherCategory = useUiStore((s) => s.weatherCategory);
@@ -307,6 +313,36 @@ export default function Globe() {
       map.off('style.load', draw);
     };
   }, [activeMode, mapReady, nightOn, timeOffset]);
+
+  // Time Zone mode: one point per zone for its time label, worked out once from the boundary file.
+  useEffect(() => {
+    if (activeMode !== 'timezone' || !zoneLabelsOn || labelPts.length > 0) return;
+    let cancelled = false;
+    loadZoneGeoJson().then((json) => {
+      if (!cancelled && json) setLabelPts(labelPoints(json));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeMode, zoneLabelsOn, labelPts.length]);
+
+  // Time Zone mode: each zone's time and offset on the map, following the time slider, redrawn each minute.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    if (activeMode !== 'timezone' || !zoneLabelsOn || labelPts.length === 0) {
+      clearZoneLabels(map);
+      return;
+    }
+    const draw = () => setZoneLabels(map, labelPts, new Date(Date.now() + timeOffset * 60_000));
+    draw();
+    const id = window.setInterval(draw, 60_000);
+    map.on('style.load', draw);
+    return () => {
+      window.clearInterval(id);
+      map.off('style.load', draw);
+    };
+  }, [activeMode, mapReady, zoneLabelsOn, labelPts, timeOffset]);
 
   useRadar(mapRef, mapReady);
 

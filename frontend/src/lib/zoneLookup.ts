@@ -52,13 +52,19 @@ export function buildZoneIndex(geojson: GeoJsonLike): ZoneIndex {
   return { entries, cache: new Map() };
 }
 
-function inRing(lon: number, lat: number, ring: Ring): boolean {
+export function inRing(lon: number, lat: number, ring: Ring): boolean {
   let inside = false;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
     const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1];
     if (yi > lat !== yj > lat && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside;
   }
   return inside;
+}
+
+// Inside the outer ring and outside every hole.
+export function pointInPolygonRings(lon: number, lat: number, rings: Ring[]): boolean {
+  if (!rings.length || !inRing(lon, lat, rings[0])) return false;
+  return !rings.slice(1).some((hole) => inRing(lon, lat, hole));
 }
 
 // The zone id for a point, or null over open sea or where the file has no polygon.
@@ -80,16 +86,27 @@ export function zoneAt(index: ZoneIndex, lat: number, lon: number): string | nul
   return found;
 }
 
+let loadingFile: Promise<GeoJsonLike | null> | null = null;
+
+// The boundary file's JSON, fetched once per page (the map has usually fetched it already, so it comes from
+// cache). A failed load may be tried again later.
+export function loadZoneGeoJson(url = '/timezones.geojson'): Promise<GeoJsonLike | null> {
+  if (!loadingFile) {
+    loadingFile = fetch(url)
+      .then((r) => (r.ok ? (r.json() as Promise<GeoJsonLike>) : null))
+      .catch(() => null);
+    loadingFile.then((json) => {
+      if (!json) loadingFile = null;
+    });
+  }
+  return loadingFile;
+}
+
 let loading: Promise<ZoneIndex | null> | null = null;
 
-// Fetches the boundary file once per page (the map has usually fetched it already, so it comes from cache).
 export function loadZoneIndex(url = '/timezones.geojson'): Promise<ZoneIndex | null> {
   if (!loading) {
-    loading = fetch(url)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((json) => (json ? buildZoneIndex(json) : null))
-      .catch(() => null);
-    // A failed load may be tried again later.
+    loading = loadZoneGeoJson(url).then((json) => (json ? buildZoneIndex(json) : null));
     loading.then((index) => {
       if (!index) loading = null;
     });

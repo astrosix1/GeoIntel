@@ -20,6 +20,8 @@ export default function TimeBar() {
   const setOffset = useUiStore((s) => s.setTimeOffsetMinutes);
   const nightOn = useUiStore((s) => s.nightOn);
   const setNightOn = useUiStore((s) => s.setNightOn);
+  const labelsOn = useUiStore((s) => s.zoneLabelsOn);
+  const setLabelsOn = useUiStore((s) => s.setZoneLabelsOn);
   const shown = useShownNow();
   if (activeMode !== 'timezone') return null;
 
@@ -31,6 +33,9 @@ export default function TimeBar() {
     <div className={styles.bar} data-ui-hover-surface>
       <button type="button" aria-pressed={nightOn} className={`${styles.chip} ${nightOn ? '' : styles.chipOff}`} onClick={() => setNightOn(!nightOn)}>
         <span aria-hidden="true">🌙</span> Night
+      </button>
+      <button type="button" aria-pressed={labelsOn} className={`${styles.chip} ${labelsOn ? '' : styles.chipOff}`} onClick={() => setLabelsOn(!labelsOn)}>
+        Labels
       </button>
       <div className={styles.middle}>
         <input

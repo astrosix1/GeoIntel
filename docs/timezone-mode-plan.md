@@ -2,7 +2,7 @@
 
 Plan for the next round of Time Zone mode work. Everything here runs in the browser on free data and needs no backend, no API key and no new licence, apart from one small bundled cities list (see Stage 1). Earlier phases are in `docs/roadmap-phases-1-21-archive.md`. Weather mode's plan is in `docs/weather-mode-plan.md`.
 
-Status: **Stages 1 (92ad9cd), 2 (ee0e15d) and 3 (95e8008) committed. Stage 4 implemented** (not committed); Stage 5 planned.
+Status: **Stages 1 to 4 committed (92ad9cd, ee0e15d, 95e8008, a8440a7). Stage 5 implemented** (not committed). All five stages are now built.
 
 Stage 1 as built, and where it differs from the plan below:
 - **No cities file yet.** The plan called for a bundled GeoNames list. That needs a download and an agreed attribution, so Stage 1 uses the zone names the browser already knows (about 418 `Region/City` ids, so one city per zone, no country and no population ranking) with no download and no licence. The panel says so. A real cities list can replace the search source later without changing the rest. Some browsers still report old names (Asia/Calcutta, Europe/Kiev); `MODERN_NAMES` in `lib/timezones.ts` maps them to the current ones so a search for Kolkata or Kyiv works.
@@ -36,6 +36,13 @@ Stage 4 as built, and where it differs from the plan below:
 - **Events in local time, worded honestly.** GDELT's timestamp is when the first article was added to the feed, not when the incident happened, and ACLED gives only a date. So the plan's "event happened at 02:40 local" is **not** shown. The event panel says "First reported at 01:30 local time (night there) ... This is when the report appeared, not necessarily when it happened", and only for news-feed events (ids starting `gdelt_`); a coarse pin is marked approximate. The zone comes from `lib/zoneLookup.ts` (point in the boundary file's polygons, tested against the real file for eight cities, ocean points and speed).
 - **Filter:** a "Reported at night (local time)" button in the Events list (22:00 to 05:00 at the event's own pin) filters both the list and the globe. It only judges news-feed events with a city-level or better location; the caption says how many others are left out. On the dev data: 693 of 4,092 events, with 1,623 left out.
 - Tests: `frontend/tests/dst.test.ts` and `zoneLookup.test.ts`; 94 frontend tests in all.
+
+Stage 5 as built, and where it differs from the plan below:
+- **Time labels on the map** (`globe/zoneLabelLayer.ts`, `lib/zoneLabels.ts`): each zone shows its current time and offset ("23:25 +9"), following the time slider and redrawn each minute. Bigger zones are placed first and overlapping labels are left out, so they thin out as the view changes. A **Labels** chip in the time bar switches them off. Offsets that are easy to misread are drawn in amber.
+- **Unusual offsets:** half-hour and quarter-hour offsets and the date-line zones (UTC+13 or later, UTC-11 or earlier) are amber on the map and explained in one line in the zone panel ("UTC+5:45 is a quarter-hour offset...", "UTC+14 is beside the International Date Line: among the first places on Earth to reach each new calendar day"). **The date line itself is not drawn:** the real line zigzags and the boundary file does not carry it, and a straight line at 180 degrees would be wrong.
+- **Shareable links** (`lib/shareLink.ts`): `?view=timezone&zone=Asia/Tokyo` opens a zone; `?view=timezone&clocks=Asia/Tokyo,Europe/London` shows a set of clocks. Both are validated; an unrecognised zone opens Time Zone mode with a notice, and unrecognised names in a clocks list are dropped with a count. Shared clocks are shown but **not saved over the visitor's own** until they press "Keep them". Copy link buttons are in the zone panel and under the clocks list.
+- Tests: `frontend/tests/zoneLabels.test.ts` (label points on the real file, offset rules, label text, link parsing); 110 frontend tests in all.
+- Found along the way (Stage 4 testing, not Time Zone): 4,855 local GDELT events had no severity score because an older backend process had ingested them; a real sync with current code scored new rows correctly and `python -m services.severity` fixed the rest. Production still needs that one-off run (it is in `docs/deploy-steps-story-pipeline.txt`).
 
 ## Principles
 

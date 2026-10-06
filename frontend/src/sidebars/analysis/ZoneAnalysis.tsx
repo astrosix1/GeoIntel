@@ -1,7 +1,9 @@
 import { useMemo } from 'react';
 import { MAX_CLOCKS } from '../../lib/clocks';
 import { cityName, isKnownZone, readClock, regionName, zoneInfo, zonesLike } from '../../lib/timezones';
+import CopyLinkButton from '../../components/CopyLinkButton';
 import { clockChanges, describeChange } from '../../lib/dst';
+import { unusualOffsetNote } from '../../lib/zoneLabels';
 import { sunAltitude, sunTimes } from '../../lib/sun';
 import { useShownNow } from '../../state/useNow';
 import { useUiStore } from '../../state/uiStore';
@@ -96,6 +98,7 @@ export default function ZoneAnalysis({ tzid, point }: { tzid: string; point?: { 
         <span className={styles.badge}>{info.offsetLabel}</span>
         {regionName(tzid) && <span className={styles.badge}>{regionName(tzid)}</span>}
         <span className={styles.badge}>{tzid}</span>
+        <CopyLinkButton className={styles.badge} target={{ kind: 'zone', tzid }} />
       </div>
 
       <div className={styles.section}>
@@ -143,6 +146,7 @@ export default function ZoneAnalysis({ tzid, point }: { tzid: string; point?: { 
           <dt>Daylight saving</dt>
           <dd>{dstText(info.pattern, info.dstNow)}</dd>
         </dl>
+        {unusualOffsetNote(info.offsetMinutes) && <div className={styles.mediaCaption}>{unusualOffsetNote(info.offsetMinutes)}</div>}
       </div>
 
       {places.length > 0 && (
