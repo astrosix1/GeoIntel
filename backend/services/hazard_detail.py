@@ -133,7 +133,7 @@ def parse_geometry(payload, event_type):
             if label.endswith(_WIND_LABEL_SUFFIX):     # the current wind zones, not the per-time-step ones
                 simple = simplify_polygons(geometry)
                 if simple:
-                    zones.append(_feature(simple, label=label, level=cls.split('_')[1]))
+                    zones.append(_feature(simple, label=label, level=cls.split('_')[1], as_of=props.get('polygondate')))
         elif event_type == 'TC' and cls == 'Poly_Cones':
             simple = simplify_polygons(geometry)
             if simple:

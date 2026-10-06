@@ -10,6 +10,8 @@ import {
   deleteWatchPlace,
   fetchActiveStorms,
   fetchHazardDetail,
+  fetchEventHazards,
+  fetchHazardEvents,
   fetchAlertSettings,
   fetchAlerts,
   fetchWatch,
@@ -259,6 +261,29 @@ export function useHazardDetailQuery(eventType: string | null, id: number | null
     enabled: eventType !== null && id !== null,
     retry: false,
     staleTime: 15 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+// Hazards whose footprint contains or is near an event, and events inside a hazard.
+export function useEventHazardsQuery(crisisId: string | undefined) {
+  return useQuery({
+    queryKey: ['event-hazards', crisisId],
+    queryFn: () => fetchEventHazards(crisisId as string),
+    enabled: !!crisisId,
+    retry: false,
+    staleTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function useHazardEventsQuery(eventType: string | null, id: number | null) {
+  return useQuery({
+    queryKey: ['hazard-events', eventType, id],
+    queryFn: () => fetchHazardEvents(eventType as string, id as number),
+    enabled: eventType !== null && id !== null,
+    retry: false,
+    staleTime: 10 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
 }

@@ -11,6 +11,7 @@ from flask import Blueprint, jsonify, request
 from extensions import limiter
 from services.forecast import ForecastUnavailable, InvalidCoordinates, get_forecast
 from services.hazard_detail import get_hazard_detail
+from services.hazard_links import events_for_hazard
 from services.weather import get_active_storms
 
 logger = logging.getLogger(__name__)
@@ -65,4 +66,23 @@ def get_storm_detail(event_type, event_id):
         return jsonify({'error': 'Hazard not found or no longer active'}), 404
     if result == 'unavailable':
         return jsonify({'error': 'hazard_detail_unavailable'}), 503
+    return jsonify(result)
+
+
+@weather_bp.route('/storms/<event_type>/<event_id>/events', methods=['GET'])
+@limiter.limit("30 per minute")
+def get_hazard_events(event_type, event_id):
+    """Physical events whose pin is inside or near this hazard while it was active.
+    "Near" and "during" only: no claim that either caused the other."""
+    if event_type not in ('TC', 'FL', 'WF', 'DR') or not event_id.isdigit():
+        return jsonify({'error': 'Unknown hazard'}), 400
+    try:
+        result = events_for_hazard(event_type, event_id)
+    except Exception as e:
+        logger.error(f"Error linking events to hazard: {e}")
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
+    if result == 'not_found':
+        return jsonify({'error': 'Hazard not found or no longer active'}), 404
+    if result == 'unavailable':
+        return jsonify({'error': 'hazards_unavailable'}), 503
     return jsonify(result)

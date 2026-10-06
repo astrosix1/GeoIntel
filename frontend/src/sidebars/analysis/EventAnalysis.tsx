@@ -1,11 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CrisisDetail, CrisisSummary } from '../../api/types';
-import { useCrisisBriefingQuery, useCrisisDetailQuery, useEntitlements, useRefineLocationMutation } from '../../state/queries';
+import {
+  useCrisisBriefingQuery,
+  useCrisisDetailQuery,
+  useEntitlements,
+  useEventHazardsQuery,
+  useRefineLocationMutation,
+  useStormsQuery,
+} from '../../state/queries';
 import { useUiStore } from '../../state/uiStore';
 import Scenarios from './Scenarios';
 import Comments from './Comments';
 import SaveButton from '../../components/SaveButton';
 import { colorForSeverity, labelForSeverity } from '../../globe/severity';
+import { hazardIcon } from '../../globe/hazards';
 import styles from './EventAnalysis.module.css';
 
 // How the pin's position was found, in words. Only GDELT events carry the
@@ -24,6 +32,10 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
   const { data: briefing, isLoading, isError } = useCrisisBriefingQuery(crisis.id);
   const { premium } = useEntitlements();
   const { data: detail } = useCrisisDetailQuery(crisis.id);
+  const { data: hazardLinks } = useEventHazardsQuery(crisis.id);
+  const { data: stormData } = useStormsQuery(true);
+  const setActiveMode = useUiStore((s) => s.setActiveMode);
+  const selectHazard = useUiStore((s) => s.selectHazard);
   const refine = useRefineLocationMutation();
   const refineAsked = useRef(false);
   const [imageFailed, setImageFailed] = useState(false);
@@ -136,6 +148,46 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
           <a className={styles.videoLink} href={videoUrl} target="_blank" rel="noreferrer">
             Watch source video ↗
           </a>
+        </div>
+      )}
+
+      {hazardLinks && hazardLinks.links.length > 0 && (
+        <div className={styles.section}>
+          <div className={styles.sectionTitle}>Nearby hazard</div>
+          <ul className={styles.sourceList}>
+            {hazardLinks.links.map((link) => {
+              const storm = stormData?.storms.find(
+                (s) => s.event_type === link.hazard.event_type && s.id === link.hazard.id,
+              );
+              return (
+                <li key={`${link.hazard.event_type}-${link.hazard.id}`}>
+                  <span>
+                    {hazardIcon(link.hazard.event_type)} {link.hazard.name ?? link.hazard.hazard ?? 'Weather hazard'}
+                    {link.hazard.alert_level ? ` (${link.hazard.alert_level} alert)` : ''}
+                  </span>
+                  <span className={styles.sourceOutlet}>
+                    {link.approximate ? 'Approximate: ' : ''}
+                    {link.basis}
+                    {link.hours_after_hazard_ended > 0 ? `; ${link.hours_after_hazard_ended} h after it ended` : '; while it was active'}
+                  </span>
+                  {storm && (
+                    <button
+                      type="button"
+                      className={styles.sourceLink}
+                      style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', textAlign: 'left' }}
+                      onClick={() => {
+                        setActiveMode('weather');
+                        selectHazard(storm);
+                      }}
+                    >
+                      Open in Weather mode
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          <div className={styles.mediaCaption}>Shown because the two are in the same place at the same time. It does not mean one caused the other.</div>
         </div>
       )}
 

@@ -2,7 +2,7 @@
 
 Plan for the next round of Weather mode work. Everything here uses free data or data the app already has, apart from the optional AI items at the end. Earlier phases are in `docs/roadmap-phases-1-21-archive.md`. The story pipeline is in `docs/story-pipeline-plan.md`.
 
-Status: **Stage 1 implemented and committed (add6697). Stage 2 implemented** (not committed). Stages 3 to 5 planned.
+Status: **Stages 1 (add6697) and 2 (c45d945) committed. Stage 3 implemented** (not committed). Stages 4 and 5 planned.
 
 Stage 2 as built: the forecast now returns every remaining hour of the 7 days (about 164, was 48) and the point panel has a **Forecast timeline** scrubber that steps through them, labelled "Forecast, not observed". **Compare places** holds up to three places in the UI (not saved): now, today's high/low, 7-day rain, strongest gust, and any hazard whose pin is within 300 km (stated as pin distance, not footprint). It reuses the existing forecast endpoint, so no new backend route was needed; each place loads on its own so one failure does not hide the others. The scrubber moves the panel only, not the map layers. Free versus premium limits for compare were not set: it is three places for everyone.
 
@@ -59,6 +59,14 @@ Link a hazard and an event when they share place and time. All rules, no AI.
 - **Frontend:** a **Nearby hazard** card in the event panel and an **Events in this area** list in the hazard panel, each showing distance and time gap. A small marker on linked items in both lists. An optional **Related** map toggle that draws faint lines between linked pairs (off by default). A list filter, "Events affected by hazards".
 - **Wording:** "near" and "during". Never "caused by".
 - **Tests:** each rule on its own (inside and outside footprint, time window edges, statements excluded, coarse pins excluded), merged stories, no links when nothing matches.
+
+Stage 3 as built, and where it differs from the plan above:
+- Links are computed on request, not stored. Hazards are not in the database (they come live from GDACS), so there is no `hazard_event_links` table and no migration. `services/hazard_links.py`, `GET /api/crises/<id>/hazards`, `GET /api/weather/storms/<type>/<id>/events`.
+- Place rule: inside the affected area (floods, fires) or the current 60 km/h wind zone (cyclones); with no published footprint, a fixed radius (cyclone 300 km, flood 50 km, fire 25 km) and the link is marked approximate.
+- **A cyclone's track is not used.** GDACS does not time-stamp track segments, so "near the track" could mean near where the cyclone was days ago. Cyclone links need the event to be within 24 hours of the wind zone's own time. This misses events that happened earlier in a cyclone's life; that was chosen over false links. (The first live run showed why: Pacific cyclone track segments crossing the dateline matched events in Yemen, a wrap bug now fixed and tested.)
+- Time: between the hazard's start and its end plus 3 days. Physical events at city level or better only; statements, merged duplicates and coarse pins are never linked, and the panel says why when an event has none.
+- Panels: **Nearby hazard** in the event panel, **Events in this area** in the hazard panel, each with its basis and the "same place and time, not cause" caveat. Checked live with a temporary event placed in a real flood area (removed afterwards).
+- **Not built yet:** the optional "Related" map lines, the list markers and the "Events affected by hazards" filter. Deferred, not dropped.
 
 ## Stage 4: Alerts and layers
 

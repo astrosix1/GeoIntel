@@ -1,7 +1,9 @@
 import { Fragment } from 'react';
 import type { Storm } from '../../api/types';
 import { ALERT_COLORS, hazardIcon } from '../../globe/hazards';
-import { useHazardDetailQuery } from '../../state/queries';
+import { useHazardDetailQuery, useHazardEventsQuery } from '../../state/queries';
+import { useUiStore } from '../../state/uiStore';
+import { labelForSeverity } from '../../globe/severity';
 import styles from './EventAnalysis.module.css';
 import hazardStyles from './HazardAnalysis.module.css';
 
@@ -21,6 +23,9 @@ function formatSeverity(hazard: Storm): string | null {
 // field; anything GDACS didn't report is simply left out.
 export default function HazardAnalysis({ hazard }: { hazard: Storm }) {
   const { data: detail, isLoading: detailLoading, isError: detailError } = useHazardDetailQuery(hazard.event_type, hazard.id);
+  const { data: linked } = useHazardEventsQuery(hazard.event_type, hazard.id);
+  const setActiveMode = useUiStore((s) => s.setActiveMode);
+  const selectCrisis = useUiStore((s) => s.selectCrisis);
   const alert = hazard.alert_level ?? 'Unknown';
   const severity = formatSeverity(hazard);
   const from = formatDate(hazard.from_date);
@@ -116,6 +121,41 @@ export default function HazardAnalysis({ hazard }: { hazard: Storm }) {
           <div className={styles.mediaCaption}>GDACS has not published exposure figures for this event.</div>
         )}
       </div>
+
+      {linked && linked.events.length > 0 && (
+        <div className={styles.section}>
+          <div className={styles.sectionTitle}>Events in this area ({linked.events.length}{linked.truncated ? '+' : ''})</div>
+          <ul className={styles.sourceList}>
+            {linked.events.map((event) => (
+              <li key={event.id}>
+                <button
+                  type="button"
+                  className={styles.sourceLink}
+                  style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', textAlign: 'left' }}
+                  onClick={() => {
+                    setActiveMode('events');
+                    selectCrisis({
+                      id: event.id, title: event.title, country: event.country, type: event.type, severity: event.severity,
+                      scope: event.scope, date: event.date ?? '', lat: event.lat, lon: event.lon, source_url: event.source_url ?? '',
+                      location_confidence: event.location_confidence ?? undefined,
+                    });
+                  }}
+                >
+                  {event.title}
+                </button>
+                <span className={styles.sourceOutlet}>
+                  {event.country} &middot; {labelForSeverity(event.severity)} &middot; {event.approximate ? 'approximate: ' : ''}
+                  {event.basis}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <div className={styles.mediaCaption}>
+            Physical events with a city-level or better location, during or just after this hazard. Shown because they share a place and
+            time; it does not mean the hazard caused them.
+          </div>
+        </div>
+      )}
 
       <div className={styles.section}>
         <div className={styles.sectionTitle}>Source</div>

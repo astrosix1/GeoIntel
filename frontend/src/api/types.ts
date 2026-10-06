@@ -298,6 +298,48 @@ export interface HazardDetail {
   generated_at: string;
 }
 
+// GET /api/crises/<id>/hazards and GET /api/weather/storms/<type>/<id>/events.
+// A link means "in or near, while active". It never claims one caused the other.
+export interface HazardLink {
+  hazard: { id: number; event_type: string; name: string | null; hazard: string | null; alert_level: string | null; country: string | null };
+  distance_km: number;
+  basis: string;
+  approximate: boolean;
+  hours_after_hazard_ended: number;
+}
+
+export interface EventHazardLinks {
+  links: HazardLink[];
+  // Why an event has none: statement, approximate_location, merged, inactive, hazards_unavailable.
+  reason: string | null;
+}
+
+export interface LinkedEvent {
+  id: string;
+  title: string;
+  country: string;
+  type: string;
+  scope: 'global' | 'local';
+  source_url: string | null;
+  location_confidence: number | null;
+  severity: number;
+  severity_level: number | null;
+  source_count: number;
+  lat: number;
+  lon: number;
+  date: string | null;
+  distance_km: number;
+  basis: string;
+  approximate: boolean;
+  hours_after_hazard_ended: number;
+}
+
+export interface HazardEvents {
+  events: LinkedEvent[];
+  truncated: boolean;
+  approximate: boolean;
+}
+
 export interface StormsResponse {
   storms: Storm[];
   count: number;

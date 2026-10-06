@@ -14,6 +14,8 @@ import type {
   ScenariosResponse,
   StormsResponse,
   HazardDetail,
+  EventHazardLinks,
+  HazardEvents,
   UserPrefs,
   AlertSettings,
   AlertsResponse,
@@ -254,6 +256,22 @@ export async function fetchHazardDetail(eventType: string, id: number): Promise<
   const res = await fetch(`${API_BASE_URL}/api/weather/storms/${encodeURIComponent(eventType)}/${id}`);
   if (!res.ok) {
     throw new Error(`Failed to fetch hazard detail: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function fetchEventHazards(crisisId: string): Promise<EventHazardLinks> {
+  const res = await fetch(`${API_BASE_URL}/api/crises/${encodeURIComponent(crisisId)}/hazards`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch hazards near event ${crisisId}: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function fetchHazardEvents(eventType: string, id: number): Promise<HazardEvents> {
+  const res = await fetch(`${API_BASE_URL}/api/weather/storms/${encodeURIComponent(eventType)}/${id}/events`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch events near hazard: ${res.status} ${res.statusText}`);
   }
   return res.json();
 }

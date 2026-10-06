@@ -21,6 +21,7 @@ from services.history import generate_deep_history
 from services.scenarios import generate_scenarios, ScenariosUnavailable
 from services.location_refine import refine_crisis_location
 from services.stories import canonical_id
+from services.hazard_links import hazards_for_event
 from services.gating import require_premium
 from services.realtime import broadcast_new_crisis
 
@@ -335,6 +336,21 @@ def update_crisis(crisis_id):
     except Exception as e:
         logger.error(f"Error updating crisis: {e}")
         return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
+
+
+@crises_bp.route('/<crisis_id>/hazards', methods=['GET'])
+@limiter.limit("60 per minute")
+def get_event_hazards(crisis_id):
+    """Weather hazards whose footprint contains or is near this event, while active.
+    "Near" and "during" only: no claim that either caused the other."""
+    try:
+        result = hazards_for_event(canonical_id(crisis_id))
+    except Exception as e:
+        logger.error(f"Error linking hazards to event {crisis_id}: {e}")
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
+    if result is None:
+        return jsonify({'error': 'Crisis not found'}), 404
+    return jsonify(result)
 
 
 @crises_bp.route('/<crisis_id>/reliability', methods=['GET'])
