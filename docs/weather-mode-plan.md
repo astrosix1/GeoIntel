@@ -2,7 +2,9 @@
 
 Plan for the next round of Weather mode work. Everything here uses free data or data the app already has, apart from the optional AI items at the end. Earlier phases are in `docs/roadmap-phases-1-21-archive.md`. The story pipeline is in `docs/story-pipeline-plan.md`.
 
-Status: **Stage 1 implemented** (not committed). Stages 2 to 5 planned.
+Status: **Stage 1 implemented and committed (add6697). Stage 2 implemented** (not committed). Stages 3 to 5 planned.
+
+Stage 2 as built: the forecast now returns every remaining hour of the 7 days (about 164, was 48) and the point panel has a **Forecast timeline** scrubber that steps through them, labelled "Forecast, not observed". **Compare places** holds up to three places in the UI (not saved): now, today's high/low, 7-day rain, strongest gust, and any hazard whose pin is within 300 km (stated as pin distance, not footprint). It reuses the existing forecast endpoint, so no new backend route was needed; each place loads on its own so one failure does not hide the others. The scrubber moves the panel only, not the map layers. Free versus premium limits for compare were not set: it is three places for everyone.
 
 Stage 1 data check, done against the live GDACS feed (2026-10-05):
 - *Cyclones:* per-event geometry has the track as line segments flagged past or forecast, three current wind-zone polygons (60, 90 and 120 km/h), per-time-step footprints (not used) and an uncertainty cone. Population inside the 119 km/h and 63 km/h wind buffers comes from the impact links; the value is blank when GDACS has no number, shown as "Not reported".

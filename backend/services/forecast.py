@@ -25,7 +25,7 @@ GEOCODING_FREE_BASE = 'https://geocoding-api.open-meteo.com'
 GEOCODING_COMMERCIAL_BASE = 'https://customer-geocoding-api.open-meteo.com'
 
 CACHE_TTL = 15 * 60
-HOURS_SHOWN = 48
+HOURS_SHOWN = 168   # the whole 7 days, for the timeline scrubber
 TIMEOUT = 8
 
 CURRENT_FIELDS = [

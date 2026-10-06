@@ -86,10 +86,10 @@ class TestGetForecast:
 
         assert result['current']['temperature_2m'] == 26.6
         assert result['current']['weather_code'] == 3
-        # Starts at the current local hour (10:00) and shows 48 hours.
+        # Starts at the current local hour (10:00) and shows every remaining hour, up to 7 days.
         assert result['hourly']['time'][0] == '2026-10-03T10:00'
-        assert len(result['hourly']['time']) == 48
-        assert len(result['hourly']['temperature_2m']) == 48
+        assert len(result['hourly']['time']) == 62      # 72 supplied, 10 already past
+        assert len(result['hourly']['temperature_2m']) == 62
         assert result['hourly']['temperature_2m'][0] == 10
         assert 'unexpected_extra' not in result['hourly']
         assert len(result['daily']['time']) == 7

@@ -136,6 +136,9 @@
 
 .watchRow {
   margin-bottom: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .watchButton {
@@ -151,4 +154,18 @@
 
 .watchButton:hover {
   background: rgba(90, 160, 255, 0.4);
+}
+
+.scrubber {
+  width: 100%;
+  margin: 4px 0 6px;
+  accent-color: #7dd3fc;
+}
+
+.timelineHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+  font-size: 13px;
 }

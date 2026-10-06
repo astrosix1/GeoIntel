@@ -5,7 +5,9 @@ import type { UnitSystem } from '../../lib/units';
 import { describeWeather } from '../../lib/weatherCodes';
 import PremiumGate from '../../components/PremiumGate';
 import { useEntitlements, useForecastQuery } from '../../state/queries';
-import { useUiStore } from '../../state/uiStore';
+import ComparePlaces from './ComparePlaces';
+import ForecastTimeline from './ForecastTimeline';
+import { MAX_COMPARE_PLACES, useUiStore } from '../../state/uiStore';
 import styles from './EventAnalysis.module.css';
 import forecastStyles from './PointForecast.module.css';
 
@@ -129,6 +131,10 @@ export default function PointForecast({ lat, lon, label }: { lat: number; lon: n
   const setDashboardTab = useUiStore((s) => s.setDashboardTab);
   const setDashboardOpen = useUiStore((s) => s.setDashboardOpen);
   const { data, isLoading, isError, refetch } = useForecastQuery(lat, lon);
+  const comparePlaces = useUiStore((s) => s.comparePlaces);
+  const addComparePlace = useUiStore((s) => s.addComparePlace);
+  const comparing = comparePlaces.some((p) => p.lat === lat && p.lon === lon);
+  const compareFull = comparePlaces.length >= MAX_COMPARE_PLACES;
 
   function chooseUnits(next: UnitSystem) {
     setUnits(next);
@@ -171,7 +177,17 @@ export default function PointForecast({ lat, lon, label }: { lat: number; lon: n
 
       <div className={forecastStyles.watchRow}>
         {premium ? watchButton : <PremiumGate feature="Watchlist alerts">{watchButton}</PremiumGate>}
+        <button
+          type="button"
+          className={forecastStyles.watchButton}
+          disabled={comparing || compareFull}
+          title={compareFull && !comparing ? 'Remove a place to add another' : undefined}
+          onClick={() => addComparePlace({ lat, lon, label: label ?? coords(lat, lon) })}
+        >
+          {comparing ? 'In comparison' : '+ Compare'}
+        </button>
       </div>
+      <ComparePlaces units={units} />
 
       {isLoading && <div className={styles.loading}>Loading forecast…</div>}
       {isError && (
@@ -185,6 +201,7 @@ export default function PointForecast({ lat, lon, label }: { lat: number; lon: n
       {data && (
         <>
           <Current forecast={data} units={units} />
+          <ForecastTimeline forecast={data} units={units} />
           <Hourly forecast={data} units={units} />
           <Daily forecast={data} units={units} />
           <div className={styles.mediaCaption}>

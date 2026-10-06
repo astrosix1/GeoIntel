@@ -8,6 +8,14 @@ export type GlobeMode = 'events' | 'weather' | 'timezone';
 
 // Discriminated union so AnalysisSidebar can hold either an event or a
 // country selection in the same slot (step 4 of the rewrite plan).
+export interface ComparePlace {
+  lat: number;
+  lon: number;
+  label: string;
+}
+
+export const MAX_COMPARE_PLACES = 3;
+
 export type PinnedSelection =
   | { kind: 'event'; crisis: CrisisSummary }
   | { kind: 'country'; countryCode: string }
@@ -111,6 +119,12 @@ interface UiState {
   pendingWatchPoint: PendingWatchPoint | null;
   setPendingWatchPoint: (point: PendingWatchPoint | null) => void;
 
+  // Weather mode: up to three places shown side by side (not saved anywhere).
+  comparePlaces: ComparePlace[];
+  addComparePlace: (place: ComparePlace) => void;
+  removeComparePlace: (lat: number, lon: number) => void;
+  clearComparePlaces: () => void;
+
   satellite: boolean;
   relief: boolean;
   setSatellite: (on: boolean) => void;
@@ -170,6 +184,16 @@ export const useUiStore = create<UiState>((set) => ({
   setDashboardTab: (tab) => set({ dashboardTab: tab }),
   pendingWatchPoint: null,
   setPendingWatchPoint: (point) => set({ pendingWatchPoint: point }),
+  comparePlaces: [],
+  addComparePlace: (place) =>
+    set((s) =>
+      s.comparePlaces.length >= MAX_COMPARE_PLACES ||
+      s.comparePlaces.some((p) => p.lat === place.lat && p.lon === place.lon)
+        ? s
+        : { comparePlaces: [...s.comparePlaces, place] },
+    ),
+  removeComparePlace: (lat, lon) => set((s) => ({ comparePlaces: s.comparePlaces.filter((p) => !(p.lat === lat && p.lon === lon)) })),
+  clearComparePlaces: () => set({ comparePlaces: [] }),
 
   satellite: false,
   relief: false,
