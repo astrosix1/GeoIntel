@@ -193,3 +193,31 @@ class TestAdminIsPremium:
         monkeypatch.setenv('ADMIN_EMAILS', 'boss@example.com')
         forged = _token(user_id, secret='wrong-secret-wrong-secret-wrong!!', email='boss@example.com')
         assert gated_client.get('/premium', headers=_auth(forged)).status_code == 401
+
+
+class TestPremiumForAll:
+    """PREMIUM_FOR_ALL is a testing switch: off by default, and only ever lifts
+    the premium check for users who are signed in."""
+
+    def test_off_by_default_free_user_is_blocked(self, gated_client, user_id, monkeypatch):
+        monkeypatch.delenv('PREMIUM_FOR_ALL', raising=False)
+        with _plan('free'):
+            res = gated_client.get('/premium', headers=_auth(_token(user_id)))
+        assert res.status_code == 403
+
+    def test_on_lets_a_free_signed_in_user_through(self, gated_client, user_id, monkeypatch):
+        monkeypatch.setenv('PREMIUM_FOR_ALL', 'true')
+        with _plan(None):
+            res = gated_client.get('/premium', headers=_auth(_token(user_id)))
+        assert res.status_code == 200 and res.get_json()['plan'] == 'premium'
+
+    def test_on_still_asks_anonymous_callers_to_sign_in(self, gated_client, monkeypatch):
+        monkeypatch.setenv('PREMIUM_FOR_ALL', 'true')
+        res = gated_client.get('/premium')
+        assert res.status_code == 401
+
+    def test_other_values_do_not_switch_it_on(self, gated_client, user_id, monkeypatch):
+        monkeypatch.setenv('PREMIUM_FOR_ALL', 'false')
+        with _plan(None):
+            res = gated_client.get('/premium', headers=_auth(_token(user_id)))
+        assert res.status_code == 403

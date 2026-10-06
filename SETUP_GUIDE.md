@@ -255,6 +255,10 @@ pip install -r requirements.txt
    - Set `REDIS_URL` for distributed caching/rate limiting
    - Admin endpoints already require `ADMIN_KEY` or a Supabase JWT — make
      sure `ADMIN_KEY`/`SUPABASE_JWT_SECRET`/`ADMIN_EMAILS` are set
+   - Testing the premium features on a live site: set `PREMIUM_FOR_ALL=true` on
+     the backend and every signed-in user gets premium (anonymous visitors are
+     still asked to sign in). Remove the variable to restore the paywall. No
+     frontend change or redeploy is needed.
    - Use Gunicorn/uWSGI instead of Flask dev server
    - Set up SSL/TLS certificates
 
