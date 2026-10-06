@@ -1,0 +1,115 @@
+/* Map furniture built outside React: popups and the weather pins. Tokens only. */
+.geo-popup .maplibregl-popup-content {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-2);
+  background: var(--panel);
+  color: var(--text);
+  font-size: var(--font-2);
+  line-height: var(--leading);
+  box-shadow: var(--shadow-pop);
+}
+
+.geo-popup.maplibregl-popup-anchor-top .maplibregl-popup-tip,
+.geo-popup.maplibregl-popup-anchor-top-left .maplibregl-popup-tip,
+.geo-popup.maplibregl-popup-anchor-top-right .maplibregl-popup-tip {
+  border-bottom-color: var(--panel);
+}
+
+.geo-popup.maplibregl-popup-anchor-bottom .maplibregl-popup-tip,
+.geo-popup.maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip,
+.geo-popup.maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip {
+  border-top-color: var(--panel);
+}
+
+.geo-popup.maplibregl-popup-anchor-left .maplibregl-popup-tip {
+  border-right-color: var(--panel);
+}
+
+.geo-popup.maplibregl-popup-anchor-right .maplibregl-popup-tip {
+  border-left-color: var(--panel);
+}
+
+.geo-pop-title {
+  font-size: var(--font-3);
+  font-weight: 600;
+}
+
+.geo-pop-meta {
+  color: var(--text-2);
+}
+
+.geo-pop-note {
+  color: var(--text-3);
+  font-size: var(--font-1);
+}
+
+.geo-stack {
+  min-width: 230px;
+  max-width: 300px;
+}
+
+.geo-stack-head {
+  margin-bottom: var(--space-1);
+  font-weight: 600;
+}
+
+.geo-stack-list {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.geo-stack-row {
+  display: block;
+  width: 100%;
+  padding: var(--space-1);
+  border: none;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.geo-stack-row:hover {
+  background: var(--raised);
+}
+
+.geo-stack-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-2);
+}
+
+.geo-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.geo-sev-1 { background: var(--sev-1-mark); }
+.geo-sev-2 { background: var(--sev-2-mark); }
+.geo-sev-3 { background: var(--sev-3-mark); }
+.geo-sev-4 { background: var(--sev-4-mark); }
+.geo-sev-5 { background: var(--sev-5-mark); }
+
+/* Weather pins: a round badge in the alert colour holding the hazard's drawn icon. */
+.geo-pin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1.5px solid var(--text);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.geo-pin-Red { background: var(--alert-red); color: var(--alert-red-fg); }
+.geo-pin-Orange { background: var(--alert-orange); color: var(--alert-orange-fg); }
+.geo-pin-Green { background: var(--alert-green); color: var(--alert-green-fg); }
+.geo-pin-Unknown { background: var(--sky); color: var(--accent-fg); }

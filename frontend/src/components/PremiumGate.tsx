@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { useEntitlements } from '../state/queries';
 import { getUpgradeUrl, isSignInConfigured, signIn } from '../auth/session';
+import Icon from '../ui/Icon';
 import styles from './PremiumGate.module.css';
 
 interface PremiumGateProps {
@@ -49,7 +50,7 @@ export default function PremiumGate({ children, feature, block }: PremiumGatePro
         {children}
       </div>
       <span className={styles.badge} aria-hidden="true">
-        🔒
+        <Icon name="lock" size={12} />
       </span>
       {prompt && <div className={styles.prompt}>{prompt}</div>}
     </div>

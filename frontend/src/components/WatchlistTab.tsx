@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { UserDataError } from '../api/client';
 import type { GeoResult, WatchPlace } from '../api/types';
-import { ALERT_COLORS, hazardIcon } from '../globe/hazards';
+import { alertTone, hazardIconName } from '../globe/hazards';
+import Icon from '../ui/Icon';
+import { Badge } from '../ui/Display';
 import { useAddPlaceMutation, useDeletePlaceMutation, usePlaceSearch, useWatchQuery } from '../state/queries';
 import { useUiStore } from '../state/uiStore';
 import dashboard from './Dashboard.module.css';
@@ -198,11 +200,8 @@ function PlaceRow({ place, hazardsAvailable }: { place: WatchPlace; hazardsAvail
         ) : (
           place.nearby.map((h) => (
             <span key={`${h.event_type}-${h.id}`} className={styles.hazard}>
-              <span
-                className={dashboard.dot}
-                style={{ backgroundColor: ALERT_COLORS[h.alert_level ?? 'Unknown'] ?? ALERT_COLORS.Unknown }}
-              />
-              {hazardIcon(h.event_type ?? '')} {h.name ?? h.hazard ?? 'Hazard'} &middot; {h.distance_km} km
+              <Badge compact tone={alertTone(h.alert_level)}>{h.alert_level ?? 'Unknown'}</Badge>
+              <Icon name={hazardIconName(h.event_type ?? '')} size={14} /> {h.name ?? h.hazard ?? 'Hazard'} &middot; {h.distance_km} km
             </span>
           ))
         )}

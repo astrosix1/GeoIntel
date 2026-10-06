@@ -49,6 +49,15 @@ Status: **Stage 0 (foundations) committed (91be044). Stage 1 (shell and Settings
 - **Checked in the browser:** an event panel (badges, tabs, thumbnail, sections) and a cyclone hazard panel (Summary, Details, Exposure, Source) with no console errors. The zone, country and forecast panels were not opened by hand.
 - **Caught late:** a deleted stylesheet was still imported by the zone panel; `tsc` does not check CSS imports, so the browser found it. A scan of every CSS import now comes back clean.
 
+## Stage 4 as built (overlays and edges)
+
+- **Dashboard** is now the shared `Drawer` (slides in from the right, focus trap, Escape and the dim area close it, focus returns) with the shared `Tabs`; the old centred modal and its hand-made close button, tabs and key handler are gone. Saved events show a severity badge with its word; alerts and watchlist hazards show the GDACS alert badge (`alertTone` in `globe/hazards.ts`) and drawn hazard icons instead of colour dots and emoji. Saved events are removed with an icon button.
+- **Premium gate:** the padlock is the drawn lock icon, the prompt is a token-styled card with the shared shadow; Save uses plus/check icons instead of star glyphs.
+- **Map furniture** (`src/styles/map.css`, tokens only, under the style guard): all three popups (event, stacked events, weather pin, time zone) use one dark themed popup with a title, meta line and note; the stacked-event list has severity dots from the severity tokens and the word as well as the number; the weather pins are alert-coloured circles holding the drawn hazard icon (the emoji are gone from the code).
+- **Guard:** `src/components` and `src/styles/map.css` join `CONVERTED` (25 stylesheets).
+- **Checked:** `tsc`, the style guard, the build and 156 tests pass. In the browser (Weather mode): 74 pins drawn with icons in alert colours, a pin click opening the themed popup and the hazard panel, no console errors.
+- **Not checked by hand:** the dashboard drawer (it needs a premium sign-in, which this session cannot do), the stacked-event popup, the time zone popup, and the account menu, which is unchanged. Sky-condition emoji in the forecast panels (sun, cloud) remain: they are weather data glyphs, not interface chrome.
+
 ## What is wrong today (measured)
 
 - **Too few events per screen.** The first event starts 304 px down the left panel, and each event row is 107 px tall. At 900 px high, about five events are visible.

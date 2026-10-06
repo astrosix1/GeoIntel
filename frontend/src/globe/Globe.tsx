@@ -21,7 +21,9 @@ import { labelPoints } from '../lib/zoneLabels';
 import type { LabelPoint } from '../lib/zoneLabels';
 import { addTimezoneLayer, removeTimezoneLayer, timezonePopupHtml, TIMEZONE_HIT_LAYER_ID } from './TimezoneLayer';
 import { isOnNearHemisphere } from './hemisphere';
-import { ALERT_COLORS, hazardIcon } from './hazards';
+import { renderToStaticMarkup } from 'react-dom/server';
+import Icon from '../ui/Icon';
+import { hazardIconName } from './hazards';
 import { useRadar } from './useRadar';
 import { applyCrisisFilter, applyHazardFilter } from '../lib/filters';
 import { clearHazardGeometry, setHazardGeometry } from './hazardGeometry';
@@ -294,7 +296,7 @@ export default function Globe() {
         if (!tzid) return;
         selectZone(tzid, { lat: e.lngLat.lat, lon: e.lngLat.lng });
         timezonePopup?.remove();
-        timezonePopup = new maplibregl.Popup({ offset: 8 })
+        timezonePopup = new maplibregl.Popup({ offset: 8, className: 'geo-popup' })
           .setLngLat(e.lngLat)
           .setHTML(timezonePopupHtml(tzid))
           .addTo(map);
@@ -538,31 +540,19 @@ function addStormMarkers(
 
     const el = document.createElement('button');
     el.type = 'button';
-    el.textContent = hazardIcon(storm.event_type);
+    el.className = `geo-pin geo-pin-${storm.alert_level && ['Red', 'Orange', 'Green'].includes(storm.alert_level) ? storm.alert_level : 'Unknown'}`;
+    el.innerHTML = renderToStaticMarkup(<Icon name={hazardIconName(storm.event_type)} size={14} />);
     el.setAttribute('aria-label', `${storm.hazard ?? 'Weather event'}: ${storm.name ?? 'unnamed'}`);
-    Object.assign(el.style, {
-      width: '24px',
-      height: '24px',
-      padding: '0',
-      borderRadius: '50%',
-      fontSize: '13px',
-      lineHeight: '22px',
-      textAlign: 'center',
-      cursor: 'pointer',
-      background: colorForAlertLevel(storm.alert_level),
-      border: '1.5px solid rgba(255,255,255,0.9)',
-      boxShadow: '0 0 6px rgba(0,0,0,0.5)',
-    });
 
     el.addEventListener('click', (e) => {
       e.stopPropagation();
       onSelect(storm);
       popupRef.current?.remove();
-      popupRef.current = new maplibregl.Popup({ offset: 14, closeButton: false })
+      popupRef.current = new maplibregl.Popup({ offset: 14, closeButton: false, className: 'geo-popup' })
         .setLngLat(lngLat)
         .setHTML(
-          `<strong>${escapeHtml(storm.name ?? storm.hazard ?? 'Weather event')}</strong><br/>` +
-            `${escapeHtml(storm.hazard ?? '')}${storm.alert_level ? ` · ${escapeHtml(storm.alert_level)} alert` : ''}`,
+          `<div class="geo-pop-title">${escapeHtml(storm.name ?? storm.hazard ?? 'Weather event')}</div>` +
+            `<div class="geo-pop-meta">${escapeHtml(storm.hazard ?? '')}${storm.alert_level ? ` · ${escapeHtml(storm.alert_level)} alert` : ''}</div>`,
         )
         .addTo(map);
     });
@@ -586,8 +576,4 @@ function updateMarkerVisibility(map: maplibregl.Map, markers: maplibregl.Marker[
     const near = isOnNearHemisphere(centerPoint, [lngLat.lng, lngLat.lat]);
     marker.getElement().style.display = near ? '' : 'none';
   });
-}
-
-function colorForAlertLevel(level: string | null): string {
-  return ALERT_COLORS[level ?? 'Unknown'] ?? ALERT_COLORS.Unknown;
 }

@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { UserDataError } from '../api/client';
 import { signOut } from '../auth/session';
 import type { SavedEvent } from '../api/types';
 import { outletOf } from '../lib/outlet';
-import { colorForSeverity } from '../globe/severity';
+import { labelForSeverity, severityTone } from '../globe/severity';
+import { Badge, Tabs } from '../ui/Display';
+import { Drawer } from '../ui/Overlay';
+import Button, { IconButton } from '../ui/Button';
 import { useUiStore } from '../state/uiStore';
 import type { DashboardTab } from '../state/uiStore';
 import {
@@ -18,7 +21,6 @@ import {
 import AlertsTab from './AlertsTab';
 import WatchlistTab from './WatchlistTab';
 import styles from './Dashboard.module.css';
-import watch from './Watchlist.module.css';
 
 const TABS: { value: DashboardTab; label: string }[] = [
   { value: 'saved', label: 'Saved' },
@@ -58,19 +60,17 @@ function SavedTab({ onOpen }: { onOpen: (event: SavedEvent) => void }) {
           <button type="button" className={styles.rowMain} onClick={() => onOpen(event)}>
             <span className={styles.rowTitle}>{event.title}</span>
             <span className={styles.rowMeta}>
-              <span className={styles.dot} style={{ backgroundColor: colorForSeverity(event.severity) }} />
+              <Badge compact tone={severityTone(event.severity)}>{labelForSeverity(event.severity)}</Badge>
               {event.country} &middot; saved {new Date(event.saved_at).toLocaleDateString()}
             </span>
           </button>
-          <button
-            type="button"
-            className={styles.remove}
-            aria-label={`Remove ${event.title} from saved`}
+          <IconButton
+            icon="close"
+            size="sm"
+            label={`Remove ${event.title} from saved`}
             disabled={mutation.isPending}
             onClick={() => mutation.mutate({ id: event.crisis_id, save: false })}
-          >
-            &times;
-          </button>
+          />
         </li>
       ))}
     </ul>
@@ -193,17 +193,6 @@ export default function Dashboard() {
   const setRightOpen = useUiStore((s) => s.setRightOpen);
   const unread = useAlertsQuery().data?.unread ?? 0;
 
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [open, setOpen]);
-
-  if (!open) return null;
-
   // Open a saved event in Analysis from its stored snapshot.
   function openSaved(event: SavedEvent) {
     selectCrisis({
@@ -222,45 +211,24 @@ export default function Dashboard() {
   }
 
   return (
-    <div className={styles.backdrop} data-ui-hover-surface onClick={() => setOpen(false)}>
-      <div
-        className={styles.panel}
-        role="dialog"
-        aria-modal="true"
-        aria-label="My dashboard"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className={styles.header}>
-          <span className={styles.heading}>My dashboard</span>
-          <button type="button" className={styles.close} aria-label="Close dashboard" onClick={() => setOpen(false)}>
-            &times;
-          </button>
-        </div>
-        <div className={styles.tabs}>
-          {TABS.map((t) => (
-            <button
-              key={t.value}
-              type="button"
-              className={`${styles.tab} ${tab === t.value ? styles.tabActive : ''}`}
-              onClick={() => setTab(t.value)}
-            >
-              {t.label}
-              {t.value === 'alerts' && unread > 0 && <span className={watch.badge}>{unread}</span>}
-            </button>
-          ))}
-        </div>
-        <div className={styles.body}>
-          {tab === 'saved' && <SavedTab onOpen={openSaved} />}
-          {tab === 'sources' && <SourcesTab />}
-          {tab === 'watchlist' && <WatchlistTab />}
-          {tab === 'alerts' && <AlertsTab />}
-        </div>
-        <div className={styles.footer}>
-          <button type="button" className={styles.signOut} onClick={signOut}>
-            Sign out
-          </button>
-        </div>
+    <Drawer open={open} title="My dashboard" onClose={() => setOpen(false)}>
+      <Tabs
+        label="Dashboard sections"
+        value={tab}
+        onChange={setTab}
+        tabs={TABS.map((t) => ({ id: t.value, label: t.value === 'alerts' && unread > 0 ? `${t.label} (${unread})` : t.label }))}
+      />
+      <div className={styles.body}>
+        {tab === 'saved' && <SavedTab onOpen={openSaved} />}
+        {tab === 'sources' && <SourcesTab />}
+        {tab === 'watchlist' && <WatchlistTab />}
+        {tab === 'alerts' && <AlertsTab />}
       </div>
-    </div>
+      <div className={styles.footer}>
+        <Button size="sm" onClick={signOut}>
+          Sign out
+        </Button>
+      </div>
+    </Drawer>
   );
 }

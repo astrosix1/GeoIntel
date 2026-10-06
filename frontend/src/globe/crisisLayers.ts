@@ -1,7 +1,7 @@
 import * as maplibregl from 'maplibre-gl';
 import type { FeatureCollection, Point } from 'geojson';
 import type { CrisisSummary } from '../api/types';
-import { colorForSeverity } from './severity';
+import { labelForSeverity, severityTone } from './severity';
 import { pinTag, sourcesTag } from '../lib/precision';
 
 // Crisis pins as a clustered GeoJSON source + circle layers, drawn by the GPU
@@ -218,34 +218,34 @@ interface InteractionHandlers {
 // worst first. Built from DOM nodes (text only), never from HTML strings.
 function stackedList(events: CrisisSummary[], onPick: (crisis: CrisisSummary) => void): HTMLElement {
   const root = document.createElement('div');
-  root.style.cssText = 'min-width:230px;max-width:300px;color:#111';
+  root.className = 'geo-stack';
   const head = document.createElement('div');
+  head.className = 'geo-stack-head';
   head.textContent = `${events.length} events at this location`;
-  head.style.cssText = 'font-weight:600;font-size:12px;margin-bottom:6px';
   root.appendChild(head);
   const list = document.createElement('div');
-  list.style.cssText = 'max-height:220px;overflow-y:auto';
+  list.className = 'geo-stack-list';
   for (const crisis of events) {
     const row = document.createElement('button');
     row.type = 'button';
-    row.style.cssText = 'display:block;width:100%;text-align:left;padding:6px 4px;border:none;border-bottom:1px solid #eee;background:transparent;cursor:pointer;font:inherit;color:inherit';
+    row.className = 'geo-stack-row';
     const title = document.createElement('div');
-    title.style.cssText = 'font-size:12.5px;font-weight:600';
+    title.className = 'geo-pop-title';
     title.textContent = crisis.title;
     const meta = document.createElement('div');
-    meta.style.cssText = 'font-size:11.5px;color:#555;display:flex;align-items:center;gap:5px';
+    meta.className = 'geo-stack-meta';
     const dot = document.createElement('span');
-    dot.style.cssText = `width:8px;height:8px;border-radius:50%;background:${colorForSeverity(crisis.severity)}`;
+    dot.className = `geo-dot geo-${severityTone(crisis.severity).replace('sev', 'sev-')}`;
     const text = document.createElement('span');
-    text.textContent = `${crisis.country} \u00b7 severity ${crisis.severity}`;
+    text.textContent = `${crisis.country} · ${labelForSeverity(crisis.severity)} (${crisis.severity})`;
     meta.append(dot, text);
     const tag = [sourcesTag(crisis.sources), pinTag(crisis.location_confidence, crisis.statement)]
       .filter((t): t is string => !!t)
-      .join(' \u00b7 ');
+      .join(' · ');
     row.append(title, meta);
     if (tag) {
       const tagLine = document.createElement('div');
-      tagLine.style.cssText = 'font-size:11px;color:#777;margin-top:2px';
+      tagLine.className = 'geo-pop-note';
       tagLine.textContent = tag;
       row.appendChild(tagLine);
     }
@@ -258,7 +258,7 @@ function stackedList(events: CrisisSummary[], onPick: (crisis: CrisisSummary) =>
 
 // Wires click/hover for the crisis layers; returns a detach function.
 export function attachCrisisInteractions(map: maplibregl.Map, { getGroup, onSelect }: InteractionHandlers): () => void {
-  const popup = new maplibregl.Popup({ offset: 10 });
+  const popup = new maplibregl.Popup({ offset: 10, className: 'geo-popup' });
 
   const onPointClick = (e: maplibregl.MapLayerMouseEvent) => {
     const key = e.features?.[0]?.properties?.id as string | undefined;
@@ -285,10 +285,10 @@ export function attachCrisisInteractions(map: maplibregl.Map, { getGroup, onSele
     popup
       .setLngLat(at)
       .setHTML(
-        `<strong>${escapeHtml(first.title)}</strong><br/>${escapeHtml(first.country)} &middot; severity ${first.severity}` +
+        `<div class="geo-pop-title">${escapeHtml(first.title)}</div><div class="geo-pop-meta">${escapeHtml(first.country)} &middot; ${labelForSeverity(first.severity)} (${first.severity})</div>` +
           [sourcesTag(first.sources), pinTag(first.location_confidence, first.statement)]
             .filter((tag): tag is string => !!tag)
-            .map((tag) => `<br/><span style="color:#555;font-size:11.5px">${escapeHtml(tag)}</span>`)
+            .map((tag) => `<div class="geo-pop-note">${escapeHtml(tag)}</div>`)
             .join(''),
       )
       .addTo(map);

@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { UserDataError } from '../api/client';
 import type { AlertItem, AlertMinLevel, AlertSettings, ConditionKey } from '../api/types';
-import { ALERT_COLORS, hazardIcon } from '../globe/hazards';
+import { alertTone, hazardIconName } from '../globe/hazards';
+import Icon from '../ui/Icon';
+import { Badge } from '../ui/Display';
 import { timeAgo } from '../lib/time';
 import {
   useAlertSettingsQuery,
@@ -87,7 +89,7 @@ function ConditionRow({ spec, value, disabled, onSave }: {
         onKeyDown={(e) => {
           if (e.key === 'Enter') commit();
         }}
-        style={{ width: 70, marginLeft: 8 }}
+        className={styles.numberInput}
         aria-label={`${spec.label} (${spec.unit || 'index'})`}
       />
       {spec.unit}
@@ -182,8 +184,7 @@ export default function AlertsTab() {
         {data.unread > 0 && (
           <button
             type="button"
-            className={dashboard.action}
-            style={{ marginLeft: 12 }}
+            className={`${dashboard.action} ${styles.afterText}`}
             disabled={markRead.isPending}
             onClick={() => markRead.mutate({ all: true })}
           >
@@ -202,13 +203,10 @@ export default function AlertsTab() {
               <span className={`${styles.unread} ${alert.read_at ? styles.read : ''}`} aria-hidden="true" />
               <button type="button" className={styles.alertMain} onClick={() => open(alert)}>
                 <span className={dashboard.rowTitle}>
-                  {hazardIcon(alert.hazard_type)} {alert.title}
+                  <Icon name={hazardIconName(alert.hazard_type)} size={14} /> {alert.title}
                 </span>
                 <span className={dashboard.rowMeta}>
-                  <span
-                    className={dashboard.dot}
-                    style={{ backgroundColor: ALERT_COLORS[alert.alert_level] ?? ALERT_COLORS.Unknown }}
-                  />
+                  <Badge compact tone={alertTone(alert.alert_level)}>{alert.alert_level}</Badge>
                   {alert.hazard_type === 'WX'
                     ? `Forecast alert · ${alert.place_name ?? 'a removed place'}`
                     : `${alert.alert_level} alert · ${alert.distance_km} km from ${alert.place_name ?? 'a removed place'}`}{' '}

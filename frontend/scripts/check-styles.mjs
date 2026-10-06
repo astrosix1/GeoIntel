@@ -19,8 +19,8 @@ export const CONVERTED = [
   'src/sidebars/WorldClock.module.css',
   'src/sidebars/Planner.module.css',
   'src/sidebars/analysis',
-  'src/components/SaveButton.module.css',
-  'src/components/CopyLinkButton.module.css',
+  'src/components',
+  'src/styles/map.css',
 ];
 
 const NAMED_COLOURS = /\b(white|black|red|green|blue|yellow|orange|purple|pink|gray|grey|silver|gold|navy|teal|cyan|magenta|lime|maroon|olive|aqua)\b/i;

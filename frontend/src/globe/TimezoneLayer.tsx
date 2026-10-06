@@ -85,7 +85,7 @@ export function timezonePopupHtml(tzid: string): string {
   const div = document.createElement('div');
   div.textContent = tzid;
   const safeTzid = div.innerHTML;
-  return `<strong>${safeTzid}</strong><br/>${currentTimeForZone(tzid)}<br/><span style="font-size:11.5px;color:#555">Details in the Analysis panel</span>`;
+  return `<div class="geo-pop-title">${safeTzid}</div><div class="geo-pop-meta">${currentTimeForZone(tzid)}</div><div class="geo-pop-note">Details in the Analysis panel</div>`;
 }
 
 export const TIMEZONE_HIT_LAYER_ID = FILL_LAYER_ID;

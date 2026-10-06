@@ -15,12 +15,13 @@ export default function SaveButton({ crisisId }: { crisisId: string }) {
   const button = (
     <Button
       size="sm"
+      icon={isSaved ? 'check' : 'plus'}
       className={isSaved ? styles.saved : undefined}
       aria-pressed={isSaved}
       disabled={mutation.isPending}
       onClick={() => premium && mutation.mutate({ id: crisisId, save: !isSaved })}
     >
-      {isSaved ? '★ Saved' : '☆ Save'}
+      {isSaved ? 'Saved' : 'Save'}
     </Button>
   );
 
