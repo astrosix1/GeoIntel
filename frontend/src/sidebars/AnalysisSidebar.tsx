@@ -6,7 +6,7 @@ import PointForecast from './analysis/PointForecast';
 import ZoneAnalysis from './analysis/ZoneAnalysis';
 import styles from './AnalysisSidebar.module.css';
 
-export default function AnalysisSidebar() {
+export default function AnalysisSidebar({ docked }: { docked: boolean }) {
   const rightOpen = useUiStore((s) => s.rightOpen);
   const pinnedSelection = useUiStore((s) => s.pinnedSelection);
 
@@ -18,7 +18,7 @@ export default function AnalysisSidebar() {
   return (
     <aside
       data-ui-hover-surface
-      className={`${styles.sidebar} ${isOpen ? styles.open : ''}`}
+      className={`${styles.sidebar} ${docked ? styles.docked : styles.overlay} ${isOpen ? styles.open : styles.closed}`}
     >
       <div className={styles.header}>Analysis</div>
       <div className={styles.body}>

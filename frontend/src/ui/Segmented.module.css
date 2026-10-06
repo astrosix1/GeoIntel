@@ -46,3 +46,13 @@
   height: 22px;
   padding: 0 var(--space-2);
 }
+
+.option:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.option:disabled:hover {
+  background: transparent;
+  color: var(--text-2);
+}

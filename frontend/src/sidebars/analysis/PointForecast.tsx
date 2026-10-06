@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import type { Forecast } from '../../api/types';
-import { compass, formatRain, formatSpeed, formatTemp, loadTimeZone, loadUnits, saveTimeZone, saveUnits, toDisplayTime } from '../../lib/units';
-import type { TimeZoneMode, UnitSystem } from '../../lib/units';
+import { compass, formatRain, formatSpeed, formatTemp, toDisplayTime } from '../../lib/units';
+import type { UnitSystem } from '../../lib/units';
+import { useSettings } from '../../state/settings';
 import { timeAgo } from '../../lib/time';
 import CopyLinkButton from '../../components/CopyLinkButton';
 import { describeWeather } from '../../lib/weatherCodes';
@@ -128,8 +129,8 @@ function Daily({ forecast, units }: { forecast: Forecast; units: UnitSystem }) {
 // Analysis view for a clicked point in Weather mode. All values come straight
 // from the forecast provider; anything it didn't return shows as a dash.
 export default function PointForecast({ lat, lon, label }: { lat: number; lon: number; label: string | null }) {
-  const [units, setUnits] = useState<UnitSystem>(loadUnits);
-  const [timeZone, setTimeZone] = useState<TimeZoneMode>(loadTimeZone);
+  const units = useSettings((st) => st.units);
+  const timeZone = useSettings((st) => st.timeZone);
   const { premium } = useEntitlements();
   const setPendingWatchPoint = useUiStore((s) => s.setPendingWatchPoint);
   const setDashboardTab = useUiStore((s) => s.setDashboardTab);
@@ -151,16 +152,6 @@ export default function PointForecast({ lat, lon, label }: { lat: number; lon: n
   const comparing = comparePlaces.some((p) => p.lat === lat && p.lon === lon);
   const compareFull = comparePlaces.length >= MAX_COMPARE_PLACES;
 
-  function chooseTimeZone(next: TimeZoneMode) {
-    setTimeZone(next);
-    saveTimeZone(next);
-  }
-
-  function chooseUnits(next: UnitSystem) {
-    setUnits(next);
-    saveUnits(next);
-  }
-
   function addToWatchlist() {
     if (!premium) return;
     setPendingWatchPoint({ lat: Math.round(lat * 10000) / 10000, lon: Math.round(lon * 10000) / 10000, name: label ?? 'Pinned location' });
@@ -180,32 +171,6 @@ export default function PointForecast({ lat, lon, label }: { lat: number; lon: n
       <div className={styles.metaRow}>
         <span className={styles.badge}>{coords(lat, lon)}</span>
         {data?.elevation_m != null && <span className={styles.badge}>{Math.round(data.elevation_m)} m elevation</span>}
-        <span className={forecastStyles.unitToggle} role="group" aria-label="Units">
-          {(['metric', 'imperial'] as const).map((u) => (
-            <button
-              key={u}
-              type="button"
-              aria-pressed={units === u}
-              className={`${forecastStyles.unitButton} ${units === u ? forecastStyles.unitActive : ''}`}
-              onClick={() => chooseUnits(u)}
-            >
-              {u === 'metric' ? '°C · km/h' : '°F · mph'}
-            </button>
-          ))}
-        </span>
-        <span className={forecastStyles.unitToggle} role="group" aria-label="Time zone">
-          {(['local', 'utc'] as const).map((z) => (
-            <button
-              key={z}
-              type="button"
-              aria-pressed={timeZone === z}
-              className={`${forecastStyles.unitButton} ${timeZone === z ? forecastStyles.unitActive : ''}`}
-              onClick={() => chooseTimeZone(z)}
-            >
-              {z === 'local' ? 'Local time' : 'UTC'}
-            </button>
-          ))}
-        </span>
       </div>
 
       <div className={forecastStyles.watchRow}>

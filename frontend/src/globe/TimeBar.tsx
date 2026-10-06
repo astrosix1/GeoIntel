@@ -1,5 +1,6 @@
 import { MAX_TIME_OFFSET_MINUTES, useUiStore } from '../state/uiStore';
 import { useShownNow } from '../state/useNow';
+import Button from '../ui/Button';
 import styles from './TimeBar.module.css';
 
 const STEP_MINUTES = 15;
@@ -18,10 +19,6 @@ export default function TimeBar() {
   const activeMode = useUiStore((s) => s.activeMode);
   const offset = useUiStore((s) => s.timeOffsetMinutes);
   const setOffset = useUiStore((s) => s.setTimeOffsetMinutes);
-  const nightOn = useUiStore((s) => s.nightOn);
-  const setNightOn = useUiStore((s) => s.setNightOn);
-  const labelsOn = useUiStore((s) => s.zoneLabelsOn);
-  const setLabelsOn = useUiStore((s) => s.setZoneLabelsOn);
   const shown = useShownNow();
   if (activeMode !== 'timezone') return null;
 
@@ -31,12 +28,6 @@ export default function TimeBar() {
 
   return (
     <div className={styles.bar} data-ui-hover-surface>
-      <button type="button" aria-pressed={nightOn} className={`${styles.chip} ${nightOn ? '' : styles.chipOff}`} onClick={() => setNightOn(!nightOn)}>
-        <span aria-hidden="true">🌙</span> Night
-      </button>
-      <button type="button" aria-pressed={labelsOn} className={`${styles.chip} ${labelsOn ? '' : styles.chipOff}`} onClick={() => setLabelsOn(!labelsOn)}>
-        Labels
-      </button>
       <div className={styles.middle}>
         <input
           className={styles.slider}
@@ -53,9 +44,9 @@ export default function TimeBar() {
           {offset === 0 ? `Now · ${label} UTC` : `Showing ${label} UTC (${describeOffset(offset)}), not now`}
         </div>
       </div>
-      <button type="button" className={styles.chip} disabled={offset === 0} onClick={() => setOffset(0)}>
+      <Button size="sm" disabled={offset === 0} onClick={() => setOffset(0)}>
         Now
-      </button>
+      </Button>
     </div>
   );
 }

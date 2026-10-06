@@ -8,7 +8,8 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const CONVERTED = ['src/ui'];
+// Entries are folders (every .css inside) or single .css files.
+export const CONVERTED = ['src/ui', 'src/shell', 'src/globe/TimeBar.module.css'];
 
 const NAMED_COLOURS = /\b(white|black|red|green|blue|yellow|orange|purple|pink|gray|grey|silver|gold|navy|teal|cyan|magenta|lime|maroon|olive|aqua)\b/i;
 
@@ -58,8 +59,10 @@ function main() {
   const root = fileURLToPath(new URL('..', import.meta.url));
   let failures = 0;
   let files = 0;
-  for (const folder of CONVERTED) {
-    for (const file of cssFiles(join(root, folder))) {
+  for (const entry of CONVERTED) {
+    const target = join(root, entry);
+    const list = statSync(target).isDirectory() ? cssFiles(target) : [target];
+    for (const file of list) {
       files++;
       for (const problem of checkCss(readFileSync(file, 'utf8'))) {
         failures++;

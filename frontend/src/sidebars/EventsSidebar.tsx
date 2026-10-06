@@ -328,14 +328,14 @@ function WeatherList() {
   );
 }
 
-export default function EventsSidebar() {
+export default function EventsSidebar({ docked }: { docked: boolean }) {
   const leftOpen = useUiStore((s) => s.leftOpen);
   const activeMode = useUiStore((s) => s.activeMode);
 
   return (
     <aside
       data-ui-hover-surface
-      className={`${styles.sidebar} ${leftOpen ? styles.open : ''}`}
+      className={`${styles.sidebar} ${docked ? styles.docked : styles.overlay} ${leftOpen ? styles.open : styles.closed}`}
     >
       {activeMode === 'weather' ? <WeatherList /> : activeMode === 'timezone' ? <WorldClock /> : <EventsList />}
     </aside>

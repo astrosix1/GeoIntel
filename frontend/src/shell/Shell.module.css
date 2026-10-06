@@ -1,0 +1,40 @@
+/* The page frame: top bar, a strip of mode-specific controls, the working area, a status bar. */
+.shell {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  grid-template-rows: 40px auto minmax(0, 1fr) 24px;
+  color: var(--text);
+}
+
+/* Docked: the two panels are columns beside the map, which gets whatever space is left. */
+.body {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 0;
+}
+
+/* Overlay on hover: the map is the whole working area and the panels slide over it. */
+.bodyOverlay {
+  position: relative;
+  min-height: 0;
+}
+
+.map {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.bodyOverlay .map {
+  position: absolute;
+  inset: 0;
+}
+
+.globe {
+  position: absolute;
+  inset: 0;
+}

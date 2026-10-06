@@ -2,7 +2,7 @@
 
 Plan for a new look for GeoIntel. The goal is a denser, calmer interface where the data gets the space and the chrome gets out of the way. This is a separate plan from the product plans (`docs/story-pipeline-plan.md`, `docs/weather-mode-plan.md`, `docs/timezone-mode-plan.md`); it changes how things look and are laid out, not what they do.
 
-Status: **Stage 0 (foundations) implemented** (not committed); Stages 1 to 7 planned. The six open questions have been answered (see "Decisions made"). Measurements below were taken from the running app at 1440 x 900 on 6 October 2026.
+Status: **Stage 0 (foundations) committed (91be044). Stage 1 (shell and Settings) implemented** (not committed); Stages 2 to 7 planned. In the numbered build order below, "Stage 0" is item 1 and "Stage 1" is item 2. The six open questions have been answered (see "Decisions made"). Measurements below were taken from the running app at 1440 x 900 on 6 October 2026.
 
 ## Stage 0 as built
 
@@ -15,6 +15,19 @@ Status: **Stage 0 (foundations) implemented** (not committed); Stages 1 to 7 pla
 - **Guards:** `npm run lint` now also runs `scripts/check-styles.mjs`, which fails on a hard-coded colour, a font size outside the six, or a radius outside the two, in the folders listed in `CONVERTED` (just `src/ui` for now; each later stage adds the folders it converts). `tests/contrast.test.ts` reads the tokens and checks 4.5:1 for text and 3:1 for marks, focus ring and control edges, in both themes (it was checked to fail when a token is weakened).
 - **Checked:** keyboard behaviour of Tabs, Popover (Escape, outside click, focus return) and Drawer (focus moves in, Tab wraps both ways, Escape closes and focus returns) in the browser; 51 new tests (137 frontend tests in all).
 - **Effect on the current app, from the base layer alone** (same script as the audit, 1440 x 900): first event 262 px from the top of the panel (was 304); row height 85 px (was 107); events fully visible 7 (was about 5). The remaining text sizes and spacing are the old components' own and change as each stage converts them.
+
+## Stage 1 as built (shell and Settings)
+
+- **New frame** (`src/shell/`): a 40 px top bar (wordmark, mode switch, Layers, Settings, Dashboard, account), a thin context strip under it (the pin key in Events; the hazard chips and honest notices in Weather; nothing in Time Zone), the working area, and a 24 px status bar (how fresh the data is and any problem, plus the UTC time). The old floating groups are gone: `Logo`, `ModeSwitcher`, `AccountChip`, `LayerControl`, `MapLegend` and `WeatherLegend` were deleted and replaced by these.
+- **Docked panels by default.** The events and analysis panels are columns beside the map (300 and 360 px); the events panel is open from the start and the analysis panel opens when something is selected; a tab on the map's edge collapses or restores each. The map resizes to the space left and the globe is **fitted to it** (about 88% of the smaller side) until the user zooms for themselves, so it is no longer a small disc in the middle of a big screen. Under 900 px wide the panels fall back to the old overlay behaviour automatically.
+- **Layers menu:** Satellite and Topography (premium), the Weather radar and its loop, the Time Zone night side and zone labels, each shown only in the mode where it means something. Radar, Night and Labels chips are gone from their old places.
+- **Settings menu:** Panels (Docked, or Overlay on hover as before), Theme, Starfield (on by default, off switch works), Units (metric or imperial), Forecast times (place local or UTC), Clock (24 or 12 hour) and Date format. Units, forecast time zone and clock choices moved here from the forecast panel and the world clock, and everything is remembered in this browser.
+- **Light theme is offered but switched off in the app** (greyed, with an explanation) until every screen is converted, because the unconverted screens would be unreadable on a light surface. It is complete in the tokens and visible at `?ui`. Flip `LIGHT_THEME_READY` in `src/state/settings.ts` when the last stage is done.
+- **Time bar** now sits inside the map area, slimmer, with Night and Labels moved to Layers.
+- **Guard and tests:** `src/shell` and `src/globe/TimeBar.module.css` join `CONVERTED` (9 stylesheets checked), the guard now accepts single files, and 6 new tests cover the stored preferences (143 frontend tests in all).
+- **Checked in the browser** (1440 and 800 px wide): docked layout, selection opening the analysis panel and the globe refitting, collapsing and reopening the events panel four times and switching Docked and Overlay with no console errors, Settings changes taking effect and persisting, each mode's Layers contents and strip, the narrow-window fallback, and the Dashboard lock.
+- **Measured at 1440 x 900, both panels open:** map 780 px wide, **54% of the window** (the plan's 60% target was wrong for its own 300 + 360 panels; the target is now 54%). First event 204 px below the panel top (was 304) and rows 104 px (was 107): the list itself is rebuilt in the next stage, which is where the "first event under 110 px, 20 or more events visible" targets are met.
+- **Unchanged on purpose:** panel contents, the dashboard modal, map popups and the pin emoji are converted in later stages.
 
 ## What is wrong today (measured)
 
@@ -133,7 +146,7 @@ Each stage ships on its own, is visible in the app, and is checked before the ne
 ## How each stage is checked
 
 - `tsc`, the production build, lint and the existing frontend tests stay green; the backend suite is a regression check only (no backend change is planned).
-- **Measured targets**, re-measured with the same script as the audit above: first event under 110 px from the panel top; 20 or more events visible at 900 px; 6 or fewer distinct text sizes; 2 radii; 0 hard-coded colours in component stylesheets; map width at least 60% of the window at 1440 with both panels open.
+- **Measured targets**, re-measured with the same script as the audit above: first event under 110 px from the panel top; 20 or more events visible at 900 px; 6 or fewer distinct text sizes; 2 radii; 0 hard-coded colours in component stylesheets; map width at least 54% of the window at 1440 with both panels open (300 + 360 px panels).
 - Screenshots at 1440, 1024 and 390 px wide for each screen in Events, Weather and Time Zone, before and after, in dark and light, kept in the repo's docs for comparison.
 - Contrast of every text and UI-edge token pair is computed for both themes and the results are recorded; any pair under 4.5:1 (text) or 3:1 (edges) is fixed before the stage is called done.
 - Each Settings choice is tested: it takes effect immediately, survives a reload, and falls back to the default if browser storage is blocked.

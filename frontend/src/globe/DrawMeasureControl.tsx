@@ -24,7 +24,7 @@ import '@watergis/maplibre-gl-terradraw/dist/maplibre-gl-terradraw.css';
 //
 // This is a real `maplibregl.IControl`, so it mounts the same way as the
 // existing `NavigationControl` in Globe.tsx (map.addControl(...)) — no new
-// React mount point, no editing of ModeSwitcher, and it renders its own
+// React mount point, no editing of the top bar, and it renders its own
 // toggle button + expandable toolbar, so no extra button component is
 // needed either.
 export function createDrawMeasureControl(): MaplibreMeasureControl {

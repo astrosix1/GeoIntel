@@ -26,6 +26,9 @@ import { useRadar } from './useRadar';
 import { applyCrisisFilter, applyHazardFilter } from '../lib/filters';
 import { clearHazardGeometry, setHazardGeometry } from './hazardGeometry';
 import { useReportedAtNight } from '../state/useZoneIndex';
+import { fitGlobe } from './fitGlobe';
+import { useSettings } from '../state/settings';
+import { DOCK_MIN_WIDTH } from '../ui/preferences';
 
 // Real, current OpenFreeMap style URL (no API key required).
 // See https://openfreemap.org/quick_start/ — "liberty" is OpenFreeMap's full-detail style.
@@ -158,7 +161,7 @@ export default function Globe() {
       // MapLibre IControl (like NavigationControl above) — it renders its own
       // toggle button + toolbar, so no extra React UI is needed. Placed
       // bottom-right (away from NavigationControl's top-right zoom buttons and
-      // ModeSwitcher's top-center cluster). Loaded after the map is up (a
+      // the top bar). Loaded after the map is up (a
       // separate chunk) so terra-draw/Turf stay off the critical path.
       import('./DrawMeasureControl').then(({ createDrawMeasureControl }) => {
         if (mapRef.current === map) map.addControl(createDrawMeasureControl(), 'bottom-right');
@@ -189,6 +192,8 @@ export default function Globe() {
     // Dragging the globe closes both side panels so the map has the whole
     // screen. Only a real drag (MapLibre's dragstart), never a plain click.
     map.on('dragstart', () => {
+      // Only in Overlay mode: docked panels stay where they are.
+      if (useSettings.getState().panels === 'docked' && window.matchMedia(`(min-width: ${DOCK_MIN_WIDTH}px)`).matches) return;
       const ui = useUiStore.getState();
       if (ui.leftOpen) ui.setLeftOpen(false);
       if (ui.rightOpen) ui.setRightOpen(false);
@@ -226,6 +231,19 @@ export default function Globe() {
     // `move` fires continuously during pan/rotate/zoom. Only the handful of
     // storm markers go through this now — crisis pins are a GPU layer that
     // the globe projection occludes itself — so it's cheap.
+    // The map's box changes when a docked panel opens, closes or the window is resized; keep the canvas the same size.
+    // Until the user zooms for themselves, the globe is sized to the space it has (fitGlobe), also when a panel opens or closes.
+    let userZoomed = false;
+    map.on('zoomstart', (e) => {
+      if ((e as { originalEvent?: unknown }).originalEvent) userZoomed = true;
+    });
+    map.once('style.load', () => fitGlobe(map));
+    const resizeObserver = new ResizeObserver(() => {
+      map.resize();
+      if (!userZoomed && map.isStyleLoaded()) fitGlobe(map);
+    });
+    resizeObserver.observe(containerRef.current as HTMLDivElement);
+
     map.on('move', () => {
       updateMarkerVisibility(map, markersRef.current);
       if (pointMarkerRef.current) updateMarkerVisibility(map, [pointMarkerRef.current]);
@@ -235,6 +253,7 @@ export default function Globe() {
     return () => {
       markersRef.current.forEach((m) => m.remove());
       markersRef.current = [];
+      resizeObserver.disconnect();
       map.remove();
       mapRef.current = null;
       setMapReady(false);

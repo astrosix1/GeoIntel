@@ -25,7 +25,6 @@ export default function WorldClock() {
   const prefs = useUiStore((s) => s.clockPrefs);
   const addClock = useUiStore((s) => s.addClock);
   const removeClock = useUiStore((s) => s.removeClock);
-  const setPrefs = useUiStore((s) => s.setClockPrefs);
   const selectZone = useUiStore((s) => s.selectZone);
   const now = useShownNow();
   const offset = useUiStore((s) => s.timeOffsetMinutes);
@@ -61,35 +60,6 @@ export default function WorldClock() {
       {tab === 'convert' && <ConverterPanel />}
       {tab === 'clocks' && (
         <>
-      <div className={styles.controls}>
-        <span className={styles.toggle} role="group" aria-label="Hour format">
-          {[false, true].map((h12) => (
-            <button
-              key={String(h12)}
-              type="button"
-              aria-pressed={prefs.hour12 === h12}
-              className={`${styles.toggleButton} ${prefs.hour12 === h12 ? styles.toggleActive : ''}`}
-              onClick={() => setPrefs({ ...prefs, hour12: h12 })}
-            >
-              {h12 ? '12 hour' : '24 hour'}
-            </button>
-          ))}
-        </span>
-        <span className={styles.toggle} role="group" aria-label="Date format">
-          {(['long', 'iso'] as const).map((format) => (
-            <button
-              key={format}
-              type="button"
-              aria-pressed={prefs.dateFormat === format}
-              className={`${styles.toggleButton} ${prefs.dateFormat === format ? styles.toggleActive : ''}`}
-              onClick={() => setPrefs({ ...prefs, dateFormat: format })}
-            >
-              {format === 'long' ? 'Wed, Oct 7' : '2026-10-07'}
-            </button>
-          ))}
-        </span>
-      </div>
-
       <div className={styles.search}>
         <input
           className={styles.searchInput}

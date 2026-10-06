@@ -1,0 +1,131 @@
+/* Top bar, context strip and status bar. */
+.top {
+  position: relative;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: 0 var(--space-3);
+  border-bottom: 1px solid var(--line-strong);
+  background: var(--panel);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-4);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.unread {
+  margin-left: var(--space-1);
+}
+
+.strip {
+  position: relative;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  min-height: 28px;
+  padding: var(--space-1) var(--space-3);
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text-2);
+  font-size: var(--font-2);
+}
+
+.stripChips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.note {
+  color: var(--text-3);
+}
+
+.noteWarn {
+  color: var(--warn);
+}
+
+.link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.key {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-4);
+}
+
+.keyItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.dot {
+  box-sizing: border-box;
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.dotSolid {
+  background: var(--text-2);
+}
+
+.dotHollow {
+  border: 2px solid var(--text-2);
+}
+
+.dotRing {
+  width: 14px;
+  height: 14px;
+  border: 1px dashed var(--text-3);
+  background: radial-gradient(circle, var(--text-2) 2px, transparent 3px);
+}
+
+.status {
+  position: relative;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 0 var(--space-3);
+  border-top: 1px solid var(--line-strong);
+  background: var(--panel);
+  color: var(--text-3);
+  font-size: var(--font-1);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.statusError {
+  color: var(--warn);
+}
