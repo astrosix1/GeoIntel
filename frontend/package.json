@@ -9,7 +9,7 @@
     "prebuild": "node scripts/copy-maplibre-worker.mjs",
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "oxlint",
+    "lint": "oxlint && node scripts/check-styles.mjs",
     "test": "node --test \"tests/*.test.ts\"",
     "preview": "vite preview"
   },

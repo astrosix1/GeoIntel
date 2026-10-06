@@ -12,7 +12,6 @@ import Logo from './Logo';
 import AccountChip from './components/AccountChip';
 import Dashboard from './components/Dashboard';
 import { useShareLink } from './state/useShareLink';
-import './App.css';
 
 // Decorative only — loaded after the globe so it never delays first paint.
 const SolarSystem = lazy(() => import('./background/SolarSystem'));

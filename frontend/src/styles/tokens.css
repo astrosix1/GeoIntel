@@ -1,0 +1,130 @@
+/*
+ * Design tokens. The dark values are the colours the app already uses, given names; the light theme
+ * overrides them on :root[data-theme='light']. Components use these names only (never a hard-coded
+ * colour, size or radius); scripts/check-styles.mjs enforces that for the converted stylesheets.
+ * tests/contrast.test.ts reads this file and checks the contrast of every pair that matters.
+ */
+:root {
+  color-scheme: dark;
+
+  /* Surfaces */
+  --bg-app: #03040a;
+  --bg-app-glow: #0b0f1e;
+  --panel: #0a0e14;
+  --panel-overlay: rgba(10, 14, 20, 0.92);
+  --raised: rgba(255, 255, 255, 0.06);
+  --raised-strong: rgba(255, 255, 255, 0.1);
+
+  /* Lines: hairlines for structure, and an edge strong enough to see a control by (3:1) */
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.12);
+  --edge-control: rgba(255, 255, 255, 0.38);
+
+  /* Text */
+  --text: #e6e9ef;
+  --text-2: rgba(230, 233, 239, 0.7);
+  --text-3: rgba(230, 233, 239, 0.6);
+
+  /* Accent, and the two highlight colours the app already uses */
+  --accent: #5aa0ff;
+  --accent-fg: #0a0e14;
+  --accent-soft: rgba(90, 160, 255, 0.25);
+  --focus: #5aa0ff;
+  --sky: #7dd3fc;
+  --warn: #fcd34d;
+
+  /* Severity, Minor (1) to Critical (5): the fill, the text on that fill, and the colour for a small mark on a panel */
+  --sev-1: #22c55e;
+  --sev-1-fg: #0a0e14;
+  --sev-1-mark: #22c55e;
+  --sev-2: #84cc16;
+  --sev-2-fg: #0a0e14;
+  --sev-2-mark: #84cc16;
+  --sev-3: #eab308;
+  --sev-3-fg: #0a0e14;
+  --sev-3-mark: #eab308;
+  --sev-4: #f97316;
+  --sev-4-fg: #0a0e14;
+  --sev-4-mark: #f97316;
+  --sev-5: #dc2626;
+  --sev-5-fg: #ffffff;
+  --sev-5-mark: #dc2626;
+
+  /* GDACS hazard alert levels */
+  --alert-red: #ff2d55;
+  --alert-red-fg: #0a0e14;
+  --alert-red-mark: #ff2d55;
+  --alert-orange: #ff9500;
+  --alert-orange-fg: #0a0e14;
+  --alert-orange-mark: #ff9500;
+  --alert-green: #34c759;
+  --alert-green-fg: #0a0e14;
+  --alert-green-mark: #34c759;
+
+  /* Spacing (4 px grid) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+
+  /* Shape */
+  --radius-1: 3px;
+  --radius-2: 6px;
+  --radius-pill: 999px;
+
+  /* Type: six sizes, one family, one line height */
+  --font-ui: system-ui, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  --font-1: 11px;
+  --font-2: 12px;
+  --font-3: 13px;
+  --font-4: 14px;
+  --font-5: 16px;
+  --font-6: 20px;
+  --leading: 1.4;
+
+  /* Motion and depth */
+  --motion: 120ms;
+  --scrim: rgba(0, 0, 0, 0.5);
+  --shadow-pop: 0 6px 24px rgba(0, 0, 0, 0.45);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --bg-app: #e9edf2;
+  --bg-app-glow: #f4f6f9;
+  --panel: #ffffff;
+  --panel-overlay: rgba(255, 255, 255, 0.94);
+  --raised: rgba(10, 14, 20, 0.05);
+  --raised-strong: rgba(10, 14, 20, 0.09);
+
+  --line: rgba(10, 14, 20, 0.1);
+  --line-strong: rgba(10, 14, 20, 0.16);
+  --edge-control: rgba(10, 14, 20, 0.5);
+
+  --text: #0f1722;
+  --text-2: rgba(15, 23, 34, 0.74);
+  --text-3: rgba(15, 23, 34, 0.64);
+
+  --accent: #1d6fe0;
+  --accent-fg: #ffffff;
+  --accent-soft: rgba(29, 111, 224, 0.14);
+  --focus: #1d6fe0;
+  --sky: #0369a1;
+  --warn: #a15c07;
+
+  /* Fills keep the dark theme's hues; the small marks are darkened to stay visible on white */
+  --sev-1-mark: #15803d;
+  --sev-2-mark: #4d7c0f;
+  --sev-3-mark: #a16207;
+  --sev-4-mark: #c2410c;
+  --sev-5-mark: #dc2626;
+  --alert-red-mark: #d4143f;
+  --alert-orange-mark: #b45f00;
+  --alert-green-mark: #15803d;
+
+  --scrim: rgba(15, 23, 34, 0.35);
+  --shadow-pop: 0 6px 24px rgba(15, 23, 34, 0.18);
+}

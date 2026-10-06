@@ -2,7 +2,19 @@
 
 Plan for a new look for GeoIntel. The goal is a denser, calmer interface where the data gets the space and the chrome gets out of the way. This is a separate plan from the product plans (`docs/story-pipeline-plan.md`, `docs/weather-mode-plan.md`, `docs/timezone-mode-plan.md`); it changes how things look and are laid out, not what they do.
 
-Status: **planned, nothing built.** The six open questions have been answered (see "Decisions made"). Measurements below were taken from the running app at 1440 x 900 on 6 October 2026.
+Status: **Stage 0 (foundations) implemented** (not committed); Stages 1 to 7 planned. The six open questions have been answered (see "Decisions made"). Measurements below were taken from the running app at 1440 x 900 on 6 October 2026.
+
+## Stage 0 as built
+
+- **Removed:** `App.css` and every starter rule in `index.css`. `index.css` now only imports the two files below.
+- **`src/styles/tokens.css`:** the colour, spacing, radius, type-size and motion tokens, dark values from the colours the app already uses and a light override on `:root[data-theme='light']`. Two small changes to the old values, both needed to pass the contrast check: the panel is a solid `#0a0e14` (the old 75% see-through panel cannot meet 4.5:1 over a bright map; a separate 92% `--panel-overlay` is kept for overlay mode), and the muted text strength is 60% (was a mix of 55 and 60). Severity badge text on Critical red is white, because the dark text used before measured only 3.7:1.
+- **`src/styles/base.css`:** 13 px body at 1.4 line height, system font stack, tabular numerals, focus ring, thin scrollbars, reduced-motion rule. It deliberately does not set `box-sizing` globally, because existing screens mix the two; the new components set it themselves.
+- **Shared components in `src/ui/`:** Button and IconButton, Segmented, Chip, Badge (severity and alert tones), Tabs (arrow keys, Home, End), Toolbar, Section (collapsible), KeyValue, ListRow, StateMessage (empty, loading, error), Popover, Drawer, and an inline-SVG Icon set of 20. No new dependencies.
+- **Hidden kit page:** open the app with `?ui` (a query, not a path, so it works on the static host). It shows every component in dark, light or system, including a 40-row dense list and the colour and type scales. It is a separate chunk and is not linked from the app.
+- **Theme handling:** `src/ui/theme.ts` (Dark default, Light, Match my system; remembered in the browser; storage-blocked safe). It is applied at start-up; the Settings control that changes it arrives in Stage 2.
+- **Guards:** `npm run lint` now also runs `scripts/check-styles.mjs`, which fails on a hard-coded colour, a font size outside the six, or a radius outside the two, in the folders listed in `CONVERTED` (just `src/ui` for now; each later stage adds the folders it converts). `tests/contrast.test.ts` reads the tokens and checks 4.5:1 for text and 3:1 for marks, focus ring and control edges, in both themes (it was checked to fail when a token is weakened).
+- **Checked:** keyboard behaviour of Tabs, Popover (Escape, outside click, focus return) and Drawer (focus moves in, Tab wraps both ways, Escape closes and focus returns) in the browser; 51 new tests (137 frontend tests in all).
+- **Effect on the current app, from the base layer alone** (same script as the audit, 1440 x 900): first event 262 px from the top of the panel (was 304); row height 85 px (was 107); events fully visible 7 (was about 5). The remaining text sizes and spacing are the old components' own and change as each stage converts them.
 
 ## What is wrong today (measured)
 

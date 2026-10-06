@@ -1,0 +1,265 @@
+/* Chip: a small toggle pill (filters, layer switches). */
+.chip {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 24px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--edge-control);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--font-2);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--motion);
+}
+
+.chip:hover {
+  background: var(--raised);
+  color: var(--text);
+}
+
+.chipOn,
+.chipOn:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.count {
+  color: var(--text-3);
+  font-size: var(--font-1);
+}
+
+/* Badge: a status label. Coloured badges carry their word, never colour alone. */
+.badge {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--raised-strong);
+  color: var(--text-2);
+  font-size: var(--font-1);
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.accent {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.warn {
+  background: transparent;
+  color: var(--warn);
+  box-shadow: inset 0 0 0 1px var(--warn);
+}
+
+.sev1 { background: var(--sev-1); color: var(--sev-1-fg); }
+.sev2 { background: var(--sev-2); color: var(--sev-2-fg); }
+.sev3 { background: var(--sev-3); color: var(--sev-3-fg); }
+.sev4 { background: var(--sev-4); color: var(--sev-4-fg); }
+.sev5 { background: var(--sev-5); color: var(--sev-5-fg); }
+.alertRed { background: var(--alert-red); color: var(--alert-red-fg); }
+.alertOrange { background: var(--alert-orange); color: var(--alert-orange-fg); }
+.alertGreen { background: var(--alert-green); color: var(--alert-green-fg); }
+
+/* Tabs */
+.tabs {
+  display: flex;
+  gap: var(--space-1);
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.tab {
+  height: 28px;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--font-3);
+  cursor: pointer;
+  margin-bottom: -1px;
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.tabOn,
+.tabOn:hover {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+/* Toolbar */
+.toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-height: 32px;
+}
+
+/* Section: a titled block with a hairline above it; the title can fold it away. */
+.section {
+  border-top: 1px solid var(--line);
+  padding: var(--space-3) 0;
+}
+
+.sectionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.sectionTitle {
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--font-1);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sectionToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.sectionToggle:hover .sectionTitle {
+  color: var(--text);
+}
+
+.sectionClosed {
+  margin-bottom: 0;
+}
+
+/* Key / value facts */
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+}
+
+.facts dt {
+  color: var(--text-3);
+}
+
+.facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* List row: one dense line by default; an optional second line of detail. */
+.row {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 36px;
+  padding: var(--space-1) var(--space-3);
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--motion);
+}
+
+.row:hover {
+  background: var(--raised);
+}
+
+.rowSelected,
+.rowSelected:hover {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.rowMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.rowTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowDetail {
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: var(--font-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowTrailing {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-2);
+  font-size: var(--font-2);
+}
+
+/* Empty, loading and error messages */
+.state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-4);
+  color: var(--text-2);
+  text-align: center;
+}
+
+.stateTitle {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.stateHint {
+  color: var(--text-3);
+  font-size: var(--font-2);
+}
+
+.error .stateTitle {
+  color: var(--warn);
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--line-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 800ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

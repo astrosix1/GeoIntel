@@ -1,0 +1,110 @@
+.page {
+  box-sizing: border-box;
+  min-height: 100%;
+  background: var(--bg-app);
+  color: var(--text);
+}
+
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 40px;
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--line-strong);
+  background: var(--panel);
+}
+
+.barTitle {
+  margin-right: auto;
+  font-weight: 600;
+}
+
+.main {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: var(--space-4);
+  padding: var(--space-4);
+  align-items: start;
+}
+
+.card {
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-2);
+  background: var(--panel);
+  padding: var(--space-3) var(--space-4);
+}
+
+.cardTitle {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-4);
+  font-weight: 600;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.list {
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-1);
+}
+
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: var(--space-2);
+}
+
+.swatch {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--font-1);
+  color: var(--text-3);
+}
+
+.chipFill {
+  height: 28px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-1);
+}
+
+.scale {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.input {
+  box-sizing: border-box;
+  height: 28px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--edge-control);
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-3);
+}
+
+.mark {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: var(--space-2);
+  border-radius: 50%;
+}
