@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { MAX_CLOCKS } from '../lib/clocks';
+import { nextChangeLine } from '../lib/dst';
 import { cityName, formatOffset, offsetMinutes, readClock, regionName, searchZones } from '../lib/timezones';
 import { useShownNow } from '../state/useNow';
 import { useUiStore } from '../state/uiStore';
@@ -31,6 +32,8 @@ export default function WorldClock() {
   const [tab, setTab] = useState<Tab>('clocks');
   const results = useMemo(() => searchZones(query).filter((z) => !clocks.includes(z)), [query, clocks]);
   const full = clocks.length >= MAX_CLOCKS;
+  // The next clock change only moves once a day, so it is worked out once a day.
+  const dayKey = Math.floor(now.getTime() / 86_400_000);
 
   return (
     <>
@@ -129,6 +132,7 @@ export default function WorldClock() {
                 <div className={styles.meta}>
                   {reading ? reading.date : 'Unknown zone'} · {formatOffset(offsetMinutes(tzid, now))}
                 </div>
+                <div className={styles.meta}>{nextChangeLine(tzid, new Date(dayKey * 86_400_000 + 43_200_000))}</div>
               </button>
               <div className={styles.time}>
                 {reading?.time ?? '–'}

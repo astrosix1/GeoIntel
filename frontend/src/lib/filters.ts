@@ -8,10 +8,18 @@ import type { EventsTab } from '../state/uiStore';
 // Events: "Major" is Severe or Critical on the five-level scale (60 or more).
 export const MAJOR_SEVERITY = 60;
 
-export function applyCrisisFilter(list: CrisisSummary[], tab: EventsTab, category: string | null): CrisisSummary[] {
-  if (tab === 'major') return list.filter((c) => c.severity >= MAJOR_SEVERITY);
-  if (tab === 'categories' && category) return list.filter((c) => c.type === category);
-  return list;
+// `nightIds`, when given, keeps only those events (first reported at night, local time); null leaves the list as is.
+export function applyCrisisFilter(
+  list: CrisisSummary[],
+  tab: EventsTab,
+  category: string | null,
+  nightIds: Set<string> | null = null,
+): CrisisSummary[] {
+  let result = list;
+  if (tab === 'major') result = result.filter((c) => c.severity >= MAJOR_SEVERITY);
+  else if (tab === 'categories' && category) result = result.filter((c) => c.type === category);
+  if (nightIds) result = result.filter((c) => nightIds.has(c.id));
+  return result;
 }
 
 // Weather: "Major" is a GDACS Orange or Red alert; the categories are the

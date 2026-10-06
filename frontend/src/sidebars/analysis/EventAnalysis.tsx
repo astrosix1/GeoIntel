@@ -14,6 +14,10 @@ import Comments from './Comments';
 import SaveButton from '../../components/SaveButton';
 import { colorForSeverity, labelForSeverity } from '../../globe/severity';
 import { hazardIcon } from '../../globe/hazards';
+import { hasReportTime, reportedLocalTime } from '../../lib/eventTime';
+import { zoneAt } from '../../lib/zoneLookup';
+import { cityName } from '../../lib/timezones';
+import { useZoneIndex } from '../../state/useZoneIndex';
 import styles from './EventAnalysis.module.css';
 
 // How the pin's position was found, in words. Only GDELT events carry the
@@ -33,6 +37,10 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
   const { premium } = useEntitlements();
   const { data: detail } = useCrisisDetailQuery(crisis.id);
   const { data: hazardLinks } = useEventHazardsQuery(crisis.id);
+  // When the first report appeared, as a clock time at the event's own pin (news-feed events only).
+  const zoneIndex = useZoneIndex(hasReportTime(crisis.id));
+  const reportZone = zoneIndex ? zoneAt(zoneIndex, crisis.lat, crisis.lon) : null;
+  const reported = reportZone ? reportedLocalTime(crisis.date, reportZone, crisis.location_confidence) : null;
   const { data: stormData } = useStormsQuery(true);
   const setActiveMode = useUiStore((s) => s.setActiveMode);
   const selectHazard = useUiStore((s) => s.selectHazard);
@@ -106,6 +114,13 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
         <SaveButton crisisId={crisis.id} />
       </div>
       {locationNote && <div className={styles.locationNote}>{locationNote}</div>}
+      {reported && reportZone && (
+        <div className={styles.locationNote}>
+          First reported at {reported.time} local time{reported.night ? ' (night there)' : ''}
+          {reported.approximate ? ', approximate: the pin is only country or region level' : ''} &middot; {cityName(reportZone)} time. This is when the report
+          appeared, not necessarily when it happened.
+        </div>
+      )}
 
       <div className={styles.tabs} role="tablist">
         {(['analysis', 'comments'] as const).map((value) => (

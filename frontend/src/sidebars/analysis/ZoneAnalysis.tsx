@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { MAX_CLOCKS } from '../../lib/clocks';
 import { cityName, isKnownZone, readClock, regionName, zoneInfo, zonesLike } from '../../lib/timezones';
+import { clockChanges, describeChange } from '../../lib/dst';
 import { sunAltitude, sunTimes } from '../../lib/sun';
 import { useShownNow } from '../../state/useNow';
 import { useUiStore } from '../../state/uiStore';
@@ -82,6 +83,9 @@ export default function ZoneAnalysis({ tzid, point }: { tzid: string; point?: { 
   // The slow part (it samples every zone once), so it is done once per zone, not on every tick.
   const places = useMemo(() => zonesLike(tzid, new Date()).map(cityName).sort(), [tzid]);
   const pinned = clocks.includes(tzid);
+  // Looked up once per zone and day, not on every tick.
+  const dayKey = Math.floor(now.getTime() / 86_400_000);
+  const changes = useMemo(() => clockChanges(tzid, new Date(dayKey * 86_400_000 + 43_200_000)), [tzid, dayKey]);
 
   if (!known) return <div className={styles.loading}>That time zone isn&apos;t recognised by this browser.</div>;
 
@@ -117,6 +121,16 @@ export default function ZoneAnalysis({ tzid, point }: { tzid: string; point?: { 
             </button>
           )}
         </div>
+      </div>
+
+      <div className={styles.section}>
+        <div className={styles.sectionTitle}>Clock changes</div>
+        <dl className={hazardStyles.facts}>
+          <dt>Next</dt>
+          <dd>{changes.next ? describeChange(tzid, changes.next) : 'None in the next 14 months'}</dd>
+          <dt>Last</dt>
+          <dd>{changes.previous ? describeChange(tzid, changes.previous) : 'None in the last 14 months'}</dd>
+        </dl>
       </div>
 
       {point && <SunBlock tzid={tzid} point={point} at={now} hour12={prefs.hour12} />}

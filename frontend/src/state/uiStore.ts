@@ -116,6 +116,9 @@ interface UiState {
 
   // --- 10.1: Events sidebar All/Major/Categories tabs (client-side filter
   // over the already-fetched crisis list, no new request).
+  // Show only events first reported at night (22:00 to 05:00) at their own pin (Events mode, list and globe).
+  reportedAtNight: boolean;
+  setReportedAtNight: (on: boolean) => void;
   eventsTab: EventsTab;
   activeCategory: string | null;
   setEventsTab: (tab: EventsTab) => void;
@@ -218,6 +221,8 @@ export const useUiStore = create<UiState>((set) => ({
   setWeatherTab: (tab) => set({ weatherTab: tab }),
   setWeatherCategory: (category) => set({ weatherCategory: category }),
 
+  reportedAtNight: false,
+  setReportedAtNight: (on) => set({ reportedAtNight: on }),
   eventsTab: 'all',
   activeCategory: null,
   setEventsTab: (tab) => set({ eventsTab: tab }),

@@ -3,6 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useUiStore } from '../state/uiStore';
 import type { EventsTab, TimeRange } from '../state/uiStore';
 import { useStormsQuery, useVisibleCrises } from '../state/queries';
+import { useReportedAtNight } from '../state/useZoneIndex';
 import { colorForSeverity } from '../globe/severity';
 import { ALERT_COLORS, HAZARD_TYPES, hazardIcon } from '../globe/hazards';
 import { applyCrisisFilter, applyHazardFilter } from '../lib/filters';
@@ -97,9 +98,12 @@ function EventsList() {
   }, [crises]);
 
   // The same filter the globe applies, so list and pins always agree.
+  const reportedAtNight = useUiStore((s) => s.reportedAtNight);
+  const setReportedAtNight = useUiStore((s) => s.setReportedAtNight);
+  const night = useReportedAtNight(crises);
   const filteredCrises = useMemo(
-    () => applyCrisisFilter(crises ?? [], eventsTab, activeCategory),
-    [crises, eventsTab, activeCategory],
+    () => applyCrisisFilter(crises ?? [], eventsTab, activeCategory, night.ids),
+    [crises, eventsTab, activeCategory, night.ids],
   );
 
   // Windowed list: only the rows on screen (plus a small overscan) exist in
@@ -153,6 +157,25 @@ function EventsList() {
       </div>
 
       <FilterTabs value={eventsTab} onChange={handleTabClick} />
+
+      <div className={styles.scopeToggle}>
+        <button
+          type="button"
+          aria-pressed={reportedAtNight}
+          className={`${styles.scopeOption} ${reportedAtNight ? styles.scopeActive : ''}`}
+          onClick={() => setReportedAtNight(!reportedAtNight)}
+          title="Events whose first report appeared between 22:00 and 05:00 where they happened"
+        >
+          Reported at night (local time)
+        </button>
+      </div>
+      {reportedAtNight && (
+        <div className={styles.scopeCaveat}>
+          {night.loading
+            ? 'Working out local times…'
+            : `First report between 22:00 and 05:00 at the event's own location. Only news-feed events with a city-level or better location can be judged; ${night.excluded} others are left out. This is when the report appeared, not when it happened.`}
+        </div>
+      )}
 
       {eventsTab === 'categories' && (
         <CategoryChips

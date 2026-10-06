@@ -21,6 +21,7 @@ import { ALERT_COLORS, hazardIcon } from './hazards';
 import { useRadar } from './useRadar';
 import { applyCrisisFilter, applyHazardFilter } from '../lib/filters';
 import { clearHazardGeometry, setHazardGeometry } from './hazardGeometry';
+import { useReportedAtNight } from '../state/useZoneIndex';
 
 // Real, current OpenFreeMap style URL (no API key required).
 // See https://openfreemap.org/quick_start/ — "liberty" is OpenFreeMap's full-detail style.
@@ -76,6 +77,7 @@ export default function Globe() {
   const scope = useUiStore((s) => s.scope);
   const timeRange = useUiStore((s) => s.timeRange);
   const { data: crises } = useVisibleCrises(scope, timeRange);
+  const nightIds = useReportedAtNight(crises).ids;
   const { data: stormData } = useStormsQuery(activeMode === 'weather');
   const { data: watchData } = useWatchQuery();
   const selectedHazard = pinnedSelection?.kind === 'hazard' ? pinnedSelection.hazard : null;
@@ -427,9 +429,9 @@ export default function Globe() {
     const map = mapRef.current;
     if (!map || !mapReady || activeMode !== 'events') return;
     // The same All / Major / Categories filter the left-hand list applies.
-    const shown = applyCrisisFilter(crises ?? [], eventsTab, activeCategory);
+    const shown = applyCrisisFilter(crises ?? [], eventsTab, activeCategory, nightIds);
     crisisGroupsRef.current = setCrisisData(map, shown);
-  }, [crises, eventsTab, activeCategory, activeMode, mapReady]);
+  }, [crises, eventsTab, activeCategory, nightIds, activeMode, mapReady]);
 
   // Item 10.5: center the camera on a crisis pin whenever it becomes the
   // pinned selection. Implemented as a subscription to the shared

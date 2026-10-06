@@ -2,7 +2,7 @@
 
 Plan for the next round of Time Zone mode work. Everything here runs in the browser on free data and needs no backend, no API key and no new licence, apart from one small bundled cities list (see Stage 1). Earlier phases are in `docs/roadmap-phases-1-21-archive.md`. Weather mode's plan is in `docs/weather-mode-plan.md`.
 
-Status: **Stage 1 (92ad9cd) and Stage 2 (ee0e15d) committed. Stage 3 implemented** (not committed); Stages 4 and 5 planned.
+Status: **Stages 1 (92ad9cd), 2 (ee0e15d) and 3 (95e8008) committed. Stage 4 implemented** (not committed); Stage 5 planned.
 
 Stage 1 as built, and where it differs from the plan below:
 - **No cities file yet.** The plan called for a bundled GeoNames list. That needs a download and an agreed attribution, so Stage 1 uses the zone names the browser already knows (about 418 `Region/City` ids, so one city per zone, no country and no population ranking) with no download and no licence. The panel says so. A real cities list can replace the search source later without changing the rest. Some browsers still report old names (Asia/Calcutta, Europe/Kiev); `MODERN_NAMES` in `lib/timezones.ts` maps them to the current ones so a search for Kolkata or Kyiv works.
@@ -30,6 +30,12 @@ Stage 3 as built, and where it differs from the plan below:
 - **Converter:** understands "14:00 UTC", "9am New York", "2026-11-02 17:30 Tokyo", "17:30 Asia/Tokyo", "noon London", "tomorrow 9am Tokyo" and "14:00 UTC+5:30". Anything else is refused with a reason: abbreviations such as CST or IST (they mean different things in different places), unknown or ambiguous places ("San"), impossible times and dates, and a time that clocks skip. A time that happens twice when clocks go back is accepted and says the first one was used.
 - **Daylight-saving warnings** are given where a pair of places has a different gap three weeks before or after the chosen moment, which flags the weeks around a clock change (for example the US and UK being out of step in March and again in late October). They do not flag ordinary seasonal differences.
 - Checked in the browser with London, Tokyo and New York: 10:00 in London on 3 Nov is 19:00 in Tokyo and 05:00 in New York, and the notes appear for the right weeks.
+
+Stage 4 as built, and where it differs from the plan below:
+- **Clock changes:** `lib/dst.ts` finds the last and next clock change for any zone by scanning the browser's own tz data (no table), to the minute: "Sun 1 Nov 2026, 02:00 to 01:00 (clocks back 1 h)". Shown in the zone panel (Next and Last) and as one line under each pinned clock ("Clocks go back 1 h on 1 Nov", or "no clock change in the next 14 months"). Tested on New York, London, Sydney (southern hemisphere), Lord Howe (a 30 minute change), zones that never change, and Morocco's few-week change.
+- **Events in local time, worded honestly.** GDELT's timestamp is when the first article was added to the feed, not when the incident happened, and ACLED gives only a date. So the plan's "event happened at 02:40 local" is **not** shown. The event panel says "First reported at 01:30 local time (night there) ... This is when the report appeared, not necessarily when it happened", and only for news-feed events (ids starting `gdelt_`); a coarse pin is marked approximate. The zone comes from `lib/zoneLookup.ts` (point in the boundary file's polygons, tested against the real file for eight cities, ocean points and speed).
+- **Filter:** a "Reported at night (local time)" button in the Events list (22:00 to 05:00 at the event's own pin) filters both the list and the globe. It only judges news-feed events with a city-level or better location; the caption says how many others are left out. On the dev data: 693 of 4,092 events, with 1,623 left out.
+- Tests: `frontend/tests/dst.test.ts` and `zoneLookup.test.ts`; 94 frontend tests in all.
 
 ## Principles
 
