@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 import { MAX_CLOCKS } from '../../lib/clocks';
 import { cityName, isKnownZone, readClock, regionName, zoneInfo, zonesLike } from '../../lib/timezones';
-import { useNow } from '../../state/useNow';
+import { sunAltitude, sunTimes } from '../../lib/sun';
+import { useShownNow } from '../../state/useNow';
 import { useUiStore } from '../../state/uiStore';
 import styles from './EventAnalysis.module.css';
 import forecastStyles from './PointForecast.module.css';
@@ -15,11 +16,61 @@ function dstText(pattern: 'none' | 'dst' | 'irregular', dstNow: boolean): string
   return 'No daylight saving';
 }
 
+function hoursAndMinutes(hours: number): string {
+  const total = Math.round(hours * 60);
+  return `${Math.floor(total / 60)} h ${String(total % 60).padStart(2, '0')} min`;
+}
+
+// Sunrise, sunset and day length at the clicked point, in the zone's own time. Worked out from the date alone,
+// so it is good to about a minute, and polar day and polar night are stated rather than left blank.
+function SunBlock({ tzid, point, at, hour12 }: { tzid: string; point: { lat: number; lon: number }; at: Date; hour12: boolean }) {
+  const times = sunTimes(point.lat, point.lon, at);
+  const altitude = sunAltitude(point.lat, point.lon, at);
+  const fmt = (d: Date | null) =>
+    d ? new Intl.DateTimeFormat('en-US', { timeZone: tzid, hour: '2-digit', minute: '2-digit', hour12 }).format(d) : '–';
+  return (
+    <div className={styles.section}>
+      <div className={styles.sectionTitle}>Sun at the clicked point</div>
+      <dl className={hazardStyles.facts}>
+        <dt>Now</dt>
+        <dd>{altitude >= -0.833 ? `Sun is up (${Math.round(altitude)}° above the horizon)` : `Sun is down (${Math.round(-altitude)}° below the horizon)`}</dd>
+        {times.status === 'normal' && (
+          <>
+            <dt>Sunrise</dt>
+            <dd>{fmt(times.sunrise)}</dd>
+            <dt>Sunset</dt>
+            <dd>{fmt(times.sunset)}</dd>
+            <dt>Daylight</dt>
+            <dd>{hoursAndMinutes(times.dayLengthHours)}</dd>
+          </>
+        )}
+        {times.status === 'polar-day' && (
+          <>
+            <dt>Daylight</dt>
+            <dd>Polar day: the sun does not set today</dd>
+          </>
+        )}
+        {times.status === 'polar-night' && (
+          <>
+            <dt>Daylight</dt>
+            <dd>Polar night: the sun does not rise today</dd>
+          </>
+        )}
+      </dl>
+      <div className={styles.mediaCaption}>
+        At {Math.abs(point.lat).toFixed(1)}°{point.lat >= 0 ? 'N' : 'S'}, {Math.abs(point.lon).toFixed(1)}°{point.lon >= 0 ? 'E' : 'W'}. Sunrise and sunset are for
+        the solar day that contains the time shown, in this zone&apos;s time.
+      </div>
+    </div>
+  );
+}
+
 // Analysis view for a clicked time zone: its offset, daylight-saving behaviour, current local time and the
 // other places the browser's tz database lists with the same rules. The map boundary names one representative
 // zone id for each area, so the places that share its rules are listed beneath it.
-export default function ZoneAnalysis({ tzid }: { tzid: string }) {
-  const now = useNow();
+export default function ZoneAnalysis({ tzid, point }: { tzid: string; point?: { lat: number; lon: number } }) {
+  const now = useShownNow();
+  const offset = useUiStore((s) => s.timeOffsetMinutes);
   const clocks = useUiStore((s) => s.clocks);
   const prefs = useUiStore((s) => s.clockPrefs);
   const addClock = useUiStore((s) => s.addClock);
@@ -44,7 +95,7 @@ export default function ZoneAnalysis({ tzid }: { tzid: string }) {
       </div>
 
       <div className={styles.section}>
-        <div className={styles.sectionTitle}>Local time</div>
+        <div className={styles.sectionTitle}>Local time{offset !== 0 ? ' at the chosen time' : ''}</div>
         <div style={{ fontSize: 28, fontVariantNumeric: 'tabular-nums' }}>{reading?.time ?? '–'}</div>
         <div className={styles.mediaCaption}>
           {reading?.date}
@@ -67,6 +118,8 @@ export default function ZoneAnalysis({ tzid }: { tzid: string }) {
           )}
         </div>
       </div>
+
+      {point && <SunBlock tzid={tzid} point={point} at={now} hour12={prefs.hour12} />}
 
       <div className={styles.section}>
         <div className={styles.sectionTitle}>Rules</div>

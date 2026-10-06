@@ -14,6 +14,7 @@ import {
   removeCrisisLayers,
   setCrisisData,
 } from './crisisLayers';
+import { clearNight, setNight } from './nightLayer';
 import { addTimezoneLayer, removeTimezoneLayer, timezonePopupHtml, TIMEZONE_HIT_LAYER_ID } from './TimezoneLayer';
 import { isOnNearHemisphere } from './hemisphere';
 import { ALERT_COLORS, hazardIcon } from './hazards';
@@ -64,6 +65,8 @@ export default function Globe() {
   const selectHazard = useUiStore((s) => s.selectHazard);
   const selectPoint = useUiStore((s) => s.selectPoint);
   const selectZone = useUiStore((s) => s.selectZone);
+  const nightOn = useUiStore((s) => s.nightOn);
+  const timeOffset = useUiStore((s) => s.timeOffsetMinutes);
   const weatherTab = useUiStore((s) => s.weatherTab);
   const weatherCategory = useUiStore((s) => s.weatherCategory);
   const eventsTab = useUiStore((s) => s.eventsTab);
@@ -262,7 +265,7 @@ export default function Globe() {
         const feature = e.features?.[0];
         const tzid = feature?.properties?.tzid as string | undefined;
         if (!tzid) return;
-        selectZone(tzid);
+        selectZone(tzid, { lat: e.lngLat.lat, lon: e.lngLat.lng });
         timezonePopup?.remove();
         timezonePopup = new maplibregl.Popup({ offset: 8 })
           .setLngLat(e.lngLat)
@@ -283,6 +286,25 @@ export default function Globe() {
       timezonePopup?.remove();
     };
   }, [activeMode, mapReady, selectZone]);
+
+  // Time Zone mode: the night side, redrawn each minute and whenever the time slider moves, and again
+  // after a base-style change (which clears custom layers).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    if (activeMode !== 'timezone' || !nightOn) {
+      clearNight(map);
+      return;
+    }
+    const draw = () => setNight(map, new Date(Date.now() + timeOffset * 60_000));
+    draw();
+    const id = window.setInterval(draw, 60_000);
+    map.on('style.load', draw);
+    return () => {
+      window.clearInterval(id);
+      map.off('style.load', draw);
+    };
+  }, [activeMode, mapReady, nightOn, timeOffset]);
 
   useRadar(mapRef, mapReady);
 

@@ -3,6 +3,7 @@ import Globe from './globe/Globe';
 import ModeSwitcher from './globe/ModeSwitcher';
 import LayerControl from './globe/LayerControl';
 import WeatherLegend from './globe/WeatherLegend';
+import TimeBar from './globe/TimeBar';
 import MapLegend from './globe/MapLegend';
 import EventsSidebar from './sidebars/EventsSidebar';
 import AnalysisSidebar from './sidebars/AnalysisSidebar';
@@ -31,6 +32,7 @@ function App() {
       <Dashboard />
       <ModeSwitcher />
       <WeatherLegend />
+      <TimeBar />
       <MapLegend />
       <LayerControl />
       <EventsSidebar />

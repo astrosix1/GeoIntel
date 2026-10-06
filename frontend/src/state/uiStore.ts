@@ -17,13 +17,16 @@ export interface ComparePlace {
 }
 
 export const MAX_COMPARE_PLACES = 3;
+// Time Zone mode can show the time up to a day either side of now.
+export const MAX_TIME_OFFSET_MINUTES = 24 * 60;
 
 export type PinnedSelection =
   | { kind: 'event'; crisis: CrisisSummary }
   | { kind: 'country'; countryCode: string }
   | { kind: 'hazard'; hazard: Storm }
   | { kind: 'point'; lat: number; lon: number; label: string | null }
-  | { kind: 'zone'; tzid: string }
+  // `point` is where on the map the zone was clicked (for sunrise and sunset there), when it was a click.
+  | { kind: 'zone'; tzid: string; point?: { lat: number; lon: number } }
   | null;
 
 export type EventsTab = 'all' | 'major' | 'categories';
@@ -53,7 +56,7 @@ interface UiState {
   selectCountry: (countryCode: string) => void;
   selectHazard: (hazard: Storm) => void;
   selectPoint: (lat: number, lon: number, label: string | null) => void;
-  selectZone: (tzid: string) => void;
+  selectZone: (tzid: string, point?: { lat: number; lon: number }) => void;
   clearPinnedSelection: () => void;
 
   // --- Visibility: WHETHER each sidebar is shown. `leftOpen`/`rightOpen`
@@ -84,6 +87,11 @@ interface UiState {
   removeClock: (tzid: string) => void;
   clockPrefs: ClockPrefs;
   setClockPrefs: (prefs: ClockPrefs) => void;
+  // Minutes from now that Time Zone mode is showing (0 = now), and whether the night side is shaded.
+  timeOffsetMinutes: number;
+  setTimeOffsetMinutes: (minutes: number) => void;
+  nightOn: boolean;
+  setNightOn: (on: boolean) => void;
 
   // A one-line note shown in Weather mode, for example when a shared link points at a hazard that has ended.
   weatherNotice: string | null;
@@ -158,7 +166,7 @@ export const useUiStore = create<UiState>((set) => ({
   selectCountry: (countryCode) => set({ pinnedSelection: { kind: 'country', countryCode } }),
   selectHazard: (hazard) => set({ pinnedSelection: { kind: 'hazard', hazard } }),
   selectPoint: (lat, lon, label) => set({ pinnedSelection: { kind: 'point', lat, lon, label } }),
-  selectZone: (tzid) => set({ pinnedSelection: { kind: 'zone', tzid } }),
+  selectZone: (tzid, point) => set({ pinnedSelection: { kind: 'zone', tzid, point } }),
   clearPinnedSelection: () => set({ pinnedSelection: null }),
 
   leftOpen: false,
@@ -185,6 +193,11 @@ export const useUiStore = create<UiState>((set) => ({
       saveClocks(clocks);
       return { clocks };
     }),
+  timeOffsetMinutes: 0,
+  setTimeOffsetMinutes: (minutes) =>
+    set({ timeOffsetMinutes: Math.max(-MAX_TIME_OFFSET_MINUTES, Math.min(MAX_TIME_OFFSET_MINUTES, Math.round(minutes) || 0)) }),
+  nightOn: true,
+  setNightOn: (on) => set({ nightOn: on }),
   clockPrefs: loadClockPrefs(),
   setClockPrefs: (prefs) => {
     saveClockPrefs(prefs);

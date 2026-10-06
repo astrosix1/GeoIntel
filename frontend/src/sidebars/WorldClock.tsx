@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { MAX_CLOCKS } from '../lib/clocks';
 import { cityName, formatOffset, offsetMinutes, readClock, regionName, searchZones } from '../lib/timezones';
-import { useNow } from '../state/useNow';
+import { useShownNow } from '../state/useNow';
 import { useUiStore } from '../state/uiStore';
 import sidebar from './EventsSidebar.module.css';
 import styles from './WorldClock.module.css';
@@ -15,14 +15,15 @@ export default function WorldClock() {
   const removeClock = useUiStore((s) => s.removeClock);
   const setPrefs = useUiStore((s) => s.setClockPrefs);
   const selectZone = useUiStore((s) => s.selectZone);
-  const now = useNow();
+  const now = useShownNow();
+  const offset = useUiStore((s) => s.timeOffsetMinutes);
   const [query, setQuery] = useState('');
   const results = useMemo(() => searchZones(query).filter((z) => !clocks.includes(z)), [query, clocks]);
   const full = clocks.length >= MAX_CLOCKS;
 
   return (
     <>
-      <div className={sidebar.header}>World clock</div>
+      <div className={sidebar.header}>World clock{offset !== 0 ? ' (chosen time, not now)' : ''}</div>
       <div className={styles.controls}>
         <span className={styles.toggle} role="group" aria-label="Hour format">
           {[false, true].map((h12) => (

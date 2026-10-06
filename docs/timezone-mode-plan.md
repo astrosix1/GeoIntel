@@ -2,7 +2,7 @@
 
 Plan for the next round of Time Zone mode work. Everything here runs in the browser on free data and needs no backend, no API key and no new licence, apart from one small bundled cities list (see Stage 1). Earlier phases are in `docs/roadmap-phases-1-21-archive.md`. Weather mode's plan is in `docs/weather-mode-plan.md`.
 
-Status: **Stage 1 implemented** (not committed); Stages 2 to 5 planned.
+Status: **Stage 1 committed (92ad9cd). Stage 2 implemented** (not committed); Stages 3 to 5 planned.
 
 Stage 1 as built, and where it differs from the plan below:
 - **No cities file yet.** The plan called for a bundled GeoNames list. That needs a download and an agreed attribution, so Stage 1 uses the zone names the browser already knows (about 418 `Region/City` ids, so one city per zone, no country and no population ranking) with no download and no licence. The panel says so. A real cities list can replace the search source later without changing the rest. Some browsers still report old names (Asia/Calcutta, Europe/Kiev); `MODERN_NAMES` in `lib/timezones.ts` maps them to the current ones so a search for Kolkata or Kyiv works.
@@ -16,6 +16,13 @@ Stage 1 as built, and where it differs from the plan below:
 - Clicking a zone shows a map popup with the zone id and its current local time, from the browser's `Intl.DateTimeFormat`. No backend call.
 - `lib/units.ts` already has a Local / UTC choice for forecast times, remembered in the browser.
 - The mode is wired in `globe/Globe.tsx` (layer added only in `timezone` mode, click and hover handlers) and `globe/ModeSwitcher.tsx`.
+
+Stage 2 as built, and where it differs from the plan below:
+- `lib/sun.ts` (NOAA solar-position equations; no network, no library): sun position, subsolar point, sun altitude, sunrise, sunset, day length, and the night polygon. Tests in `frontend/tests/sun.test.ts` (20 tests) check declination at the solstices and equinoxes, the equation of time, and sunrise and sunset against Open-Meteo's archive for London, Sydney, Quito, Honolulu and Nairobi (all within 3 minutes), plus polar day and night for Tromso. The night polygon is also checked against the sun altitude on a grid of 400+ points.
+- Night side drawn as a translucent shade with a sunrise/sunset line (`globe/nightLayer.ts`), redrawn each minute and when the slider moves. A **Night** toggle (on by default) sits in the new time bar, so it can be switched off on slower phones.
+- **Time slider** (up to a day either way, 15-minute steps, "Now" button). The clocks, the zone panel and the night shading all follow it, and the bar turns amber and says "not now" whenever it is moved.
+- **Sun block** in the zone panel for the clicked point: sun up or down with its height, sunrise, sunset and daylight in the zone's own time, and polar day or night stated. Live check: a click in northern Nigeria gave 05:10 and 17:08 UTC, identical to Open-Meteo for that point.
+- Not built: the optional twilight band (the plan listed it as optional). The terminator is the sunrise/sunset line only.
 
 ## Principles
 

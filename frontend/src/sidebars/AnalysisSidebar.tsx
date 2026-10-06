@@ -37,7 +37,7 @@ export default function AnalysisSidebar() {
             label={pinnedSelection.label}
           />
         )}
-        {pinnedSelection?.kind === 'zone' && <ZoneAnalysis key={pinnedSelection.tzid} tzid={pinnedSelection.tzid} />}
+        {pinnedSelection?.kind === 'zone' && <ZoneAnalysis key={`${pinnedSelection.tzid}:${pinnedSelection.point?.lat}:${pinnedSelection.point?.lon}`} tzid={pinnedSelection.tzid} point={pinnedSelection.point} />}
         {!pinnedSelection && (
           <div className={styles.placeholder}>
             Click a crisis pin or a country on the globe, or an item in Events, to see its analysis here.
