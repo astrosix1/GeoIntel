@@ -92,15 +92,23 @@ def _digest(alerts, place_names):
     """(subject, html, text) for one user's pending alerts."""
     shown = alerts[:MAX_DIGEST_ITEMS]
     extra = len(alerts) - len(shown)
-    subject = f"GeoIntel weather alert: {len(alerts)} hazard{'s' if len(alerts) != 1 else ''} near your places"
+    plural = 's' if len(alerts) != 1 else ''
+    if all(a.get('hazard_type') == 'WX' for a in alerts):
+        subject = f"GeoIntel forecast alert: {len(alerts)} forecast limit{plural} passed for your places"
+    else:
+        subject = f"GeoIntel weather alert: {len(alerts)} hazard{plural} near your places"
 
     lines, items = [], []
     for a in shown:
         place = place_names.get(a['place_id'], 'your place')
-        line = f"{a['alert_level']} alert: {a['title']} is {a['distance_km']} km from {place}"
+        line = (f"{a['title']} at {place}" if a.get('hazard_type') == 'WX'
+                else f"{a['alert_level']} alert: {a['title']} is {a['distance_km']} km from {place}")
         lines.append(f'- {line}')
-        items.append(f"<li><strong>{html.escape(a['alert_level'])} alert:</strong> {html.escape(a['title'])} "
-                     f"is {html.escape(str(a['distance_km']))} km from {html.escape(place)}</li>")
+        if a.get('hazard_type') == 'WX':
+            items.append(f"<li>{html.escape(a['title'])} at {html.escape(place)}</li>")
+        else:
+            items.append(f"<li><strong>{html.escape(a['alert_level'])} alert:</strong> {html.escape(a['title'])} "
+                         f"is {html.escape(str(a['distance_km']))} km from {html.escape(place)}</li>")
     if extra > 0:
         lines.append(f'...and {extra} more in your dashboard.')
         items.append(f'<li>...and {extra} more in your dashboard.</li>')
@@ -124,7 +132,7 @@ def _email_pending(places_by_id, prefs_cache):
     pending = rest('GET', 'geointel_alerts', params={
         'emailed_at': 'is.null',
         'created_at': f'gt.{cutoff}',
-        'select': 'id,user_id,place_id,title,alert_level,distance_km,created_at',
+        'select': 'id,user_id,place_id,hazard_type,title,alert_level,distance_km,created_at',
         'order': 'created_at.asc',
         'limit': '5000',
     }).json()

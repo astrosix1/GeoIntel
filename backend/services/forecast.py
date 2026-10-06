@@ -39,7 +39,7 @@ HOURLY_FIELDS = [
 ]
 DAILY_FIELDS = [
     'weather_code', 'temperature_2m_max', 'temperature_2m_min', 'precipitation_sum',
-    'precipitation_probability_max', 'wind_gusts_10m_max',
+    'precipitation_probability_max', 'wind_gusts_10m_max', 'uv_index_max',
 ]
 
 

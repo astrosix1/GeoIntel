@@ -2,7 +2,7 @@
 
 Plan for the next round of Weather mode work. Everything here uses free data or data the app already has, apart from the optional AI items at the end. Earlier phases are in `docs/roadmap-phases-1-21-archive.md`. The story pipeline is in `docs/story-pipeline-plan.md`.
 
-Status: **Stages 1 (add6697) and 2 (c45d945) committed. Stage 3 implemented** (not committed). Stages 4 and 5 planned.
+Status: **Stages 1 (add6697), 2 (c45d945) and 3 (d3e2a03) committed. Stage 4 alert triggers implemented** (not committed); Stage 4 map layers and Stage 5 not started.
 
 Stage 2 as built: the forecast now returns every remaining hour of the 7 days (about 164, was 48) and the point panel has a **Forecast timeline** scrubber that steps through them, labelled "Forecast, not observed". **Compare places** holds up to three places in the UI (not saved): now, today's high/low, 7-day rain, strongest gust, and any hazard whose pin is within 300 km (stated as pin distance, not footprint). It reuses the existing forecast endpoint, so no new backend route was needed; each place loads on its own so one failure does not hide the others. The scrubber moves the panel only, not the map layers. Free versus premium limits for compare were not set: it is three places for everyone.
 
@@ -67,6 +67,9 @@ Stage 3 as built, and where it differs from the plan above:
 - Time: between the hazard's start and its end plus 3 days. Physical events at city level or better only; statements, merged duplicates and coarse pins are never linked, and the panel says why when an event has none.
 - Panels: **Nearby hazard** in the event panel, **Events in this area** in the hazard panel, each with its basis and the "same place and time, not cause" caveat. Checked live with a temporary event placed in a real flood area (removed afterwards).
 - **Not built yet:** the optional "Related" map lines, the list markers and the "Events affected by hazards" filter. Deferred, not dropped.
+
+Stage 4, alert triggers, as built: users set forecast limits in Dashboard > Alerts for heat (daily high), cold (daily low), heavy rain (daily total), strong gusts and UV index. Limits are stored per user as one JSON object (`geointel_user_prefs.alert_conditions`, **needs `backend/supabase/005_geointel_alert_conditions.sql` run in Supabase**) and apply to all of that user's watchlist places. An hourly job (`services/condition_alerts.py`) checks the next 3 days of the Open-Meteo daily forecast, one forecast per distinct 0.1 degree grid cell (capped at 400 per run), and writes alerts into the existing alerts table (`hazard_type` WX, one alert per place per condition per day); the existing 15-minute job emails them. Air quality is not included: it needs a second Open-Meteo API and was left out. Checked live against the real forecast with a fake Supabase: 6 alerts on the first run, none on the second.
+**Extra map layers (wind, temperature, cloud, pressure) are not built.** They depend on choosing a tile source whose terms allow commercial use, which is an owner decision (see open questions).
 
 ## Stage 4: Alerts and layers
 

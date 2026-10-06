@@ -218,12 +218,12 @@ class TestAlerts:
 
 class TestAlertSettings:
     def test_defaults(self, db):
-        assert svc.get_alert_settings(uid()) == {'alert_email': True, 'alert_min_level': 'orange'}
+        assert svc.get_alert_settings(uid()) == {'alert_email': True, 'alert_min_level': 'orange', 'alert_conditions': {}}
 
     def test_set_one_field_keeps_the_other(self, db):
         user = uid()
-        assert svc.set_alert_settings(user, alert_min_level='red') == {'alert_email': True, 'alert_min_level': 'red'}
-        assert svc.set_alert_settings(user, alert_email=False) == {'alert_email': False, 'alert_min_level': 'red'}
+        assert svc.set_alert_settings(user, alert_min_level='red') == {'alert_email': True, 'alert_min_level': 'red', 'alert_conditions': {}}
+        assert svc.set_alert_settings(user, alert_email=False) == {'alert_email': False, 'alert_min_level': 'red', 'alert_conditions': {}}
 
     def test_does_not_clobber_hidden_outlets(self, db):
         user = uid()
@@ -376,9 +376,25 @@ class TestAlertEndpoints:
     def test_settings_round_trip(self, client, secret, db):
         user = uid()
         assert call(client, 'get', '/api/me/alert-settings', user).get_json() == {
-            'alert_email': True, 'alert_min_level': 'orange'}
+            'alert_email': True, 'alert_min_level': 'orange', 'alert_conditions': {}}
         res = call(client, 'put', '/api/me/alert-settings', user, json={'alert_email': False, 'alert_min_level': 'red'})
-        assert res.get_json() == {'alert_email': False, 'alert_min_level': 'red'}
+        assert res.get_json() == {'alert_email': False, 'alert_min_level': 'red', 'alert_conditions': {}}
+
+    def test_conditions_round_trip_merge_and_switch_off(self, client, secret, db):
+        user = uid()
+        res = call(client, 'put', '/api/me/alert-settings', user, json={'alert_conditions': {'heat_c': 38, 'rain_mm': 80}})
+        assert res.get_json()['alert_conditions'] == {'heat_c': 38.0, 'rain_mm': 80.0}
+        res = call(client, 'put', '/api/me/alert-settings', user, json={'alert_conditions': {'cold_c': -10, 'heat_c': None}})
+        assert res.get_json()['alert_conditions'] == {'rain_mm': 80.0, 'cold_c': -10.0}
+        saved = call(client, 'get', '/api/me/alert-settings', user).get_json()['alert_conditions']
+        assert saved == {'rain_mm': 80.0, 'cold_c': -10.0}
+
+    @pytest.mark.parametrize('conditions', [
+        {'heat_c': 99}, {'heat_c': 5}, {'nonsense': 1}, {'rain_mm': 'lots'}, {'gust_kmh': True}, 'hot', [1],
+    ])
+    def test_bad_conditions_are_400(self, client, secret, db, conditions):
+        res = call(client, 'put', '/api/me/alert-settings', uid(), json={'alert_conditions': conditions})
+        assert res.status_code == 400
 
     @pytest.mark.parametrize('body', [None, [], {}, {'alert_min_level': 'purple'}, {'alert_email': 'no'}])
     def test_bad_settings_are_400(self, client, secret, db, body):

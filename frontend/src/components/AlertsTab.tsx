@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { UserDataError } from '../api/client';
-import type { AlertItem, AlertMinLevel } from '../api/types';
+import type { AlertItem, AlertMinLevel, AlertSettings, ConditionKey } from '../api/types';
 import { ALERT_COLORS, hazardIcon } from '../globe/hazards';
 import { timeAgo } from '../lib/time';
 import {
@@ -34,6 +34,67 @@ function hazardIdOf(alert: AlertItem): number | null {
   return Number.isFinite(id) ? id : null;
 }
 
+// The forecast limits a user can switch on. Ranges match the server's own validation.
+const CONDITIONS: { key: ConditionKey; label: string; unit: string; fallback: number; min: number; max: number }[] = [
+  { key: 'heat_c', label: 'Heat: daily high at or above', unit: '°C', fallback: 38, min: 25, max: 55 },
+  { key: 'cold_c', label: 'Cold: daily low at or below', unit: '°C', fallback: -10, min: -60, max: 10 },
+  { key: 'rain_mm', label: 'Heavy rain: daily total at or above', unit: 'mm', fallback: 50, min: 10, max: 500 },
+  { key: 'gust_kmh', label: 'Strong gusts: at or above', unit: 'km/h', fallback: 90, min: 50, max: 250 },
+  { key: 'uv_index', label: 'UV index at or above', unit: '', fallback: 8, min: 6, max: 16 },
+];
+
+function ConditionRow({ spec, value, disabled, onSave }: {
+  spec: (typeof CONDITIONS)[number];
+  value: number | undefined;
+  disabled: boolean;
+  onSave: (value: number | null) => void;
+}) {
+  const [text, setText] = useState(value === undefined ? '' : String(value));
+  const enabled = value !== undefined;
+
+  function commit() {
+    const number = Number(text);
+    if (!enabled || text.trim() === '' || !Number.isFinite(number)) return;
+    const clamped = Math.min(spec.max, Math.max(spec.min, number));
+    setText(String(clamped));
+    if (clamped !== value) onSave(clamped);
+  }
+
+  return (
+    <label>
+      <input
+        type="checkbox"
+        checked={enabled}
+        disabled={disabled}
+        onChange={(e) => {
+          if (e.target.checked) {
+            setText(String(spec.fallback));
+            onSave(spec.fallback);
+          } else {
+            onSave(null);
+          }
+        }}
+      />
+      {spec.label}
+      <input
+        type="number"
+        value={text}
+        min={spec.min}
+        max={spec.max}
+        disabled={disabled || !enabled}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit();
+        }}
+        style={{ width: 70, marginLeft: 8 }}
+        aria-label={`${spec.label} (${spec.unit || 'index'})`}
+      />
+      {spec.unit}
+    </label>
+  );
+}
+
 function Settings() {
   const { data, isLoading } = useAlertSettingsQuery();
   const save = useSaveAlertSettingsMutation();
@@ -65,6 +126,18 @@ function Settings() {
           ))}
         </select>
       </label>
+      <div>
+        <div className={styles.note}>Forecast alerts: tell me when a place&apos;s forecast for the next 3 days passes a limit.</div>
+        {CONDITIONS.map((spec) => (
+          <ConditionRow
+            key={spec.key}
+            spec={spec}
+            value={data.alert_conditions[spec.key]}
+            disabled={save.isPending}
+            onSave={(value) => save.mutate({ alert_conditions: { [spec.key]: value } as AlertSettings['alert_conditions'] })}
+          />
+        ))}
+      </div>
       {save.isError && <span className={styles.note}>Couldn&apos;t save that setting.</span>}
     </div>
   );
@@ -83,6 +156,7 @@ export default function AlertsTab() {
   // Open the alert's hazard on the globe in Weather mode, if it is still active.
   function open(alert: AlertItem) {
     if (!alert.read_at) markRead.mutate({ ids: [alert.id] });
+    if (alert.hazard_type === 'WX') return;   // a forecast alert has no hazard to open
     const id = hazardIdOf(alert);
     const hazard = storms?.storms.find((s) => s.id === id && s.event_type === alert.hazard_type);
     if (!hazard) {
@@ -135,10 +209,12 @@ export default function AlertsTab() {
                     className={dashboard.dot}
                     style={{ backgroundColor: ALERT_COLORS[alert.alert_level] ?? ALERT_COLORS.Unknown }}
                   />
-                  {alert.alert_level} alert &middot; {alert.distance_km} km from {alert.place_name ?? 'a removed place'}{' '}
+                  {alert.hazard_type === 'WX'
+                    ? `Forecast alert · ${alert.place_name ?? 'a removed place'}`
+                    : `${alert.alert_level} alert · ${alert.distance_km} km from ${alert.place_name ?? 'a removed place'}`}{' '}
                   &middot; {timeAgo(alert.created_at)}
                 </span>
-                {gone === alert.id && <span className={styles.note}>That hazard is no longer active.</span>}
+                {gone === alert.id && alert.hazard_type !== 'WX' && <span className={styles.note}>That hazard is no longer active.</span>}
               </button>
             </li>
           ))}

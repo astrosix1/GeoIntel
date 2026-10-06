@@ -278,6 +278,15 @@ def scheduled_alert_eval():
         logger.error(f"Scheduled alert evaluation error: {e}")
 
 
+def scheduled_condition_alerts():
+    """Raise forecast-limit alerts (heat, cold, rain, gusts, UV) for watchlist places."""
+    try:
+        from services.condition_alerts import evaluate_conditions
+        evaluate_conditions()
+    except Exception as e:
+        logger.error(f"Scheduled condition alert error: {e}")
+
+
 def scheduled_location_refine():
     """Refine pins of the most important new events from their articles."""
     try:
@@ -315,6 +324,17 @@ def init_scheduler():
 
     # Pin refinement every 20 minutes (a capped batch; LOCATION_REFINE_PER_RUN=0
     # turns it off). Separate from the sync so it never lengthens it.
+    # Forecast-limit alerts, hourly: one forecast per distinct 0.1 degree grid cell (cached),
+    # emailed by the next alert_eval run. Only users who set a limit are looked at.
+    scheduler.add_job(
+        func=scheduled_condition_alerts,
+        trigger="interval",
+        hours=1,
+        id='condition_alerts',
+        name='Evaluate weather-condition alerts',
+        replace_existing=True
+    )
+
     scheduler.add_job(
         func=scheduled_location_refine,
         trigger="interval",

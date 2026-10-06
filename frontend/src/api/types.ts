@@ -446,9 +446,13 @@ export interface AlertsResponse {
 
 export type AlertMinLevel = 'green' | 'orange' | 'red';
 
+// Forecast limits a user can set; a key that is absent is switched off.
+export type ConditionKey = 'heat_c' | 'cold_c' | 'rain_mm' | 'gust_kmh' | 'uv_index';
+
 export interface AlertSettings {
   alert_email: boolean;
   alert_min_level: AlertMinLevel;
+  alert_conditions: Partial<Record<ConditionKey, number>>;
 }
 
 export interface GeoResult {

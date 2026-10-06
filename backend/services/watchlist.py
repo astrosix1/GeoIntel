@@ -9,6 +9,7 @@ import math
 import re
 from datetime import datetime, timezone
 
+from services.condition_alerts import InvalidConditions, clean_conditions, stored_conditions
 from services.geo import distance_km
 from services.supabase_rest import SupabaseConflict, check_uuid, rest
 
@@ -25,7 +26,7 @@ _CONTROL_CHARS = re.compile(r'[\x00-\x1f\x7f]')
 
 
 ALERT_LEVELS = ('green', 'orange', 'red')
-DEFAULT_ALERT_SETTINGS = {'alert_email': True, 'alert_min_level': 'orange'}
+DEFAULT_ALERT_SETTINGS = {'alert_email': True, 'alert_min_level': 'orange', 'alert_conditions': {}}
 
 
 class InvalidPlace(ValueError):
@@ -159,21 +160,22 @@ def mark_alerts_read(user_id, ids=None):
 
 
 def get_alert_settings(user_id):
-    """{'alert_email': bool, 'alert_min_level': 'green'|'orange'|'red'},
-    defaults when the user never changed them."""
+    """{'alert_email': bool, 'alert_min_level': 'green'|'orange'|'red',
+    'alert_conditions': {limit key: number}}, defaults when never changed."""
     uid = check_uuid(user_id)
     rows = rest('GET', 'geointel_user_prefs', params={
-        'user_id': f'eq.{uid}', 'select': 'alert_email,alert_min_level', 'limit': '1',
+        'user_id': f'eq.{uid}', 'select': 'alert_email,alert_min_level,alert_conditions', 'limit': '1',
     }).json()
     row = rows[0] if rows else {}
     return {
         'alert_email': row.get('alert_email') if isinstance(row.get('alert_email'), bool)
         else DEFAULT_ALERT_SETTINGS['alert_email'],
         'alert_min_level': row.get('alert_min_level') or DEFAULT_ALERT_SETTINGS['alert_min_level'],
+        'alert_conditions': stored_conditions(row.get('alert_conditions')),
     }
 
 
-def set_alert_settings(user_id, alert_email=None, alert_min_level=None):
+def set_alert_settings(user_id, alert_email=None, alert_min_level=None, alert_conditions=None):
     """Updates only the settings provided (the user's other preferences are
     left alone) and returns the full settings."""
     uid = check_uuid(user_id)
@@ -186,6 +188,14 @@ def set_alert_settings(user_id, alert_email=None, alert_min_level=None):
         if alert_min_level not in ALERT_LEVELS:
             raise InvalidAlertSettings(f"alert_min_level must be one of {', '.join(ALERT_LEVELS)}")
         changes['alert_min_level'] = alert_min_level
+    if alert_conditions is not None:
+        try:
+            # Merged into what is saved: a key set to null switches that condition off.
+            merged = {**get_alert_settings(uid)['alert_conditions'], **{k: v for k, v in alert_conditions.items()}} \
+                if isinstance(alert_conditions, dict) else alert_conditions
+            changes['alert_conditions'] = clean_conditions(merged)
+        except InvalidConditions as e:
+            raise InvalidAlertSettings(str(e))
     if not changes:
         raise InvalidAlertSettings('nothing to change')
     rest('POST', 'geointel_user_prefs', params={'on_conflict': 'user_id'},

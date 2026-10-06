@@ -63,6 +63,7 @@ class FakePostgrest:
             row.setdefault('hidden_outlets', [])
             row.setdefault('alert_email', True)
             row.setdefault('alert_min_level', 'orange')
+            row.setdefault('alert_conditions', {})
         return row
 
     @staticmethod

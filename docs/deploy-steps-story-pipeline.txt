@@ -40,3 +40,10 @@ OTHER OWNER ACTIONS STILL OPEN
    - Set ALERT_FROM_EMAIL and OPEN_METEO_API_KEY if not already set.
    - Confirm ACLED commercial licensing and credentials.
    - Check RainViewer commercial terms.
+
+FORECAST (CONDITION) ALERTS - added after the steps above
+   Run backend/supabase/005_geointel_alert_conditions.sql in the Supabase SQL editor
+   (adds geointel_user_prefs.alert_conditions). Without it, saving a limit in
+   Dashboard > Alerts will fail. Needs 004_geointel_watchlist.sql applied first.
+   The hourly job needs the same OPEN_METEO_API_KEY consideration as forecasts if you have many
+   watched places (one forecast per distinct 0.1 degree cell per hour).

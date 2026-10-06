@@ -127,7 +127,8 @@ def put_alert_settings():
     if not isinstance(body, dict):
         return jsonify({'error': 'invalid_settings', 'message': 'expected a JSON object'}), 400
     try:
-        return jsonify(svc.set_alert_settings(g.user['id'], body.get('alert_email'), body.get('alert_min_level')))
+        return jsonify(svc.set_alert_settings(
+            g.user['id'], body.get('alert_email'), body.get('alert_min_level'), body.get('alert_conditions')))
     except svc.InvalidAlertSettings as e:
         return jsonify({'error': 'invalid_settings', 'message': str(e)}), 400
     except SupabaseUnavailable as e:
