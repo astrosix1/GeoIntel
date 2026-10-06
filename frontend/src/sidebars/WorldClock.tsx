@@ -3,11 +3,21 @@ import { MAX_CLOCKS } from '../lib/clocks';
 import { cityName, formatOffset, offsetMinutes, readClock, regionName, searchZones } from '../lib/timezones';
 import { useShownNow } from '../state/useNow';
 import { useUiStore } from '../state/uiStore';
+import ConverterPanel from './ConverterPanel';
+import PlannerPanel from './PlannerPanel';
 import sidebar from './EventsSidebar.module.css';
+import planner from './Planner.module.css';
 import styles from './WorldClock.module.css';
 
 // Time Zone mode's left panel: clocks for the places the user pinned, with the clock display options.
 // Everything is computed in the browser from its own tz database; nothing is fetched or invented.
+type Tab = 'clocks' | 'planner' | 'convert';
+const TABS: { value: Tab; label: string }[] = [
+  { value: 'clocks', label: 'Clocks' },
+  { value: 'planner', label: 'Meeting planner' },
+  { value: 'convert', label: 'Convert' },
+];
+
 export default function WorldClock() {
   const clocks = useUiStore((s) => s.clocks);
   const prefs = useUiStore((s) => s.clockPrefs);
@@ -18,12 +28,31 @@ export default function WorldClock() {
   const now = useShownNow();
   const offset = useUiStore((s) => s.timeOffsetMinutes);
   const [query, setQuery] = useState('');
+  const [tab, setTab] = useState<Tab>('clocks');
   const results = useMemo(() => searchZones(query).filter((z) => !clocks.includes(z)), [query, clocks]);
   const full = clocks.length >= MAX_CLOCKS;
 
   return (
     <>
-      <div className={sidebar.header}>World clock{offset !== 0 ? ' (chosen time, not now)' : ''}</div>
+      <div className={sidebar.header}>World clock{offset !== 0 && tab === 'clocks' ? ' (chosen time, not now)' : ''}</div>
+      <div className={planner.tabs} role="tablist">
+        {TABS.map((t) => (
+          <button
+            key={t.value}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.value}
+            className={`${planner.tab} ${tab === t.value ? planner.tabActive : ''}`}
+            onClick={() => setTab(t.value)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {tab === 'planner' && <PlannerPanel />}
+      {tab === 'convert' && <ConverterPanel />}
+      {tab === 'clocks' && (
+        <>
       <div className={styles.controls}>
         <span className={styles.toggle} role="group" aria-label="Hour format">
           {[false, true].map((h12) => (
@@ -117,6 +146,8 @@ export default function WorldClock() {
           </div>
         )}
       </div>
+        </>
+      )}
     </>
   );
 }

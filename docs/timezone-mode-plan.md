@@ -2,7 +2,7 @@
 
 Plan for the next round of Time Zone mode work. Everything here runs in the browser on free data and needs no backend, no API key and no new licence, apart from one small bundled cities list (see Stage 1). Earlier phases are in `docs/roadmap-phases-1-21-archive.md`. Weather mode's plan is in `docs/weather-mode-plan.md`.
 
-Status: **Stage 1 committed (92ad9cd). Stage 2 implemented** (not committed); Stages 3 to 5 planned.
+Status: **Stage 1 (92ad9cd) and Stage 2 (ee0e15d) committed. Stage 3 implemented** (not committed); Stages 4 and 5 planned.
 
 Stage 1 as built, and where it differs from the plan below:
 - **No cities file yet.** The plan called for a bundled GeoNames list. That needs a download and an agreed attribution, so Stage 1 uses the zone names the browser already knows (about 418 `Region/City` ids, so one city per zone, no country and no population ranking) with no download and no licence. The panel says so. A real cities list can replace the search source later without changing the rest. Some browsers still report old names (Asia/Calcutta, Europe/Kiev); `MODERN_NAMES` in `lib/timezones.ts` maps them to the current ones so a search for Kolkata or Kyiv works.
@@ -23,6 +23,13 @@ Stage 2 as built, and where it differs from the plan below:
 - **Time slider** (up to a day either way, 15-minute steps, "Now" button). The clocks, the zone panel and the night shading all follow it, and the bar turns amber and says "not now" whenever it is moved.
 - **Sun block** in the zone panel for the clicked point: sun up or down with its height, sunrise, sunset and daylight in the zone's own time, and polar day or night stated. Live check: a click in northern Nigeria gave 05:10 and 17:08 UTC, identical to Open-Meteo for that point.
 - Not built: the optional twilight band (the plan listed it as optional). The terminator is the sunrise/sunset line only.
+
+Stage 3 as built, and where it differs from the plan below:
+- `lib/planner.ts` (all the logic, tested in `frontend/tests/planner.test.ts`, 27 tests) and two new tabs in the left panel, **Meeting planner** and **Convert**, next to **Clocks**.
+- **Planner:** pick a pinned place and a date; 24 rows of that place's day, one column per pinned place showing its own local time, coloured as working hours, early or late, or night (working hours default 09:00 to 18:00, changeable and remembered). A "+1" or "-1" marks a different date. Click an hour to see each place's start and end for a 30 to 120 minute meeting, with the worst kind of hour it touches. An hour skipped by a clock change is shown as skipped. Copy as text gives one line per place.
+- **Converter:** understands "14:00 UTC", "9am New York", "2026-11-02 17:30 Tokyo", "17:30 Asia/Tokyo", "noon London", "tomorrow 9am Tokyo" and "14:00 UTC+5:30". Anything else is refused with a reason: abbreviations such as CST or IST (they mean different things in different places), unknown or ambiguous places ("San"), impossible times and dates, and a time that clocks skip. A time that happens twice when clocks go back is accepted and says the first one was used.
+- **Daylight-saving warnings** are given where a pair of places has a different gap three weeks before or after the chosen moment, which flags the weeks around a clock change (for example the US and UK being out of step in March and again in late October). They do not flag ordinary seasonal differences.
+- Checked in the browser with London, Tokyo and New York: 10:00 in London on 3 Nov is 19:00 in Tokyo and 05:00 in New York, and the notes appear for the right weeks.
 
 ## Principles
 
