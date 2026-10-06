@@ -1,10 +1,16 @@
+/* A premium control: dimmed and inert, with a lock beside it. */
 .gate {
-  position: relative;
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
 }
 
 .block {
-  display: block;
+  display: flex;
+}
+
+.block .locked {
+  flex: 1;
 }
 
 .locked {
@@ -14,58 +20,26 @@
   user-select: none;
 }
 
-.badge {
-  position: absolute;
-  top: -6px;
-  right: -6px;
+.lock {
   display: inline-flex;
-  padding: 3px;
-  border-radius: var(--radius-pill);
-  background: var(--panel);
-  border: 1px solid var(--line-strong);
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-1);
+  border: 0;
+  border-radius: var(--radius-1);
+  background: transparent;
   color: var(--text-2);
-  pointer-events: none;
+  cursor: default;
 }
 
-/* Shown on hover/focus of the gate so the dimmed control explains itself. */
-.prompt {
-  position: absolute;
-  top: calc(100% + var(--space-1));
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 40;
-  display: none;
-  white-space: nowrap;
-}
-
-.gate:hover .prompt,
-.gate:focus-within .prompt {
-  display: block;
-}
-
-.cta,
-.note {
-  display: inline-block;
-  padding: var(--space-1) var(--space-3);
-  font: inherit;
-  font-size: var(--font-2);
-  border-radius: var(--radius-2);
-  background: var(--panel);
-  border: 1px solid var(--line-strong);
-  color: var(--text);
-  text-decoration: none;
-  box-shadow: var(--shadow-pop);
-}
-
-.cta {
+button.lock,
+a.lock {
   cursor: pointer;
-  border-color: var(--accent);
 }
 
-.cta:hover {
-  background: var(--accent-soft);
-}
-
-.note {
-  color: var(--text-2);
+button.lock:hover,
+a.lock:hover {
+  background: var(--raised-strong);
+  color: var(--text);
 }

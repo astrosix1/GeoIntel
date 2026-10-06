@@ -32,3 +32,20 @@ export function fitGlobe(map: maplibregl.Map): void {
   }
   map.jumpTo({ zoom: (lo + hi) / 2, center, bearing, pitch });
 }
+
+// The flat (Mercator) map: the zoom at which the whole world, from 70 degrees north to 58 south, fits the box. A
+// Mercator world is 512 px wide at zoom 0 and doubles with each zoom level.
+const FLAT_FILL = 0.98;
+const FLAT_SPAN = 0.552; // the share of the world's width that 70 N to 58 S takes up vertically
+export const FLAT_CENTER: [number, number] = [0, 12];
+
+export function flatZoomFor(width: number, height: number): number {
+  const fit = Math.min(width, height / FLAT_SPAN) * FLAT_FILL;
+  return Math.log2(Math.max(fit, 1) / 512);
+}
+
+export function fitFlat(map: maplibregl.Map): void {
+  const box = map.getContainer().getBoundingClientRect();
+  if (!(box.width > 50 && box.height > 50)) return;
+  map.jumpTo({ zoom: flatZoomFor(box.width, box.height), center: FLAT_CENTER, bearing: 0, pitch: 0 });
+}

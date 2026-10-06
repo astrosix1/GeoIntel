@@ -58,6 +58,15 @@ Status: **Stage 0 (foundations) committed (91be044). Stage 1 (shell and Settings
 - **Checked:** `tsc`, the style guard, the build and 156 tests pass. In the browser (Weather mode): 74 pins drawn with icons in alert colours, a pin click opening the themed popup and the hazard panel, no console errors.
 - **Not checked by hand:** the dashboard drawer (it needs a premium sign-in, which this session cannot do), the stacked-event popup, the time zone popup, and the account menu, which is unchanged. Sky-condition emoji in the forecast panels (sun, cloud) remain: they are weather data glyphs, not interface chrome.
 
+## Stage 5 as built (flat map)
+
+- **Setting:** Settings, Map, Globe or Flat (`mapView` in the settings store, remembered as `geointel.mapview`; anything unrecognised falls back to Globe). Switching takes effect at once: the projection changes between globe and Mercator, the view refits, and nothing reloads.
+- **Flat view:** the whole world (70 N to 58 S) fits the map area (`flatZoomFor` in `globe/fitGlobe.ts`, tested), with the usual world copies so panning past the date line wraps. Rotation and tilt are switched off while flat, since they have no use there, and come back on the globe. As on the globe, the fit tracks the window and the docked panels until the user zooms for themselves.
+- **Pins:** the Weather pins and other DOM markers hide when on the far side of the globe; on the flat map every pin always shows (74 of 74 checked). Event pins, clusters, stacked-pin popups, the night shading and the zone labels are map layers and work unchanged in both projections.
+- **Bug found and fixed on the way (not flat-map specific):** in Time Zone mode the context strip renders nothing, so the working area slid into the strip's `auto` grid row and the map was only 224 px tall. The body and status bar now sit in named rows, so the frame holds in every mode. Stage 1 missed this.
+- **Checked in the browser:** switching Globe to Flat to Globe from Settings, Events, Weather (74 pins shown) and Time Zone (night shading, zone labels) on the flat map, the choice persisting, and no console errors. 4 new tests (160 in all).
+- **Known roughness:** the night shading is drawn once rather than repeated on each world copy, and the time bar can sit over the map attribution on a short window; neither was changed here.
+
 ## What is wrong today (measured)
 
 - **Too few events per screen.** The first event starts 304 px down the left panel, and each event row is 107 px tall. At 900 px high, about five events are visible.

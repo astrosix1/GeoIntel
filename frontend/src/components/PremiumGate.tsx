@@ -23,23 +23,28 @@ export default function PremiumGate({ children, feature, block }: PremiumGatePro
 
   const upgradeUrl = getUpgradeUrl();
 
-  let prompt: ReactNode = null;
+  // The lock sits beside the dimmed control. When there is something to do (sign in, upgrade) the lock does it;
+  // otherwise it just explains itself on hover and to screen readers.
+  let lock: ReactNode = null;
   if (!loading) {
-    if (!signedIn) {
-      prompt = isSignInConfigured() ? (
-        <button type="button" className={styles.cta} onClick={signIn}>
-          Sign in to use {feature}
+    const note = `${feature} is a premium feature`;
+    if (!signedIn && isSignInConfigured()) {
+      lock = (
+        <button type="button" className={styles.lock} title={`Sign in to use ${feature}`} aria-label={`Sign in to use ${feature}`} onClick={signIn}>
+          <Icon name="lock" size={14} />
         </button>
-      ) : (
-        <span className={styles.note}>{feature} is a premium feature</span>
+      );
+    } else if (signedIn && upgradeUrl) {
+      lock = (
+        <a className={styles.lock} href={upgradeUrl} title={`Upgrade to use ${feature}`} aria-label={`Upgrade to use ${feature}`}>
+          <Icon name="lock" size={14} />
+        </a>
       );
     } else {
-      prompt = upgradeUrl ? (
-        <a className={styles.cta} href={upgradeUrl}>
-          Upgrade to use {feature}
-        </a>
-      ) : (
-        <span className={styles.note}>{feature} is a premium feature</span>
+      lock = (
+        <span className={styles.lock} role="img" title={note} aria-label={note}>
+          <Icon name="lock" size={14} />
+        </span>
       );
     }
   }
@@ -49,10 +54,7 @@ export default function PremiumGate({ children, feature, block }: PremiumGatePro
       <div className={styles.locked} inert aria-hidden="true">
         {children}
       </div>
-      <span className={styles.badge} aria-hidden="true">
-        <Icon name="lock" size={12} />
-      </span>
-      {prompt && <div className={styles.prompt}>{prompt}</div>}
+      {lock}
     </div>
   );
 }

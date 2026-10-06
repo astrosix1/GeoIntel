@@ -2,8 +2,8 @@ import { useSyncExternalStore } from 'react';
 import { create } from 'zustand';
 import { loadTimeZone, loadUnits, saveTimeZone, saveUnits } from '../lib/units';
 import type { TimeZoneMode, UnitSystem } from '../lib/units';
-import { DOCK_MIN_WIDTH, loadPanels, loadStarfield, savePanels, saveStarfield } from '../ui/preferences';
-import type { PanelsMode } from '../ui/preferences';
+import { DOCK_MIN_WIDTH, loadMapView, loadPanels, loadStarfield, saveMapView, savePanels, saveStarfield } from '../ui/preferences';
+import type { MapView, PanelsMode } from '../ui/preferences';
 import { applyTheme, loadTheme, saveTheme } from '../ui/theme';
 import type { ThemeChoice } from '../ui/theme';
 import { useUiStore } from './uiStore';
@@ -16,11 +16,13 @@ export const LIGHT_THEME_READY = false;
 interface SettingsState {
   panels: PanelsMode;
   starfield: boolean;
+  mapView: MapView;
   theme: ThemeChoice;
   units: UnitSystem;
   timeZone: TimeZoneMode;
   setPanels: (mode: PanelsMode) => void;
   setStarfield: (on: boolean) => void;
+  setMapView: (view: MapView) => void;
   setTheme: (choice: ThemeChoice) => void;
   setUnits: (units: UnitSystem) => void;
   setTimeZone: (mode: TimeZoneMode) => void;
@@ -29,6 +31,7 @@ interface SettingsState {
 export const useSettings = create<SettingsState>((set) => ({
   panels: loadPanels(),
   starfield: loadStarfield(),
+  mapView: loadMapView(),
   theme: loadTheme(),
   units: loadUnits(),
   timeZone: loadTimeZone(),
@@ -46,6 +49,10 @@ export const useSettings = create<SettingsState>((set) => ({
   setStarfield: (on) => {
     saveStarfield(on);
     set({ starfield: on });
+  },
+  setMapView: (view) => {
+    saveMapView(view);
+    set({ mapView: view });
   },
   setTheme: (choice) => {
     saveTheme(choice);

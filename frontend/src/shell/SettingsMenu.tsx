@@ -48,6 +48,15 @@ export default function SettingsMenu() {
           />
         </Setting>
         {!LIGHT_THEME_READY && <p className={styles.hint}>Light theme is built and shown in the component kit; it switches on here once every screen is converted.</p>}
+        <Setting label="Map">
+          <Segmented
+            label="Map"
+            size="sm"
+            value={s.mapView}
+            onChange={s.setMapView}
+            options={[{ value: 'globe', label: 'Globe' }, { value: 'flat', label: 'Flat' }]}
+          />
+        </Setting>
         <Setting label="Starfield">
           <Segmented
             label="Starfield"

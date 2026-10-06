@@ -28,7 +28,7 @@ import { useRadar } from './useRadar';
 import { applyCrisisFilter, applyHazardFilter } from '../lib/filters';
 import { clearHazardGeometry, setHazardGeometry } from './hazardGeometry';
 import { useReportedAtNight } from '../state/useZoneIndex';
-import { fitGlobe } from './fitGlobe';
+import { fitFlat, fitGlobe } from './fitGlobe';
 import { useSettings } from '../state/settings';
 import { DOCK_MIN_WIDTH } from '../ui/preferences';
 
@@ -115,6 +115,11 @@ export default function Globe() {
   // Events behind each location pin (several can share one coordinate).
   const crisisGroupsRef = useRef(new Map<string, CrisisSummary[]>());
   const [mapReady, setMapReady] = useState(false);
+  const mapView = useSettings((s) => s.mapView);
+  const mapViewRef = useRef(mapView);
+  mapViewRef.current = mapView;
+  // True once the user has zoomed for themselves; until then the map is fitted to the space it has.
+  const userZoomedRef = useRef(false);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -133,8 +138,8 @@ export default function Globe() {
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }));
 
     map.on('style.load', () => {
-      // Real, documented MapLibre v5+ globe projection API.
-      map.setProjection({ type: 'globe' });
+      // Real, documented MapLibre v5+ projection API: the globe, or the flat Mercator map (Settings, Map).
+      map.setProjection({ type: mapViewRef.current === 'flat' ? 'mercator' : 'globe' });
 
       // Invisible hit-test layer for "click a country" (see comment above
       // COUNTRY_BOUNDARIES_URL — the base style has no fill polygon to
@@ -235,21 +240,25 @@ export default function Globe() {
     // the globe projection occludes itself — so it's cheap.
     // The map's box changes when a docked panel opens, closes or the window is resized; keep the canvas the same size.
     // Until the user zooms for themselves, the globe is sized to the space it has (fitGlobe), also when a panel opens or closes.
-    let userZoomed = false;
+    const fit = () => (mapViewRef.current === 'flat' ? fitFlat(map) : fitGlobe(map));
     map.on('zoomstart', (e) => {
-      if ((e as { originalEvent?: unknown }).originalEvent) userZoomed = true;
+      if ((e as { originalEvent?: unknown }).originalEvent) userZoomedRef.current = true;
     });
-    map.once('style.load', () => fitGlobe(map));
+    map.once('style.load', () => {
+      applyViewLimits(map, mapViewRef.current);
+      fit();
+    });
     const resizeObserver = new ResizeObserver(() => {
       map.resize();
-      if (!userZoomed && map.isStyleLoaded()) fitGlobe(map);
+      if (!userZoomedRef.current && map.isStyleLoaded()) fit();
     });
     resizeObserver.observe(containerRef.current as HTMLDivElement);
 
     map.on('move', () => {
-      updateMarkerVisibility(map, markersRef.current);
-      if (pointMarkerRef.current) updateMarkerVisibility(map, [pointMarkerRef.current]);
-      updateMarkerVisibility(map, placeMarkersRef.current);
+      const flat = mapViewRef.current === 'flat';
+      updateMarkerVisibility(map, markersRef.current, flat);
+      if (pointMarkerRef.current) updateMarkerVisibility(map, [pointMarkerRef.current], flat);
+      updateMarkerVisibility(map, placeMarkersRef.current, flat);
     });
 
     return () => {
@@ -261,6 +270,21 @@ export default function Globe() {
       setMapReady(false);
     };
   }, []);
+
+  // Switching between Globe and Flat in Settings: change the projection, refit the whole view, and show or hide the far-side pins.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    map.setProjection({ type: mapView === 'flat' ? 'mercator' : 'globe' });
+    applyViewLimits(map, mapView);
+    userZoomedRef.current = false;
+    if (mapView === 'flat') fitFlat(map);
+    else fitGlobe(map);
+    const flat = mapView === 'flat';
+    updateMarkerVisibility(map, markersRef.current, flat);
+    if (pointMarkerRef.current) updateMarkerVisibility(map, [pointMarkerRef.current], flat);
+    updateMarkerVisibility(map, placeMarkersRef.current, flat);
+  }, [mapView, mapReady]);
 
   // Re-render pins whenever the map finishes loading or the globe mode
   // changes. Switching modes only changes what's rendered on the globe —
@@ -567,7 +591,14 @@ function addStormMarkers(
 // lng/lat straight off the maplibregl.Marker instance (`getLngLat()`) so
 // there's no separate lng/lat bookkeeping to keep in sync with the markers
 // array itself.
-function updateMarkerVisibility(map: maplibregl.Map, markers: maplibregl.Marker[]) {
+function updateMarkerVisibility(map: maplibregl.Map, markers: maplibregl.Marker[], flat = false) {
+  // On the flat map nothing is on the far side, so every pin always shows.
+  if (flat) {
+    markers.forEach((marker) => {
+      marker.getElement().style.display = '';
+    });
+    return;
+  }
   const center = map.getCenter();
   const centerPoint: [number, number] = [center.lng, center.lat];
 
@@ -576,4 +607,19 @@ function updateMarkerVisibility(map: maplibregl.Map, markers: maplibregl.Marker[
     const near = isOnNearHemisphere(centerPoint, [lngLat.lng, lngLat.lat]);
     marker.getElement().style.display = near ? '' : 'none';
   });
+}
+
+// The flat map has no rotation or tilt to lose track of; the globe keeps both.
+function applyViewLimits(map: maplibregl.Map, view: 'globe' | 'flat') {
+  if (view === 'flat') {
+    map.setPitch(0);
+    map.setBearing(0);
+    map.dragRotate.disable();
+    map.touchZoomRotate.disableRotation();
+    map.touchPitch.disable();
+  } else {
+    map.dragRotate.enable();
+    map.touchZoomRotate.enableRotation();
+    map.touchPitch.enable();
+  }
 }

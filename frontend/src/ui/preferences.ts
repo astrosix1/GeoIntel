@@ -4,14 +4,22 @@
 
 export type PanelsMode = 'docked' | 'overlay';
 
+export type MapView = 'globe' | 'flat';
+
 export const DEFAULT_PANELS: PanelsMode = 'docked';
+export const DEFAULT_MAP_VIEW: MapView = 'globe';
 export const DEFAULT_STARFIELD = true;
 
 const PANELS_KEY = 'geointel.panels';
 const STARFIELD_KEY = 'geointel.starfield';
+const MAP_VIEW_KEY = 'geointel.mapview';
 
 export function cleanPanels(value: unknown): PanelsMode {
   return value === 'overlay' || value === 'docked' ? value : DEFAULT_PANELS;
+}
+
+export function cleanMapView(value: unknown): MapView {
+  return value === 'flat' || value === 'globe' ? value : DEFAULT_MAP_VIEW;
 }
 
 export function cleanFlag(value: unknown, fallback: boolean): boolean {
@@ -42,6 +50,14 @@ export function loadPanels(): PanelsMode {
 
 export function savePanels(mode: PanelsMode): void {
   write(PANELS_KEY, mode);
+}
+
+export function loadMapView(): MapView {
+  return cleanMapView(read(MAP_VIEW_KEY));
+}
+
+export function saveMapView(view: MapView): void {
+  write(MAP_VIEW_KEY, view);
 }
 
 export function loadStarfield(): boolean {

@@ -62,3 +62,45 @@ describe('interface preferences', () => {
     assert.ok(DOCK_MIN_WIDTH >= 800 && DOCK_MIN_WIDTH <= 1100);
   });
 });
+
+import { cleanMapView, DEFAULT_MAP_VIEW, loadMapView, saveMapView } from '../src/ui/preferences.ts';
+import { flatZoomFor } from '../src/globe/fitGlobe.ts';
+
+describe('the map view preference', () => {
+  it('defaults to the globe and rejects anything unknown', () => {
+    assert.equal(DEFAULT_MAP_VIEW, 'globe');
+    assert.equal(cleanMapView('flat'), 'flat');
+    assert.equal(cleanMapView('mercator'), 'globe');
+    assert.equal(cleanMapView(null), 'globe');
+  });
+
+  it('is remembered, ignores corrupt data, and survives blocked storage', () => {
+    const store = new Map<string, string>();
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) },
+    });
+    saveMapView('flat');
+    assert.equal(loadMapView(), 'flat');
+    store.set('geointel.mapview', 'garbage');
+    assert.equal(loadMapView(), 'globe');
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, get() { throw new Error('blocked'); } });
+    assert.equal(loadMapView(), 'globe');
+    assert.doesNotThrow(() => saveMapView('flat'));
+    delete (globalThis as Record<string, unknown>).localStorage;
+  });
+});
+
+describe('fitting the flat map', () => {
+  it('fits the whole world width in a wide box and the height in a tall one', () => {
+    // 1024 px wide is one zoom level above a 512 px world (minus the 2% margin).
+    const wide = flatZoomFor(1024, 2000);
+    assert.ok(wide > 0.9 && wide < 1, `wide box zoom ${wide}`);
+    // Short and wide: the height limits it, so it zooms out below the width fit.
+    assert.ok(flatZoomFor(1024, 300) < wide);
+  });
+
+  it('never returns NaN for a collapsed box', () => {
+    assert.ok(Number.isFinite(flatZoomFor(0, 0)));
+  });
+});

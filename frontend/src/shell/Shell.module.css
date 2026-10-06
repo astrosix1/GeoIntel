@@ -8,6 +8,16 @@
   color: var(--text);
 }
 
+/* Rows are named so the layout holds when the context strip has nothing to show (Time Zone mode renders no strip). */
+.body,
+.bodyOverlay {
+  grid-row: 3;
+}
+
+.shell > :last-child {
+  grid-row: 4;
+}
+
 /* Docked: the two panels are columns beside the map, which gets whatever space is left. */
 .body {
   position: relative;
