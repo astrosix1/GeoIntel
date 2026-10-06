@@ -67,7 +67,7 @@ function basedOnLine(basedOn: ScenariosResponse['based_on']): string {
 // result costs a paid AI call; the server caches it). Rendered with a `key`
 // per event so the "requested" state resets when the selection changes.
 export default function Scenarios({ crisisId }: { crisisId: string }) {
-  const { premium } = useEntitlements();
+  const { unlocked: premium } = useEntitlements();
   const [requested, setRequested] = useState(false);
   // Only ever "active" for a premium user; if premium is lost mid-session the
   // section falls back to its locked intro instead of rendering blank.

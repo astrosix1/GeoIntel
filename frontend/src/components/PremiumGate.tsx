@@ -10,16 +10,19 @@ interface PremiumGateProps {
   feature: string;
   // Lay the gate out full-width (for forms) instead of shrink-wrapping its child.
   block?: boolean;
+  // The feature is tied to the user's account (saves, comments, watchlist), so it stays locked for anonymous visitors
+  // even while the backend's testing switch opens the other premium features.
+  account?: boolean;
 }
 
 // Wrap any premium UI. Premium users get the children untouched. Everyone
 // else sees them dimmed and non-interactive with a lock and a prompt: sign in
 // if anonymous, upgrade if signed in on the free plan. This is presentation
 // only — the matching API routes enforce premium on the server.
-export default function PremiumGate({ children, feature, block }: PremiumGateProps) {
-  const { signedIn, premium, loading } = useEntitlements();
+export default function PremiumGate({ children, feature, block, account = false }: PremiumGateProps) {
+  const { signedIn, premium, unlocked, loading } = useEntitlements();
 
-  if (premium) return <>{children}</>;
+  if (account ? premium : unlocked) return <>{children}</>;
 
   const upgradeUrl = getUpgradeUrl();
 

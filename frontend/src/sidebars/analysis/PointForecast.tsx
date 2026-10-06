@@ -174,7 +174,7 @@ export default function PointForecast({ lat, lon, label }: { lat: number; lon: n
       </div>
 
       <div className={forecastStyles.watchRow}>
-        {premium ? watchButton : <PremiumGate feature="Watchlist alerts">{watchButton}</PremiumGate>}
+        {premium ? watchButton : <PremiumGate feature="Watchlist alerts" account>{watchButton}</PremiumGate>}
         <button
           type="button"
           className={forecastStyles.watchButton}

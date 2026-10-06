@@ -98,7 +98,7 @@ export default function Globe() {
   );
   const satellite = useUiStore((s) => s.satellite);
   const relief = useUiStore((s) => s.relief);
-  const { premium } = useEntitlements();
+  const { premium, unlocked } = useEntitlements();
   const selectCrisisRef = useRef(selectCrisis);
   const selectCountryRef = useRef(selectCountry);
   const selectHazardRef = useRef(selectHazard);
@@ -484,11 +484,11 @@ export default function Globe() {
     const map = mapRef.current;
     if (!map || !mapReady) return;
     syncBaseLayers(map, {
-      satellite: premium && satellite,
-      relief: premium && relief,
+      satellite: unlocked && satellite,
+      relief: unlocked && relief,
       terrain3d: !isLiteDevice(),
     });
-  }, [mapReady, premium, satellite, relief]);
+  }, [mapReady, unlocked, satellite, relief]);
 
   // Crisis pins: layers exist only in Events mode; their data follows the
   // shared query (so scope/range changes just swap the source's data).

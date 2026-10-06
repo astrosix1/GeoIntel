@@ -138,6 +138,8 @@ export interface Me {
   userId: string | null;
   plan: 'free' | 'premium';
   premium: boolean;
+  // True while the backend's PREMIUM_FOR_ALL testing switch is on: features that need no account are open to everyone.
+  openAccess?: boolean;
 }
 
 export interface CrisesResponse {

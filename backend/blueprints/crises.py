@@ -22,7 +22,7 @@ from services.scenarios import generate_scenarios, ScenariosUnavailable
 from services.location_refine import refine_crisis_location
 from services.stories import canonical_id
 from services.hazard_links import hazards_for_event
-from services.gating import require_premium
+from services.gating import require_premium, require_premium_feature
 from services.realtime import broadcast_new_crisis
 
 logger = logging.getLogger(__name__)
@@ -471,7 +471,7 @@ def get_crisis_real_headline(crisis_id):
 
 @crises_bp.route('/<crisis_id>/refine-location', methods=['POST'])
 @limiter.limit("20 per minute")
-@require_premium
+@require_premium_feature
 def post_refine_location(crisis_id):
     """Refine one event's pin from its source article (premium: it can cost an
     AI call and a geocoder lookup). Idempotent: an event that already has a
@@ -537,7 +537,7 @@ def get_crisis_briefing(crisis_id):
 
 @crises_bp.route('/<crisis_id>/scenarios', methods=['GET'])
 @limiter.limit("10 per minute")
-@require_premium
+@require_premium_feature
 def get_crisis_scenarios(crisis_id):
     """Premium: AI-generated branch scenarios for a crisis. Enforced here on
     the server (401 sign-in / 403 upgrade from require_premium), not just by a

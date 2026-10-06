@@ -3,7 +3,7 @@ for locking/unlocking premium UI."""
 from flask import Blueprint, g, jsonify
 
 from extensions import limiter
-from services.gating import optional_user
+from services.gating import optional_user, premium_for_all
 
 me_bp = Blueprint('me', __name__, url_prefix='/api')
 
@@ -17,6 +17,8 @@ def get_me():
         'userId': g.user['id'] if g.user else None,
         'plan': g.plan,
         'premium': g.plan == 'premium',
+        # Testing switch: features that need no account are open to everyone (see services/gating.py).
+        'openAccess': premium_for_all(),
     })
     response.headers['Cache-Control'] = 'no-store'
     return response

@@ -44,6 +44,8 @@ import { getAccessToken, isDemoPremium } from '../auth/session';
 export interface Entitlements {
   signedIn: boolean;
   premium: boolean;
+  // Premium, or the backend's testing switch is on: features that need no account of their own are open.
+  unlocked: boolean;
   loading: boolean;
 }
 
@@ -58,8 +60,9 @@ export function useEntitlements(): Entitlements {
     retry: false,
   });
   // Dev-server-only demo switch (see auth/session.ts); always false in production.
-  if (isDemoPremium()) return { signedIn: true, premium: true, loading: false };
-  return { signedIn: data?.signedIn ?? false, premium: data?.premium ?? false, loading: isLoading };
+  if (isDemoPremium()) return { signedIn: true, premium: true, unlocked: true, loading: false };
+  const premium = data?.premium ?? false;
+  return { signedIn: data?.signedIn ?? false, premium, unlocked: premium || (data?.openAccess ?? false), loading: isLoading };
 }
 
 // One shared query feeds both the globe pins and the Events list, so the

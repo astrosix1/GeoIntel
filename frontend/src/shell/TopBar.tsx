@@ -61,7 +61,7 @@ export default function TopBar() {
       <div className={styles.group}>
         <LayersMenu />
         <SettingsMenu />
-        {premium ? dashboard : <PremiumGate feature="Dashboard">{dashboard}</PremiumGate>}
+        {premium ? dashboard : <PremiumGate feature="Dashboard" account>{dashboard}</PremiumGate>}
         {account}
       </div>
     </header>

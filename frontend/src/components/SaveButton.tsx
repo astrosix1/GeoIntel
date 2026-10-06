@@ -29,7 +29,7 @@ export default function SaveButton({ crisisId }: { crisisId: string }) {
 
   return (
     <>
-      {premium ? button : <PremiumGate feature="Saved events">{button}</PremiumGate>}
+      {premium ? button : <PremiumGate feature="Saved events" account>{button}</PremiumGate>}
       {errorKind && (
         <span className={styles.error}>
           {errorKind === 'limit_reached'

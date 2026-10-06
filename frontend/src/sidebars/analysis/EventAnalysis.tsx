@@ -36,7 +36,7 @@ function describeLocation(detail: CrisisDetail): string | null {
 
 export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
   const { data: briefing, isLoading, isError } = useCrisisBriefingQuery(crisis.id);
-  const { premium } = useEntitlements();
+  const { unlocked: premium } = useEntitlements();
   const { data: detail } = useCrisisDetailQuery(crisis.id);
   const { data: hazardLinks } = useEventHazardsQuery(crisis.id);
   // When the first report appeared, as a clock time at the event's own pin (news-feed events only).

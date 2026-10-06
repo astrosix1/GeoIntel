@@ -84,7 +84,7 @@ function Composer({ crisisId }: { crisisId: string }) {
   // Free and anonymous visitors can read; commenting is the premium part.
   if (!premium) {
     return (
-      <PremiumGate feature="Commenting" block>
+      <PremiumGate feature="Commenting" block account>
         <div className={styles.composer}>
           <textarea className={styles.textarea} rows={3} disabled placeholder="Share your thoughts…" />
           <button type="button" className={styles.primary} disabled>

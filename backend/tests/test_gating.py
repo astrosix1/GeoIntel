@@ -10,7 +10,7 @@ from flask import Flask, g, jsonify
 
 from cache import cache_delete
 from services import auth, entitlements
-from services.gating import optional_user, require_premium
+from services.gating import optional_user, require_premium, require_premium_feature
 
 SECRET = 'jwt-signing-secret'
 
@@ -45,6 +45,11 @@ def gated_client():
     @require_premium
     def premium_route():
         return jsonify({'ok': True, 'plan': g.plan})
+
+    @app.route('/feature')
+    @require_premium_feature
+    def feature_route():
+        return jsonify({'ok': True, 'user': g.user, 'plan': g.plan})
 
     with app.test_client() as c:
         yield c
@@ -161,18 +166,23 @@ class TestMeEndpoint:
     def test_anonymous(self, client, user_id):
         res = client.get('/api/me')
         assert res.status_code == 200
-        assert res.get_json() == {'signedIn': False, 'userId': None, 'plan': 'free', 'premium': False}
+        assert res.get_json() == {'signedIn': False, 'userId': None, 'plan': 'free', 'premium': False, 'openAccess': False}
         assert res.headers['Cache-Control'] == 'no-store'
 
     def test_signed_in_free(self, client, user_id):
         with _plan(None):
             body = client.get('/api/me', headers=_auth(_token(user_id))).get_json()
-        assert body == {'signedIn': True, 'userId': user_id, 'plan': 'free', 'premium': False}
+        assert body == {'signedIn': True, 'userId': user_id, 'plan': 'free', 'premium': False, 'openAccess': False}
 
     def test_signed_in_premium(self, client, user_id):
         with _plan('active'):
             body = client.get('/api/me', headers=_auth(_token(user_id))).get_json()
-        assert body == {'signedIn': True, 'userId': user_id, 'plan': 'premium', 'premium': True}
+        assert body == {'signedIn': True, 'userId': user_id, 'plan': 'premium', 'premium': True, 'openAccess': False}
+
+    def test_reports_open_access_when_the_testing_switch_is_on(self, client, user_id, monkeypatch):
+        monkeypatch.setenv('PREMIUM_FOR_ALL', 'true')
+        body = client.get('/api/me').get_json()
+        assert body['openAccess'] is True and body['signedIn'] is False and body['premium'] is False
 
 
 class TestAdminIsPremium:
@@ -221,3 +231,28 @@ class TestPremiumForAll:
         with _plan(None):
             res = gated_client.get('/premium', headers=_auth(_token(user_id)))
         assert res.status_code == 403
+
+
+class TestPremiumFeatureRoutes:
+    """Routes that need no account (scenarios, pin refinement): with the testing
+    switch off they behave like require_premium; on, anonymous callers pass."""
+
+    def test_off_anonymous_is_asked_to_sign_in(self, gated_client, monkeypatch):
+        monkeypatch.delenv('PREMIUM_FOR_ALL', raising=False)
+        assert gated_client.get('/feature').status_code == 401
+
+    def test_off_free_user_is_blocked(self, gated_client, user_id, monkeypatch):
+        monkeypatch.delenv('PREMIUM_FOR_ALL', raising=False)
+        with _plan('free'):
+            assert gated_client.get('/feature', headers=_auth(_token(user_id))).status_code == 403
+
+    def test_on_anonymous_passes(self, gated_client, monkeypatch):
+        monkeypatch.setenv('PREMIUM_FOR_ALL', 'true')
+        res = gated_client.get('/feature')
+        assert res.status_code == 200
+        assert res.get_json() == {'ok': True, 'user': None, 'plan': 'premium'}
+
+    def test_on_signed_in_user_passes_with_their_identity(self, gated_client, user_id, monkeypatch):
+        monkeypatch.setenv('PREMIUM_FOR_ALL', 'true')
+        res = gated_client.get('/feature', headers=_auth(_token(user_id)))
+        assert res.status_code == 200 and res.get_json()['user']['id'] == user_id

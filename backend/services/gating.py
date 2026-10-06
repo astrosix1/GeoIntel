@@ -49,6 +49,21 @@ def require_user(f):
     return wrapper
 
 
+def require_premium_feature(f):
+    """Like require_premium, for features that need no account of their own
+    (scenarios, pin refinement). With PREMIUM_FOR_ALL on, anonymous callers pass
+    too (g.user is None); otherwise it behaves exactly like require_premium."""
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if premium_for_all():
+            user = get_current_user()
+            g.user = user
+            g.plan = 'premium'
+            return f(*args, **kwargs)
+        return require_premium(f)(*args, **kwargs)
+    return wrapper
+
+
 def require_premium(f):
     """401 sign_in_required for anonymous, 403 premium_required for a
     signed-in free user — distinct codes so the UI can show the right prompt."""
