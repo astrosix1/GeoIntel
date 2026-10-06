@@ -2,7 +2,13 @@
 
 Plan for the next round of Time Zone mode work. Everything here runs in the browser on free data and needs no backend, no API key and no new licence, apart from one small bundled cities list (see Stage 1). Earlier phases are in `docs/roadmap-phases-1-21-archive.md`. Weather mode's plan is in `docs/weather-mode-plan.md`.
 
-Status: **planned, nothing built.**
+Status: **Stage 1 implemented** (not committed); Stages 2 to 5 planned.
+
+Stage 1 as built, and where it differs from the plan below:
+- **No cities file yet.** The plan called for a bundled GeoNames list. That needs a download and an agreed attribution, so Stage 1 uses the zone names the browser already knows (about 418 `Region/City` ids, so one city per zone, no country and no population ranking) with no download and no licence. The panel says so. A real cities list can replace the search source later without changing the rest. Some browsers still report old names (Asia/Calcutta, Europe/Kiev); `MODERN_NAMES` in `lib/timezones.ts` maps them to the current ones so a search for Kolkata or Kyiv works.
+- `lib/timezones.ts` (offsets, daylight saving, same-rules scan, clock readings, search), `lib/clocks.ts` (pinned clocks and display options in this browser), `sidebars/WorldClock.tsx` (left panel: pinned clocks, 12/24 hour and date format, city search), `sidebars/analysis/ZoneAnalysis.tsx` (offset, daylight-saving state, local time, places with the same rules, Pin this clock). The map popup stays and now points to the panel, because the side panels only open on hover.
+- "Daylight saving" means the offset changes for most of a season. A change lasting only a few weeks (Morocco's Ramadan rule) is shown as "Offset changes for a few weeks of the year".
+- Tests: `npm test` runs `frontend/tests/timezones.test.ts` (22 tests) on Node's built-in runner, no new dependency. Checked in the browser: clocks for Tokyo, New York and Kathmandu match UTC plus offset, survive a reload, and a click over Nigeria opens Lagos (UTC+1, 12 same-rule places).
 
 ## What exists today
 

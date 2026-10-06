@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import type { CrisisSummary, Storm } from '../api/types';
+import { cleanClocks, loadClockPrefs, loadClocks, MAX_CLOCKS, saveClockPrefs, saveClocks } from '../lib/clocks';
+import type { ClockPrefs } from '../lib/timezones';
 
 // Globe mode switcher (steps 5-6 of the rewrite plan). 'events' shows
 // crisis pins, 'weather' shows GDACS storm pins, 'timezone' shows real IANA
@@ -21,6 +23,7 @@ export type PinnedSelection =
   | { kind: 'country'; countryCode: string }
   | { kind: 'hazard'; hazard: Storm }
   | { kind: 'point'; lat: number; lon: number; label: string | null }
+  | { kind: 'zone'; tzid: string }
   | null;
 
 export type EventsTab = 'all' | 'major' | 'categories';
@@ -50,6 +53,7 @@ interface UiState {
   selectCountry: (countryCode: string) => void;
   selectHazard: (hazard: Storm) => void;
   selectPoint: (lat: number, lon: number, label: string | null) => void;
+  selectZone: (tzid: string) => void;
   clearPinnedSelection: () => void;
 
   // --- Visibility: WHETHER each sidebar is shown. `leftOpen`/`rightOpen`
@@ -72,6 +76,14 @@ interface UiState {
 
   activeMode: GlobeMode;
   setActiveMode: (mode: GlobeMode) => void;
+
+  // Time Zone mode: the clocks the user pinned (zone ids, at most MAX_CLOCKS) and how clocks are shown.
+  // Both are remembered in this browser only.
+  clocks: string[];
+  addClock: (tzid: string) => void;
+  removeClock: (tzid: string) => void;
+  clockPrefs: ClockPrefs;
+  setClockPrefs: (prefs: ClockPrefs) => void;
 
   // A one-line note shown in Weather mode, for example when a shared link points at a hazard that has ended.
   weatherNotice: string | null;
@@ -146,6 +158,7 @@ export const useUiStore = create<UiState>((set) => ({
   selectCountry: (countryCode) => set({ pinnedSelection: { kind: 'country', countryCode } }),
   selectHazard: (hazard) => set({ pinnedSelection: { kind: 'hazard', hazard } }),
   selectPoint: (lat, lon, label) => set({ pinnedSelection: { kind: 'point', lat, lon, label } }),
+  selectZone: (tzid) => set({ pinnedSelection: { kind: 'zone', tzid } }),
   clearPinnedSelection: () => set({ pinnedSelection: null }),
 
   leftOpen: false,
@@ -158,6 +171,25 @@ export const useUiStore = create<UiState>((set) => ({
   // visibility/hover state — it only changes what's rendered on the globe
   // itself (plan's explicit requirement).
   setActiveMode: (mode) => set({ activeMode: mode }),
+  clocks: loadClocks(),
+  addClock: (tzid) =>
+    set((s) => {
+      if (s.clocks.includes(tzid) || s.clocks.length >= MAX_CLOCKS) return s;
+      const clocks = cleanClocks([...s.clocks, tzid]);
+      saveClocks(clocks);
+      return { clocks };
+    }),
+  removeClock: (tzid) =>
+    set((s) => {
+      const clocks = s.clocks.filter((z) => z !== tzid);
+      saveClocks(clocks);
+      return { clocks };
+    }),
+  clockPrefs: loadClockPrefs(),
+  setClockPrefs: (prefs) => {
+    saveClockPrefs(prefs);
+    set({ clockPrefs: prefs });
+  },
   weatherNotice: null,
   setWeatherNotice: (notice) => set({ weatherNotice: notice }),
 

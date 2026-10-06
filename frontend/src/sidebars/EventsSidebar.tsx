@@ -7,6 +7,7 @@ import { colorForSeverity } from '../globe/severity';
 import { ALERT_COLORS, HAZARD_TYPES, hazardIcon } from '../globe/hazards';
 import { applyCrisisFilter, applyHazardFilter } from '../lib/filters';
 import type { Storm } from '../api/types';
+import WorldClock from './WorldClock';
 import styles from './EventsSidebar.module.css';
 
 const TABS: { value: EventsTab; label: string }[] = [
@@ -313,7 +314,7 @@ export default function EventsSidebar() {
       data-ui-hover-surface
       className={`${styles.sidebar} ${leftOpen ? styles.open : ''}`}
     >
-      {activeMode === 'weather' ? <WeatherList /> : <EventsList />}
+      {activeMode === 'weather' ? <WeatherList /> : activeMode === 'timezone' ? <WorldClock /> : <EventsList />}
     </aside>
   );
 }

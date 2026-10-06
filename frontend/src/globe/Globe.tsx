@@ -63,6 +63,7 @@ export default function Globe() {
   const selectCountry = useUiStore((s) => s.selectCountry);
   const selectHazard = useUiStore((s) => s.selectHazard);
   const selectPoint = useUiStore((s) => s.selectPoint);
+  const selectZone = useUiStore((s) => s.selectZone);
   const weatherTab = useUiStore((s) => s.weatherTab);
   const weatherCategory = useUiStore((s) => s.weatherCategory);
   const eventsTab = useUiStore((s) => s.eventsTab);
@@ -261,6 +262,7 @@ export default function Globe() {
         const feature = e.features?.[0];
         const tzid = feature?.properties?.tzid as string | undefined;
         if (!tzid) return;
+        selectZone(tzid);
         timezonePopup?.remove();
         timezonePopup = new maplibregl.Popup({ offset: 8 })
           .setLngLat(e.lngLat)
@@ -280,7 +282,7 @@ export default function Globe() {
       }
       timezonePopup?.remove();
     };
-  }, [activeMode, mapReady]);
+  }, [activeMode, mapReady, selectZone]);
 
   useRadar(mapRef, mapReady);
 

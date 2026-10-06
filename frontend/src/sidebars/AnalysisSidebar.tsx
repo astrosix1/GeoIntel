@@ -3,6 +3,7 @@ import EventAnalysis from './analysis/EventAnalysis';
 import CountryAnalysis from './analysis/CountryAnalysis';
 import HazardAnalysis from './analysis/HazardAnalysis';
 import PointForecast from './analysis/PointForecast';
+import ZoneAnalysis from './analysis/ZoneAnalysis';
 import styles from './AnalysisSidebar.module.css';
 
 export default function AnalysisSidebar() {
@@ -36,6 +37,7 @@ export default function AnalysisSidebar() {
             label={pinnedSelection.label}
           />
         )}
+        {pinnedSelection?.kind === 'zone' && <ZoneAnalysis key={pinnedSelection.tzid} tzid={pinnedSelection.tzid} />}
         {!pinnedSelection && (
           <div className={styles.placeholder}>
             Click a crisis pin or a country on the globe, or an item in Events, to see its analysis here.
