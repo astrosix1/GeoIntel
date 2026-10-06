@@ -33,3 +33,29 @@ export function applyHazardFilter(list: Storm[], tab: EventsTab, category: strin
   if (tab === 'categories' && category) return list.filter((h) => h.event_type === category);
   return list;
 }
+
+// How the events list is ordered (the globe is not affected). The default is the server's own order:
+// most severe first, then newest.
+export type CrisisSortKey = 'severity' | 'newest' | 'country';
+export interface CrisisSort {
+  key: CrisisSortKey;
+  dir: 'asc' | 'desc';
+}
+
+export const DEFAULT_CRISIS_SORT: CrisisSort = { key: 'severity', dir: 'desc' };
+
+// The direction a key starts in when first chosen.
+export function defaultDirection(key: CrisisSortKey): 'asc' | 'desc' {
+  return key === 'country' ? 'asc' : 'desc';
+}
+
+export function sortCrises(list: CrisisSummary[], sort: CrisisSort): CrisisSummary[] {
+  const sign = sort.dir === 'asc' ? 1 : -1;
+  const byDate = (a: CrisisSummary, b: CrisisSummary) => (b.date ?? '').localeCompare(a.date ?? '');
+  const compare = (a: CrisisSummary, b: CrisisSummary): number => {
+    if (sort.key === 'severity') return sign * (a.severity - b.severity) || byDate(a, b);
+    if (sort.key === 'newest') return sign * (a.date ?? '').localeCompare(b.date ?? '') || b.severity - a.severity;
+    return sign * a.country.localeCompare(b.country) || b.severity - a.severity || byDate(a, b);
+  };
+  return [...list].sort(compare);
+}

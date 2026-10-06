@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import type { CrisisSummary, Storm } from '../api/types';
 import { cleanClocks, loadClockPrefs, loadClocks, MAX_CLOCKS, saveClockPrefs, saveClocks } from '../lib/clocks';
 import type { ClockPrefs } from '../lib/timezones';
+import { DEFAULT_CRISIS_SORT } from '../lib/filters';
+import type { CrisisSort } from '../lib/filters';
 
 // Globe mode switcher (steps 5-6 of the rewrite plan). 'events' shows
 // crisis pins, 'weather' shows GDACS storm pins, 'timezone' shows real IANA
@@ -128,6 +130,9 @@ interface UiState {
   // Show only events first reported at night (22:00 to 05:00) at their own pin (Events mode, list and globe).
   reportedAtNight: boolean;
   setReportedAtNight: (on: boolean) => void;
+  // How the events list is ordered (the globe is not affected).
+  eventsSort: CrisisSort;
+  setEventsSort: (sort: CrisisSort) => void;
   eventsTab: EventsTab;
   activeCategory: string | null;
   setEventsTab: (tab: EventsTab) => void;
@@ -243,6 +248,8 @@ export const useUiStore = create<UiState>((set) => ({
 
   reportedAtNight: false,
   setReportedAtNight: (on) => set({ reportedAtNight: on }),
+  eventsSort: DEFAULT_CRISIS_SORT,
+  setEventsSort: (sort) => set({ eventsSort: sort }),
   eventsTab: 'all',
   activeCategory: null,
   setEventsTab: (tab) => set({ eventsTab: tab }),

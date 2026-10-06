@@ -1,77 +1,56 @@
-.tabs {
-  display: flex;
-  gap: 4px;
-  padding: 10px 18px 0;
-}
-
-.tab {
-  flex: 1;
-  padding: 6px 8px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 7px;
-  color: rgba(230, 233, 239, 0.65);
-  font: inherit;
-  font-size: 12.5px;
-  cursor: pointer;
-}
-
-.tabActive {
-  background: rgba(90, 160, 255, 0.25);
-  color: #fff;
-}
-
+/* Meeting planner and time converter (the second and third tabs of the world clock). */
 .panel {
-  padding: 10px 18px;
-  overflow-y: auto;
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-3);
 }
 
 .row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-  font-size: 12.5px;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
 }
 
 .row label {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
+  color: var(--text-2);
 }
 
 .field,
 .input {
-  padding: 5px 8px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
-  color: inherit;
-  font: inherit;
-  font-size: 12.5px;
+  box-sizing: border-box;
+  height: 26px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--edge-control);
+  border-radius: var(--radius-1);
+  background: var(--panel);
+  color: var(--text);
+  font-size: var(--font-2);
 }
 
 .input {
   width: 100%;
-  box-sizing: border-box;
-  font-size: 13px;
+  height: 28px;
+  font-size: var(--font-3);
 }
 
 .grid {
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
-  font-size: 10.5px;
-  font-variant-numeric: tabular-nums;
+  font-size: var(--font-1);
 }
 
 .grid th {
-  padding: 2px 1px 4px;
-  font-weight: 600;
-  color: rgba(230, 233, 239, 0.75);
+  padding: 2px 1px var(--space-1);
   overflow: hidden;
+  color: var(--text-2);
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -79,9 +58,9 @@
 .grid th.hourHead,
 .grid td.hourCell {
   width: 24px;
-  color: rgba(230, 233, 239, 0.5);
+  padding-right: var(--space-1);
+  color: var(--text-3);
   text-align: right;
-  padding-right: 4px;
 }
 
 .grid tbody tr {
@@ -89,106 +68,108 @@
 }
 
 .grid tbody tr:hover td {
-  outline: 1px solid rgba(255, 255, 255, 0.35);
+  outline: 1px solid var(--edge-control);
 }
 
 .selected td {
-  outline: 2px solid #fcd34d;
+  outline: 2px solid var(--warn);
   outline-offset: -2px;
 }
 
 .cell {
-  text-align: center;
   padding: 3px 0;
-  border: 1px solid rgba(10, 14, 20, 0.6);
+  border: 1px solid var(--panel);
+  text-align: center;
 }
 
 .working {
-  background: rgba(52, 199, 89, 0.35);
+  background: var(--ok-soft);
 }
 
 .early,
 .late {
-  background: rgba(255, 149, 0, 0.3);
+  background: var(--caution-soft);
 }
 
 .night {
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(230, 233, 239, 0.45);
+  background: var(--raised);
+  color: var(--text-3);
 }
 
 .skipped td {
-  text-align: center;
-  color: rgba(230, 233, 239, 0.4);
+  color: var(--text-3);
   font-style: italic;
+  text-align: center;
 }
 
 .day {
-  font-size: 8.5px;
-  vertical-align: super;
   margin-left: 1px;
-  color: #fcd34d;
+  color: var(--warn);
+  font-size: var(--font-1);
+  vertical-align: super;
 }
 
 .legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin: 8px 0;
-  font-size: 11px;
-  color: rgba(230, 233, 239, 0.7);
+  gap: var(--space-3);
+  margin: var(--space-2) 0;
+  color: var(--text-2);
+  font-size: var(--font-1);
 }
 
 .swatch {
   display: inline-block;
   width: 10px;
   height: 10px;
-  border-radius: 2px;
-  margin-right: 4px;
+  margin-right: var(--space-1);
+  border-radius: var(--radius-1);
   vertical-align: middle;
 }
 
 .summary {
-  margin-top: 10px;
-  padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 8px;
-  font-size: 12.5px;
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-2);
+  background: var(--raised);
 }
 
 .summaryLine {
   display: flex;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
   padding: 2px 0;
 }
 
 .note {
-  margin-top: 8px;
-  font-size: 12px;
-  color: rgba(230, 233, 239, 0.65);
+  margin: var(--space-2) 0 0;
+  color: var(--text-2);
+  font-size: var(--font-2);
 }
 
 .warn {
-  margin-top: 6px;
-  font-size: 12px;
-  color: #fcd34d;
+  margin-top: var(--space-2);
+  color: var(--warn);
+  font-size: var(--font-2);
 }
 
 .error {
-  margin-top: 8px;
-  font-size: 12.5px;
-  color: #ff8a8a;
+  margin-top: var(--space-2);
+  color: var(--warn);
+  font-size: var(--font-3);
 }
 
 .copy {
-  margin-top: 8px;
-  padding: 5px 10px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 6px;
-  color: inherit;
-  font: inherit;
-  font-size: 12.5px;
+  margin-top: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--edge-control);
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-2);
   cursor: pointer;
+}
+
+.copy:hover {
+  background: var(--raised-strong);
 }

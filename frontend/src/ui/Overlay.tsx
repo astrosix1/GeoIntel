@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { KeyboardEvent, ReactNode } from 'react';
 import Button, { IconButton } from './Button';
+import { Badge } from './Display';
 import type { IconName } from './Icon';
 import styles from './Overlay.module.css';
 
@@ -12,10 +13,13 @@ export function Popover({
   label,
   icon,
   align = 'start',
+  badge,
   children,
 }: {
   label: string;
   icon?: IconName;
+  // A small count shown on the button (for example how many filters are on).
+  badge?: number;
   align?: 'start' | 'end';
   children: ReactNode;
 }) {
@@ -52,6 +56,7 @@ export function Popover({
         onClick={() => setOpen(!open)}
       >
         {label}
+        {badge ? <Badge tone="accent">{badge}</Badge> : null}
       </Button>
       {open && (
         <div id={id} role="dialog" aria-label={label} className={`${styles.popover} ${align === 'end' ? styles.alignEnd : styles.alignStart}`}>

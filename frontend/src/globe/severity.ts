@@ -18,3 +18,11 @@ export function colorForSeverity(severity: number): string {
 export function labelForSeverity(severity: number): string {
   return bandFor(severity).label;
 }
+
+export type SeverityTone = 'sev1' | 'sev2' | 'sev3' | 'sev4' | 'sev5';
+
+// The badge tone for a 0 to 100 severity (Minor is sev1, Critical is sev5).
+export function severityTone(severity: number): SeverityTone {
+  const index = SEVERITY_BANDS.findIndex((band) => severity >= band.min);
+  return `sev${5 - (index === -1 ? 4 : index)}` as SeverityTone;
+}

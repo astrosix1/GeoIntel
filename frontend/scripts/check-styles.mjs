@@ -9,7 +9,16 @@ import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // Entries are folders (every .css inside) or single .css files.
-export const CONVERTED = ['src/ui', 'src/shell', 'src/globe/TimeBar.module.css'];
+export const CONVERTED = [
+  'src/ui',
+  'src/shell',
+  'src/globe/TimeBar.module.css',
+  'src/sidebars/EventsSidebar.module.css',
+  'src/sidebars/AnalysisSidebar.module.css',
+  'src/sidebars/EdgeTab.module.css',
+  'src/sidebars/WorldClock.module.css',
+  'src/sidebars/Planner.module.css',
+];
 
 const NAMED_COLOURS = /\b(white|black|red|green|blue|yellow|orange|purple|pink|gray|grey|silver|gold|navy|teal|cyan|magenta|lime|maroon|olive|aqua)\b/i;
 

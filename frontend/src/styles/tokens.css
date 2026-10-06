@@ -61,6 +61,10 @@
   --alert-green-fg: #0a0e14;
   --alert-green-mark: #34c759;
 
+  /* Soft fills for "fine" and "be careful" cells (the meeting planner); text on them is checked in tests/contrast.test.ts */
+  --ok-soft: rgba(52, 199, 89, 0.3);
+  --caution-soft: rgba(255, 149, 0, 0.3);
+
   /* Spacing (4 px grid) */
   --space-1: 4px;
   --space-2: 8px;
@@ -126,5 +130,8 @@
   --alert-green-mark: #15803d;
 
   --scrim: rgba(15, 23, 34, 0.35);
+  --ok-soft: rgba(21, 128, 61, 0.2);
+  --caution-soft: rgba(180, 95, 0, 0.2);
+
   --shadow-pop: 0 6px 24px rgba(15, 23, 34, 0.18);
 }

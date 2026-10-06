@@ -115,3 +115,12 @@ export function nextChangeLine(tzid: string, at: Date): string {
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   return `Clocks go ${describeShift(next)} on ${p.day} ${MONTHS[p.month - 1]}`;
 }
+
+// The shortest honest form for a dense row: "back 1 h on 1 Nov", or "no clock change" when there is none in 14 months.
+export function nextChangeShort(tzid: string, at: Date): string {
+  const { next } = clockChanges(tzid, at);
+  if (!next) return 'no clock change';
+  const p = localParts(tzid, new Date(next.instant.getTime() - MIN_MS));
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${describeShift(next)} on ${p.day} ${MONTHS[p.month - 1]}`;
+}

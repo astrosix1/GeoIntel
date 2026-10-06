@@ -1,7 +1,7 @@
 // Run with: npm test
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { clockChanges, describeChange, describeShift, nextChangeLine } from '../src/lib/dst.ts';
+import { clockChanges, describeChange, describeShift, nextChangeLine, nextChangeShort } from '../src/lib/dst.ts';
 
 const OCT = new Date('2026-10-06T12:00:00Z');
 const iso = (d: Date | undefined) => d?.toISOString().slice(0, 16);
@@ -85,5 +85,12 @@ describe('wording', () => {
   it('one-line summaries', () => {
     assert.equal(nextChangeLine('America/New_York', OCT), 'Clocks go back 1 h on 1 Nov');
     assert.equal(nextChangeLine('Asia/Tokyo', OCT), 'Tokyo: no clock change in the next 14 months');
+  });
+
+  it('the shortest form for a dense row', () => {
+    assert.equal(nextChangeShort('America/New_York', OCT), 'back 1 h on 1 Nov');
+    assert.equal(nextChangeShort('Australia/Sydney', OCT), 'back 1 h on 4 Apr');
+    assert.equal(nextChangeShort('Asia/Tokyo', OCT), 'no clock change');
+    assert.equal(nextChangeShort('Australia/Lord_Howe', new Date('2027-01-15T12:00:00Z')), 'back 30 min on 4 Apr');
   });
 });

@@ -50,6 +50,11 @@
   white-space: nowrap;
 }
 
+.badgeCompact {
+  height: 14px;
+  padding: 0 var(--space-1);
+}
+
 .accent {
   background: var(--accent-soft);
   color: var(--text);
@@ -195,6 +200,26 @@
 .rowSelected:hover {
   background: var(--accent-soft);
   box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.rowDense {
+  min-height: 0;
+  padding: 2px var(--space-3);
+}
+
+.rowDense .rowTitle {
+  line-height: 1.25;
+}
+
+.rowDense .rowDetail {
+  font-size: var(--font-1);
+  line-height: 1.3;
+}
+
+.rowDetail {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
 }
 
 .rowMain {

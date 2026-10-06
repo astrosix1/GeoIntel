@@ -113,6 +113,14 @@ function check(theme: Tokens, name: string) {
       assert.ok(focus >= 3, `focus ring is ${focus.toFixed(2)}:1`);
     });
 
+    it('text on the soft cell fills of the meeting planner is readable', () => {
+      for (const token of ['--ok-soft', '--caution-soft']) {
+        const fill = over(colour(token), panel);
+        const r = ratio(over(colour('--text'), fill), fill);
+        assert.ok(r >= 4.5, `text on ${token} is ${r.toFixed(2)}:1`);
+      }
+    });
+
     it('the overlay panel stays readable over a bright map', () => {
       const bright: Rgba = [255, 255, 255, 1];
       const overlay = over(colour('--panel-overlay'), bright);

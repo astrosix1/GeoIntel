@@ -1,5 +1,5 @@
 import { useId, useRef, useState } from 'react';
-import type { KeyboardEvent, ReactNode } from 'react';
+import type { HTMLAttributes, KeyboardEvent, ReactNode, Ref } from 'react';
 import Button from './Button';
 import Icon from './Icon';
 import styles from './Display.module.css';
@@ -19,8 +19,8 @@ export function Chip({ pressed, onClick, count, children }: { pressed: boolean; 
 
 export type BadgeTone = 'neutral' | 'accent' | 'warn' | 'sev1' | 'sev2' | 'sev3' | 'sev4' | 'sev5' | 'alertRed' | 'alertOrange' | 'alertGreen';
 
-export function Badge({ tone = 'neutral', children }: { tone?: BadgeTone; children: ReactNode }) {
-  return <span className={`${styles.badge} ${tone === 'neutral' ? '' : styles[tone]}`}>{children}</span>;
+export function Badge({ tone = 'neutral', compact = false, children }: { tone?: BadgeTone; compact?: boolean; children: ReactNode }) {
+  return <span className={`${styles.badge} ${compact ? styles.badgeCompact : ''} ${tone === 'neutral' ? '' : styles[tone]}`}>{children}</span>;
 }
 
 // ---- Tabs ---------------------------------------------------------------------------------------------------------
@@ -144,17 +144,27 @@ export function ListRow({
   leading,
   trailing,
   selected = false,
+  dense = false,
   onClick,
+  ...rest
 }: {
   title: string;
-  detail?: string;
+  detail?: ReactNode;
   leading?: ReactNode;
   trailing?: ReactNode;
   selected?: boolean;
+  // A tighter row (two short lines) for long lists.
+  dense?: boolean;
   onClick?: () => void;
-}) {
+} & Omit<HTMLAttributes<HTMLButtonElement>, 'title' | 'onClick'> & { 'data-index'?: number; ref?: Ref<HTMLButtonElement> }) {
   return (
-    <button type="button" className={`${styles.row} ${selected ? styles.rowSelected : ''}`} aria-current={selected || undefined} onClick={onClick}>
+    <button
+      type="button"
+      className={`${styles.row} ${dense ? styles.rowDense : ''} ${selected ? styles.rowSelected : ''}`}
+      aria-current={selected || undefined}
+      onClick={onClick}
+      {...rest}
+    >
       {leading}
       <span className={styles.rowMain}>
         <div className={styles.rowTitle} title={title}>{title}</div>

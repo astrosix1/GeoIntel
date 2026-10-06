@@ -29,6 +29,16 @@ Status: **Stage 0 (foundations) committed (91be044). Stage 1 (shell and Settings
 - **Measured at 1440 x 900, both panels open:** map 780 px wide, **54% of the window** (the plan's 60% target was wrong for its own 300 + 360 panels; the target is now 54%). First event 204 px below the panel top (was 304) and rows 104 px (was 107): the list itself is rebuilt in the next stage, which is where the "first event under 110 px, 20 or more events visible" targets are met.
 - **Unchanged on purpose:** panel contents, the dashboard modal, map popups and the pin emoji are converted in later stages.
 
+## Stage 2 as built (lists)
+
+- **Events list:** dense, virtualised rows (title, compact severity badge, country, short age such as `5m`, `3h`, `2d`). Filters moved into one Filters popover (Show: All, Major only, By category; category chips; "first reported at night"; Clear filters) with a count badge on the button. A sort strip (Severity, Newest, Country) toggles direction; ties break predictably (`sortCrises` in `lib/filters.ts`).
+- **Weather list:** same row, with a hazard icon (cyclone, flood, fire, drought, warning), alert badge, country and age; filters All, Major (Orange and Red), By type.
+- **World clock:** rebuilt on the shared Tabs, Badge and StateMessage; each row shows UTC offset and the next clock change (`nextChangeShort`); the planner uses token fills for working, early/late and night hours.
+- **Analysis, edge tabs and planner stylesheets** are on tokens; `CONVERTED` now covers 14 stylesheets.
+- **Measured at 1440 x 900:** first event 101 px below the panel top (target under 110, met); rows 35 px (was 107); **19 fully visible, the 20th partly** (target 20 or more, just short).
+- **Fixed during checking:** the Filters popover opened left-aligned and was clipped by the panel; it is now right-aligned inside it.
+- **Checks:** `tsc`, the style guard, the production build and 156 tests pass.
+
 ## What is wrong today (measured)
 
 - **Too few events per screen.** The first event starts 304 px down the left panel, and each event row is 107 px tall. At 900 px high, about five events are visible.

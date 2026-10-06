@@ -7,6 +7,13 @@ export const HAZARD_TYPES = [
   { code: 'DR', label: 'Droughts', icon: '☀️' },
 ] as const;
 
+import type { IconName } from '../ui/Icon';
+
+// The drawn icon for a hazard type (the map pins still use the emoji above until the map stage).
+export function hazardIconName(code: string): IconName {
+  return code === 'TC' ? 'cyclone' : code === 'FL' ? 'flood' : code === 'WF' ? 'fire' : code === 'DR' ? 'sun' : 'warning';
+}
+
 export function hazardIcon(code: string): string {
   return HAZARD_TYPES.find((t) => t.code === code)?.icon ?? '⚠️';
 }
