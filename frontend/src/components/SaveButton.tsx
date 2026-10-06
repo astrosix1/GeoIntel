@@ -1,5 +1,6 @@
 import { UserDataError } from '../api/client';
 import { useEntitlements, useSaveEventMutation, useSavedEventsQuery } from '../state/queries';
+import Button from '../ui/Button';
 import PremiumGate from './PremiumGate';
 import styles from './SaveButton.module.css';
 
@@ -12,15 +13,15 @@ export default function SaveButton({ crisisId }: { crisisId: string }) {
   const isSaved = !!saved?.some((event) => event.crisis_id === crisisId);
 
   const button = (
-    <button
-      type="button"
-      className={`${styles.button} ${isSaved ? styles.saved : ''}`}
+    <Button
+      size="sm"
+      className={isSaved ? styles.saved : undefined}
       aria-pressed={isSaved}
       disabled={mutation.isPending}
       onClick={() => premium && mutation.mutate({ id: crisisId, save: !isSaved })}
     >
       {isSaved ? '★ Saved' : '☆ Save'}
-    </button>
+    </Button>
   );
 
   const errorKind = mutation.error instanceof UserDataError ? mutation.error.kind : mutation.error ? 'error' : null;

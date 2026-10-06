@@ -9,7 +9,6 @@ import { useShownNow } from '../../state/useNow';
 import { useUiStore } from '../../state/uiStore';
 import styles from './EventAnalysis.module.css';
 import forecastStyles from './PointForecast.module.css';
-import hazardStyles from './HazardAnalysis.module.css';
 
 const SHOWN_PLACES = 30;
 
@@ -34,7 +33,7 @@ function SunBlock({ tzid, point, at, hour12 }: { tzid: string; point: { lat: num
   return (
     <div className={styles.section}>
       <div className={styles.sectionTitle}>Sun at the clicked point</div>
-      <dl className={hazardStyles.facts}>
+      <dl className={forecastStyles.facts}>
         <dt>Now</dt>
         <dd>{altitude >= -0.833 ? `Sun is up (${Math.round(altitude)}° above the horizon)` : `Sun is down (${Math.round(-altitude)}° below the horizon)`}</dd>
         {times.status === 'normal' && (
@@ -98,17 +97,17 @@ export default function ZoneAnalysis({ tzid, point }: { tzid: string; point?: { 
         <span className={styles.badge}>{info.offsetLabel}</span>
         {regionName(tzid) && <span className={styles.badge}>{regionName(tzid)}</span>}
         <span className={styles.badge}>{tzid}</span>
-        <CopyLinkButton className={styles.badge} target={{ kind: 'zone', tzid }} />
+        <CopyLinkButton target={{ kind: 'zone', tzid }} />
       </div>
 
       <div className={styles.section}>
         <div className={styles.sectionTitle}>Local time{offset !== 0 ? ' at the chosen time' : ''}</div>
-        <div style={{ fontSize: 28, fontVariantNumeric: 'tabular-nums' }}>{reading?.time ?? '–'}</div>
+        <div className={styles.bigTime}>{reading?.time ?? '–'}</div>
         <div className={styles.mediaCaption}>
           {reading?.date}
           {reading && reading.day !== 'today' ? ` (${reading.day} in UTC terms)` : ''} · UTC is {utcReading?.time}
         </div>
-        <div style={{ marginTop: 8 }}>
+        <div className={styles.gap}>
           {pinned ? (
             <button type="button" className={forecastStyles.watchButton} onClick={() => removeClock(tzid)}>
               Remove from my clocks
@@ -128,7 +127,7 @@ export default function ZoneAnalysis({ tzid, point }: { tzid: string; point?: { 
 
       <div className={styles.section}>
         <div className={styles.sectionTitle}>Clock changes</div>
-        <dl className={hazardStyles.facts}>
+        <dl className={forecastStyles.facts}>
           <dt>Next</dt>
           <dd>{changes.next ? describeChange(tzid, changes.next) : 'None in the next 14 months'}</dd>
           <dt>Last</dt>
@@ -140,7 +139,7 @@ export default function ZoneAnalysis({ tzid, point }: { tzid: string; point?: { 
 
       <div className={styles.section}>
         <div className={styles.sectionTitle}>Rules</div>
-        <dl className={hazardStyles.facts}>
+        <dl className={forecastStyles.facts}>
           <dt>Offset now</dt>
           <dd>{info.offsetLabel}</dd>
           <dt>Daylight saving</dt>

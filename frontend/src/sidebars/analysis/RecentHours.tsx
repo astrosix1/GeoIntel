@@ -43,7 +43,7 @@ export default function RecentHours({ forecast, units }: { forecast: Forecast; u
                 flex: 1,
                 minHeight: 2,
                 height: `${Math.max(6, ((value ?? 0) / peak) * 100)}%`,
-                background: (value ?? 0) > 0 ? '#7dd3fc' : 'rgba(255,255,255,0.12)',
+                background: (value ?? 0) > 0 ? 'var(--sky)' : 'var(--raised-strong)',
                 borderRadius: 2,
               }}
             />

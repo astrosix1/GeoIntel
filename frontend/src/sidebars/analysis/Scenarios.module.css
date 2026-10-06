@@ -1,139 +1,142 @@
 .section {
-  margin-bottom: 16px;
+  margin-bottom: var(--space-4);
 }
 
 .sectionTitle {
-  font-size: 12px;
+  margin-bottom: var(--space-1);
+  font-size: var(--font-2);
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: rgba(230, 233, 239, 0.5);
-  margin-bottom: 6px;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
 }
 
 .blurb {
-  font-size: 12.5px;
-  line-height: 1.5;
-  color: rgba(230, 233, 239, 0.65);
-  margin-bottom: 10px;
+  margin-bottom: var(--space-2);
+  font-size: var(--font-2);
+  line-height: var(--leading);
+  color: var(--text-2);
 }
 
 .action {
-  padding: 7px 14px;
-  background: rgba(90, 160, 255, 0.25);
-  border: 1px solid rgba(90, 160, 255, 0.5);
-  border-radius: 8px;
-  color: #ffffff;
+  height: 28px;
+  padding: 0 var(--space-3);
+  background: var(--accent);
+  border: 1px solid transparent;
+  border-radius: var(--radius-1);
+  color: var(--accent-fg);
   cursor: pointer;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--font-3);
+  font-weight: 600;
 }
 
 .action:hover {
-  background: rgba(90, 160, 255, 0.4);
+  filter: brightness(1.1);
 }
 
 .status {
-  font-size: 13px;
-  color: rgba(230, 233, 239, 0.65);
+  font-size: var(--font-3);
+  color: var(--text-2);
 }
 
 .link {
   background: none;
   border: none;
   padding: 0;
-  color: #7dd3fc;
+  color: var(--sky);
   cursor: pointer;
   font: inherit;
   text-decoration: underline;
 }
 
 .card {
-  padding: 12px;
-  margin-bottom: 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
+  padding: var(--space-3);
+  margin-bottom: var(--space-2);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-2);
 }
 
 .cardHeader {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--space-2);
 }
 
 .cardTitle {
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1.35;
+  font-size: var(--font-4);
+  font-weight: 600;
+  line-height: 1.3;
 }
 
 /* Likelihood is relative wording, not severity, so deliberately not red/green. */
 .chip {
   flex-shrink: 0;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 11px;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-1);
   white-space: nowrap;
 }
 
 .lessLikely {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(230, 233, 239, 0.7);
+  background: var(--raised-strong);
+  color: var(--text-2);
 }
 
 .plausible {
-  background: rgba(90, 160, 255, 0.2);
-  color: #bcd9ff;
+  background: var(--accent-soft);
+  color: var(--text);
 }
 
 .moreLikely {
-  background: rgba(139, 120, 255, 0.28);
-  color: #ddd6ff;
+  background: var(--accent);
+  color: var(--accent-fg);
 }
 
 .timeframe {
-  font-size: 11.5px;
-  color: rgba(230, 233, 239, 0.5);
-  margin-top: 3px;
+  margin-top: var(--space-1);
+  font-size: var(--font-1);
+  color: var(--text-3);
 }
 
 .summary {
-  font-size: 13px;
-  line-height: 1.5;
-  margin-top: 8px;
+  margin-top: var(--space-2);
+  font-size: var(--font-3);
+  line-height: var(--leading);
 }
 
 .detail {
-  margin-top: 10px;
+  margin-top: var(--space-2);
 }
 
 .detailLabel {
-  font-size: 11px;
+  margin-bottom: var(--space-1);
+  font-size: var(--font-1);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: rgba(230, 233, 239, 0.5);
-  margin-bottom: 3px;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
 }
 
 .list {
   margin: 0;
-  padding-left: 18px;
-  font-size: 12.5px;
-  line-height: 1.5;
+  padding-left: var(--space-4);
+  font-size: var(--font-2);
+  line-height: var(--leading);
 }
 
 .basedOn {
-  margin-top: 8px;
-  font-size: 11.5px;
-  line-height: 1.5;
-  color: rgba(230, 233, 239, 0.55);
+  margin-top: var(--space-2);
+  font-size: var(--font-1);
+  line-height: var(--leading);
+  color: var(--text-3);
 }
 
 .disclaimer {
-  margin-top: 6px;
-  font-size: 11.5px;
-  line-height: 1.5;
+  margin-top: var(--space-1);
+  font-size: var(--font-1);
+  line-height: var(--leading);
   font-style: italic;
-  color: rgba(230, 233, 239, 0.5);
+  color: var(--text-3);
 }

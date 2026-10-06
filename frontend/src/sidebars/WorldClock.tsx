@@ -131,7 +131,7 @@ export default function WorldClock() {
           </div>
           {clocks.length > 0 && (
             <div className={styles.footer}>
-              <CopyLinkButton className={styles.link} target={{ kind: 'clocks', zones: clocks, skipped: 0 }} />
+              <CopyLinkButton target={{ kind: 'clocks', zones: clocks, skipped: 0 }} />
               <span className={styles.note}>&ldquo;Tomorrow&rdquo; and &ldquo;yesterday&rdquo; compare each date with the date in UTC.</span>
             </div>
           )}

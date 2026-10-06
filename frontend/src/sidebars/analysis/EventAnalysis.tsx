@@ -12,8 +12,10 @@ import { useUiStore } from '../../state/uiStore';
 import Scenarios from './Scenarios';
 import Comments from './Comments';
 import SaveButton from '../../components/SaveButton';
-import { colorForSeverity, labelForSeverity } from '../../globe/severity';
-import { hazardIcon } from '../../globe/hazards';
+import { labelForSeverity, severityTone } from '../../globe/severity';
+import { hazardIconName } from '../../globe/hazards';
+import Icon from '../../ui/Icon';
+import { Badge, Section, Tabs } from '../../ui/Display';
 import { hasReportTime, reportedLocalTime } from '../../lib/eventTime';
 import { zoneAt } from '../../lib/zoneLookup';
 import { cityName } from '../../lib/timezones';
@@ -97,20 +99,17 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
       <h2 className={styles.title}>{crisis.title}</h2>
       <div className={styles.metaRow}>
         {isLocalScope ? (
-          <span className={`${styles.badge} ${styles.severityBadgeMuted}`} title="Local reports' severity scores are known-unreliable and not shown at face value.">
-            Local report &middot; severity unreliable
+          <span title="Local reports' severity scores are known-unreliable and not shown at face value.">
+            <Badge>Local report &middot; severity unreliable</Badge>
           </span>
         ) : (
-          <span
-            className={`${styles.badge} ${styles.severityBadge}`}
-            style={{ backgroundColor: colorForSeverity(crisis.severity) }}
-          >
+          <Badge tone={severityTone(crisis.severity)}>
             {labelForSeverity(crisis.severity)} &middot; {crisis.severity}
-          </span>
+          </Badge>
         )}
-        <span className={styles.badge}>{crisis.country}</span>
-        <span className={styles.badge}>{crisis.type}</span>
-        <span className={styles.badge}>{new Date(crisis.date).toLocaleDateString()}</span>
+        <Badge>{crisis.country}</Badge>
+        <Badge>{crisis.type}</Badge>
+        <Badge>{new Date(crisis.date).toLocaleDateString()}</Badge>
         <SaveButton crisisId={crisis.id} />
       </div>
       {locationNote && <div className={styles.locationNote}>{locationNote}</div>}
@@ -122,19 +121,16 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
         </div>
       )}
 
-      <div className={styles.tabs} role="tablist">
-        {(['analysis', 'comments'] as const).map((value) => (
-          <button
-            key={value}
-            type="button"
-            role="tab"
-            aria-selected={tab === value}
-            className={`${styles.tab} ${tab === value ? styles.tabActive : ''}`}
-            onClick={() => setTab(value)}
-          >
-            {value === 'analysis' ? 'Analysis' : 'Comments'}
-          </button>
-        ))}
+      <div className={styles.tabs}>
+        <Tabs
+          label="Event panel"
+          value={tab}
+          onChange={setTab}
+          tabs={[
+            { id: 'analysis', label: 'Analysis' },
+            { id: 'comments', label: 'Comments' },
+          ]}
+        />
       </div>
 
       {tab === 'comments' && <Comments crisisId={crisis.id} />}
@@ -167,8 +163,7 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
       )}
 
       {hazardLinks && hazardLinks.links.length > 0 && (
-        <div className={styles.section}>
-          <div className={styles.sectionTitle}>Nearby hazard</div>
+        <Section title="Nearby hazard">
           <ul className={styles.sourceList}>
             {hazardLinks.links.map((link) => {
               const storm = stormData?.storms.find(
@@ -177,7 +172,7 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
               return (
                 <li key={`${link.hazard.event_type}-${link.hazard.id}`}>
                   <span>
-                    {hazardIcon(link.hazard.event_type)} {link.hazard.name ?? link.hazard.hazard ?? 'Weather hazard'}
+                    <Icon name={hazardIconName(link.hazard.event_type)} size={14} /> {link.hazard.name ?? link.hazard.hazard ?? 'Weather hazard'}
                     {link.hazard.alert_level ? ` (${link.hazard.alert_level} alert)` : ''}
                   </span>
                   <span className={styles.sourceOutlet}>
@@ -188,8 +183,7 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
                   {storm && (
                     <button
                       type="button"
-                      className={styles.sourceLink}
-                      style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', textAlign: 'left' }}
+                      className={`${styles.sourceLink} ${styles.linkButton}`}
                       onClick={() => {
                         setActiveMode('weather');
                         selectHazard(storm);
@@ -203,25 +197,21 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
             })}
           </ul>
           <div className={styles.mediaCaption}>Shown because the two are in the same place at the same time. It does not mean one caused the other.</div>
-        </div>
+        </Section>
       )}
 
       {detail?.severity_basis && !isLocalScope && (
-        <div className={styles.section}>
-          <div className={styles.sectionTitle}>Why this rating ({detail.severity_basis.name})</div>
+        <Section title={`Why this rating (${detail.severity_basis.name})`}>
           <ul className={styles.sourceList}>
             {detail.severity_basis.basis.map((reason) => (
               <li key={reason}>{reason}</li>
             ))}
           </ul>
-        </div>
+        </Section>
       )}
 
       {detail && detail.news.length > 1 ? (
-        <div className={styles.section}>
-          <div className={styles.sectionTitle}>
-            Sources ({detail.source_count} outlet{detail.source_count === 1 ? '' : 's'})
-          </div>
+        <Section title={`Sources (${detail.source_count} outlet${detail.source_count === 1 ? '' : 's'})`}>
           <ul className={styles.sourceList}>
             {detail.news.map((item) => (
               <li key={item.url}>
@@ -232,10 +222,9 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
               </li>
             ))}
           </ul>
-        </div>
+        </Section>
       ) : crisis.source_url && (
-        <div className={styles.section}>
-          <div className={styles.sectionTitle}>Source</div>
+        <Section title="Source">
           <a
             className={styles.sourceLink}
             href={crisis.source_url}
@@ -244,15 +233,14 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
           >
             {crisis.source_url}
           </a>
-        </div>
+        </Section>
       )}
 
-      <div className={styles.section}>
-        <div className={styles.sectionTitle}>Analysis</div>
+      <Section title="Analysis">
         {isLoading && <div className={styles.loading}>Loading analysis...</div>}
         {isError && <div className={styles.error}>Failed to load analysis.</div>}
         {briefing && <div className={styles.briefingText}>{briefing.briefing}</div>}
-      </div>
+      </Section>
 
       <Scenarios key={crisis.id} crisisId={crisis.id} />
         </>

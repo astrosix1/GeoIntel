@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import type { ShareTarget } from '../lib/shareLink';
 import { buildShareUrl } from '../lib/shareLink';
+import Button from '../ui/Button';
+import styles from './CopyLinkButton.module.css';
 
 // Copies a link to this hazard or place. If the clipboard is blocked, shows the link to copy by hand.
 export default function CopyLinkButton({ target, className }: { target: ShareTarget; className?: string }) {
@@ -19,16 +21,16 @@ export default function CopyLinkButton({ target, className }: { target: ShareTar
 
   return (
     <>
-      <button type="button" className={className} onClick={copy}>
+      <Button size="sm" icon={state === 'copied' ? 'check' : 'link'} className={className} onClick={copy}>
         {state === 'copied' ? 'Link copied' : 'Copy link'}
-      </button>
+      </Button>
       {state === 'manual' && (
         <input
           readOnly
           value={url}
           aria-label="Link to copy"
           onFocus={(e) => e.currentTarget.select()}
-          style={{ width: '100%', marginTop: 6, fontSize: 12 }}
+          className={styles.manual}
         />
       )}
     </>

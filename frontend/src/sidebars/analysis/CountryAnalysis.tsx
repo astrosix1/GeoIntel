@@ -70,7 +70,7 @@ export default function CountryAnalysis({ countryCode }: { countryCode: string }
             </>
           )}
         </div>
-        <div className={styles.unavailable} style={{ marginTop: 8 }}>
+        <div className={`${styles.unavailable} ${eventStyles.gap}`}>
           Source: {demographics_source}
         </div>
       </div>
@@ -108,7 +108,7 @@ export default function CountryAnalysis({ countryCode }: { countryCode: string }
         </div>
 
         {trade.top_exports_by_commodity ? (
-          <ul style={{ marginTop: 8, paddingLeft: 18, fontSize: 13 }}>
+          <ul className={eventStyles.bullets}>
             {trade.top_exports_by_commodity.map((exp) => (
               <li key={exp.hs4}>
                 HS {exp.hs4} — ${exp.trade_value_usd.toLocaleString()}
@@ -116,7 +116,7 @@ export default function CountryAnalysis({ countryCode }: { countryCode: string }
             ))}
           </ul>
         ) : (
-          <div className={styles.unavailable} style={{ marginTop: 8 }}>
+          <div className={`${styles.unavailable} ${eventStyles.gap}`}>
             {trade.top_exports_unavailable_reason ?? 'Top exports by commodity are unavailable for this country.'}
           </div>
         )}

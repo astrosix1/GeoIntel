@@ -39,6 +39,16 @@ Status: **Stage 0 (foundations) committed (91be044). Stage 1 (shell and Settings
 - **Fixed during checking:** the Filters popover opened left-aligned and was clipped by the panel; it is now right-aligned inside it.
 - **Checks:** `tsc`, the style guard, the production build and 156 tests pass.
 
+## Stage 3 as built (analysis panels)
+
+- **Shared analysis stylesheet** (`analysis/EventAnalysis.module.css`, used by the event, hazard, forecast, zone and country panels) is now tokens only, so all of them take the new type scale and spacing at once. Comments, Scenarios, Country and Forecast stylesheets are converted too; the whole `src/sidebars/analysis` folder, `SaveButton` and `CopyLinkButton` are under the style guard (21 stylesheets).
+- **Event panel** uses `Badge` (severity colour comes from the badge tone), `Tabs` (Analysis, Comments, with arrow-key support), `Section` for the headed blocks, hazard icons instead of emoji, and a 160 px image thumbnail (was 220 px).
+- **Hazard panel** uses `Badge` for the GDACS alert level, `KeyValue` for Details and Exposure, and `Section`; its own stylesheet was deleted.
+- **Save and Copy link** are the shared small `Button`; the manual-copy field is styled with tokens.
+- **Other panels** (forecast, zone, country, compare) keep their own section markup for now but share the new styling; the weather icon and temperature use the 20 px step.
+- **Checked in the browser:** an event panel (badges, tabs, thumbnail, sections) and a cyclone hazard panel (Summary, Details, Exposure, Source) with no console errors. The zone, country and forecast panels were not opened by hand.
+- **Caught late:** a deleted stylesheet was still imported by the zone panel; `tsc` does not check CSS imports, so the browser found it. A scan of every CSS import now comes back clean.
+
 ## What is wrong today (measured)
 
 - **Too few events per screen.** The first event starts 304 px down the left panel, and each event row is 107 px tall. At 900 px high, about five events are visible.

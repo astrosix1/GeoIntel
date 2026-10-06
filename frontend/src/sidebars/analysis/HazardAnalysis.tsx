@@ -1,12 +1,15 @@
-import { Fragment } from 'react';
 import CopyLinkButton from '../../components/CopyLinkButton';
 import type { Storm } from '../../api/types';
-import { ALERT_COLORS, hazardIcon } from '../../globe/hazards';
+import { hazardIconName } from '../../globe/hazards';
 import { useHazardDetailQuery, useHazardEventsQuery } from '../../state/queries';
 import { useUiStore } from '../../state/uiStore';
 import { labelForSeverity } from '../../globe/severity';
+import Icon from '../../ui/Icon';
+import { Badge, KeyValue, Section } from '../../ui/Display';
+import type { BadgeTone } from '../../ui/Display';
 import styles from './EventAnalysis.module.css';
-import hazardStyles from './HazardAnalysis.module.css';
+
+const ALERT_TONE: Record<string, BadgeTone> = { Red: 'alertRed', Orange: 'alertOrange', Green: 'alertGreen' };
 
 function formatDate(value: string | null): string | null {
   if (!value) return null;
@@ -37,56 +40,33 @@ export default function HazardAnalysis({ hazard }: { hazard: Storm }) {
   return (
     <div>
       <h2 className={styles.title}>
-        {hazardIcon(hazard.event_type)} {hazard.name ?? hazard.hazard ?? 'Weather event'}
+        <Icon name={hazardIconName(hazard.event_type)} size={18} /> {hazard.name ?? hazard.hazard ?? 'Weather event'}
       </h2>
       <div className={styles.metaRow}>
-        {hazard.hazard && <span className={styles.badge}>{hazard.hazard}</span>}
-        <span className={`${styles.badge} ${styles.severityBadge}`} style={{ background: ALERT_COLORS[alert] ?? ALERT_COLORS.Unknown }}>
-          {alert} alert
-        </span>
-        {countries.length > 0 && <span className={styles.badge}>{countries.join(', ')}</span>}
-        <CopyLinkButton className={styles.badge} target={{ kind: 'hazard', eventType: hazard.event_type, id: hazard.id }} />
+        {hazard.hazard && <Badge>{hazard.hazard}</Badge>}
+        <Badge tone={ALERT_TONE[alert] ?? 'neutral'}>{alert} alert</Badge>
+        {countries.length > 0 && <Badge>{countries.join(', ')}</Badge>}
+        <CopyLinkButton target={{ kind: 'hazard', eventType: hazard.event_type, id: hazard.id }} />
       </div>
 
       {hazard.description && (
-        <div className={styles.section}>
-          <div className={styles.sectionTitle}>Summary</div>
+        <Section title="Summary">
           <div className={styles.briefingText}>{hazard.description}</div>
-        </div>
+        </Section>
       )}
 
-      <div className={styles.section}>
-        <div className={styles.sectionTitle}>Details</div>
-        <dl className={hazardStyles.facts}>
-          {severity && (
-            <>
-              <dt>Intensity</dt>
-              <dd>{severity}</dd>
-            </>
-          )}
-          {from && (
-            <>
-              <dt>Started</dt>
-              <dd>{from}</dd>
-            </>
-          )}
-          {to && (
-            <>
-              <dt>{hazard.event_type === 'TC' ? 'Latest forecast point' : 'Until'}</dt>
-              <dd>{to}</dd>
-            </>
-          )}
-          {updated && (
-            <>
-              <dt>Last updated</dt>
-              <dd>{updated}</dd>
-            </>
-          )}
-        </dl>
-      </div>
+      <Section title="Details">
+        <KeyValue
+          items={[
+            severity ? { label: 'Intensity', value: severity } : null,
+            from ? { label: 'Started', value: from } : null,
+            to ? { label: hazard.event_type === 'TC' ? 'Latest forecast point' : 'Until', value: to } : null,
+            updated ? { label: 'Last updated', value: updated } : null,
+          ].filter((item) => item !== null)}
+        />
+      </Section>
 
-      <div className={styles.section}>
-        <div className={styles.sectionTitle}>Track and exposure</div>
+      <Section title="Track and exposure">
         {detailLoading && <span className={styles.loading}>Loading what GDACS publishes for this event...</span>}
         {!detailLoading && (detailError || (detail && detail.unavailable.length > 0)) && (
           <div className={styles.mediaCaption}>
@@ -107,33 +87,31 @@ export default function HazardAnalysis({ hazard }: { hazard: Storm }) {
           </div>
         )}
         {detail?.exposure && detail.exposure.length > 0 && (
-          <dl className={hazardStyles.facts}>
-            {detail.exposure.map((item) => (
-              <Fragment key={item.label}>
-                <dt>{item.label}</dt>
-                <dd title={item.note ?? undefined}>
+          <KeyValue
+            items={detail.exposure.map((item) => ({
+              label: item.label,
+              value: (
+                <span title={item.note ?? undefined}>
                   {item.value === null ? 'Not reported' : item.value.toLocaleString()}
                   <span className={styles.sourceOutlet}> {item.basis}</span>
-                </dd>
-              </Fragment>
-            ))}
-          </dl>
+                </span>
+              ),
+            }))}
+          />
         )}
         {detail && !detail.unavailable.includes('exposure') && detail.exposure && detail.exposure.length === 0 && (
           <div className={styles.mediaCaption}>GDACS has not published exposure figures for this event.</div>
         )}
-      </div>
+      </Section>
 
       {linked && linked.events.length > 0 && (
-        <div className={styles.section}>
-          <div className={styles.sectionTitle}>Events in this area ({linked.events.length}{linked.truncated ? '+' : ''})</div>
+        <Section title={`Events in this area (${linked.events.length}${linked.truncated ? '+' : ''})`}>
           <ul className={styles.sourceList}>
             {linked.events.map((event) => (
               <li key={event.id}>
                 <button
                   type="button"
-                  className={styles.sourceLink}
-                  style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', textAlign: 'left' }}
+                  className={`${styles.sourceLink} ${styles.linkButton}`}
                   onClick={() => {
                     setActiveMode('events');
                     selectCrisis({
@@ -156,11 +134,10 @@ export default function HazardAnalysis({ hazard }: { hazard: Storm }) {
             Physical events with a city-level or better location, during or just after this hazard. Shown because they share a place and
             time; it does not mean the hazard caused them.
           </div>
-        </div>
+        </Section>
       )}
 
-      <div className={styles.section}>
-        <div className={styles.sectionTitle}>Source</div>
+      <Section title="Source">
         {hazard.report_url ? (
           <a className={styles.sourceLink} href={hazard.report_url} target="_blank" rel="noopener noreferrer">
             GDACS report
@@ -171,7 +148,7 @@ export default function HazardAnalysis({ hazard }: { hazard: Storm }) {
         <div className={styles.mediaCaption}>
           Alert levels (Green, Orange, Red) are GDACS&apos;s own classification of expected humanitarian impact.
         </div>
-      </div>
+      </Section>
     </div>
   );
 }

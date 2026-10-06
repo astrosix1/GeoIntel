@@ -1,27 +1,27 @@
 .composer {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-bottom: 14px;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
 }
 
 .formTitle {
-  font-size: 13.5px;
-  font-weight: 700;
+  font-size: var(--font-3);
+  font-weight: 600;
 }
 
 .textarea,
 .input {
   width: 100%;
   box-sizing: border-box;
-  padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
+  padding: var(--space-2);
+  background: var(--raised);
+  border: 1px solid var(--edge-control);
+  border-radius: var(--radius-2);
   color: inherit;
   font: inherit;
-  font-size: 13px;
-  line-height: 1.45;
+  font-size: var(--font-3);
+  line-height: var(--leading);
 }
 
 .textarea {
@@ -33,23 +33,25 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--space-2);
 }
 
 .primary {
   align-self: flex-start;
-  padding: 6px 14px;
-  background: rgba(90, 160, 255, 0.25);
-  border: 1px solid rgba(90, 160, 255, 0.5);
-  border-radius: 8px;
-  color: #ffffff;
+  height: 28px;
+  padding: 0 var(--space-3);
+  background: var(--accent);
+  border: 1px solid transparent;
+  border-radius: var(--radius-1);
+  color: var(--accent-fg);
   cursor: pointer;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--font-3);
+  font-weight: 600;
 }
 
 .primary:hover:not(:disabled) {
-  background: rgba(90, 160, 255, 0.4);
+  filter: brightness(1.1);
 }
 
 .primary:disabled {
@@ -58,54 +60,54 @@
 }
 
 .hint {
-  font-size: 12px;
-  color: rgba(230, 233, 239, 0.55);
+  font-size: var(--font-2);
+  color: var(--text-3);
 }
 
 .error {
-  font-size: 12px;
-  color: rgba(252, 165, 165, 0.95);
+  font-size: var(--font-2);
+  color: var(--alert-red-mark);
 }
 
 .status {
-  font-size: 13px;
-  line-height: 1.5;
-  color: rgba(230, 233, 239, 0.65);
-  padding: 4px 0 10px;
+  padding: var(--space-1) 0 var(--space-2);
+  font-size: var(--font-3);
+  line-height: var(--leading);
+  color: var(--text-2);
 }
 
 .item {
-  padding: 10px 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--line);
 }
 
 .itemHeader {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .author {
-  font-size: 13px;
-  font-weight: 700;
+  font-size: var(--font-3);
+  font-weight: 600;
 }
 
 .time {
-  font-size: 11.5px;
-  color: rgba(230, 233, 239, 0.5);
+  font-size: var(--font-1);
+  color: var(--text-3);
 }
 
 .hiddenNote {
-  margin-top: 4px;
-  font-size: 11.5px;
+  margin-top: var(--space-1);
+  font-size: var(--font-1);
   font-style: italic;
-  color: rgba(250, 204, 21, 0.85);
+  color: var(--warn);
 }
 
 .body {
-  margin-top: 4px;
-  font-size: 13px;
-  line-height: 1.5;
+  margin-top: var(--space-1);
+  font-size: var(--font-3);
+  line-height: var(--leading);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -114,8 +116,8 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 6px;
+  gap: var(--space-3);
+  margin-top: var(--space-1);
 }
 
 .link,
@@ -124,18 +126,18 @@
   border: none;
   padding: 0;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-2);
   cursor: pointer;
-  color: rgba(230, 233, 239, 0.6);
+  color: var(--text-2);
   text-decoration: underline;
 }
 
 .link:hover {
-  color: #ffffff;
+  color: var(--text);
 }
 
 .linkDanger {
-  color: rgba(252, 165, 165, 0.9);
+  color: var(--alert-red-mark);
 }
 
 .linkDanger:disabled {
@@ -144,30 +146,36 @@
 }
 
 .select {
-  padding: 3px 6px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
+  padding: var(--space-1) var(--space-2);
+  background: var(--raised);
+  border: 1px solid var(--edge-control);
+  border-radius: var(--radius-1);
   color: inherit;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-2);
 }
 
 .select option {
-  color: #111827;
+  background: var(--panel);
+  color: var(--text);
 }
 
 .more {
   width: 100%;
-  margin-top: 6px;
-  padding: 7px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  color: rgba(230, 233, 239, 0.8);
+  height: 28px;
+  margin-top: var(--space-1);
+  background: transparent;
+  border: 1px solid var(--edge-control);
+  border-radius: var(--radius-1);
+  color: var(--text-2);
   cursor: pointer;
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--font-2);
+}
+
+.more:hover:not(:disabled) {
+  background: var(--raised-strong);
+  color: var(--text);
 }
 
 .more:disabled {

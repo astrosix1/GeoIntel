@@ -1,48 +1,48 @@
 .narrativeBadge {
   display: inline-block;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 700;
+  margin-bottom: var(--space-2);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-1);
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  margin-bottom: 8px;
 }
 
 .aiBadge {
-  background: rgba(125, 211, 252, 0.18);
-  color: #7dd3fc;
+  background: var(--accent-soft);
+  color: var(--text);
 }
 
 .staticBadge {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(230, 233, 239, 0.65);
+  background: var(--raised-strong);
+  color: var(--text-2);
 }
 
 .factsGrid {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 4px 12px;
-  font-size: 13px;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--font-3);
 }
 
 .factLabel {
-  color: rgba(230, 233, 239, 0.55);
+  color: var(--text-3);
 }
 
 .factValue {
-  color: #e6e9ef;
+  color: var(--text);
 }
 
 .flag {
   height: 24px;
-  border-radius: 2px;
-  margin-bottom: 8px;
-  box-shadow: 0 0 4px rgba(0, 0, 0, 0.4);
+  margin-bottom: var(--space-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-1);
 }
 
 .unavailable {
-  font-size: 12.5px;
+  font-size: var(--font-2);
   font-style: italic;
-  color: rgba(230, 233, 239, 0.5);
+  color: var(--text-3);
 }

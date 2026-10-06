@@ -187,7 +187,7 @@ export default function PointForecast({ lat, lon, label }: { lat: number; lon: n
       </div>
       <ComparePlaces units={units} />
       <div className={forecastStyles.watchRow}>
-        <CopyLinkButton className={forecastStyles.watchButton} target={{ kind: 'point', lat, lon, label }} />
+        <CopyLinkButton target={{ kind: 'point', lat, lon, label }} />
       </div>
 
       {isLoading && <div className={styles.loading}>Loading forecast…</div>}
