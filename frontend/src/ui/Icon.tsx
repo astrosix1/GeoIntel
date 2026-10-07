@@ -100,6 +100,9 @@ const PATHS: Record<string, ReactNode> = {
     </>
   ),
   'eye-off': <path d="M3 3l18 18M10.6 6.2A9.6 9.6 0 0112 6c6 0 10 6 10 6a17 17 0 01-3.2 3.7M6.3 7.7A17 17 0 002 12s4 7 10 7c1.7 0 3.2-.4 4.6-1M9.9 9.9a3 3 0 004.2 4.2" />,
+  save: <path d="M5 4h11l3 3v13H5V4zM8 4v5h7V4M8 20v-6h8v6" />,
+  download: <path d="M12 4v12M7 11l5 5 5-5M5 20h14" />,
+  upload: <path d="M12 16V4M7 9l5-5 5 5M5 20h14" />,
   polygon: <path d="M12 4l8 6-3 9H7l-3-9 8-6z" />,
   rectangle: <rect x="4" y="6" width="16" height="12" rx="1" />,
   circle: <circle cx="12" cy="12" r="8" />,

@@ -376,3 +376,70 @@ export function refineCrisisLocation(id: string): Promise<RefineLocationResult> 
     method: 'POST',
   });
 }
+
+// ---- Saved drawings (premium) ------------------------------------------------------------------------------------------
+
+export interface SavedDrawingSummary {
+  id: string;
+  name: string;
+  shape_count: number;
+  layer_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SavedDrawing extends SavedDrawingSummary {
+  data: unknown;
+}
+
+export type DrawingErrorKind =
+  | 'sign_in_required'
+  | 'premium_required'
+  | 'unavailable'
+  | 'limit_reached'
+  | 'invalid'
+  | 'too_large'
+  | 'not_found'
+  | 'error';
+
+export class DrawingError extends Error {
+  kind: DrawingErrorKind;
+  constructor(kind: DrawingErrorKind) {
+    super(kind);
+    this.kind = kind;
+  }
+}
+
+async function drawingRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await authedFetch(path, init);
+  if (res.status === 401) throw new DrawingError('sign_in_required');
+  if (res.status === 403) throw new DrawingError('premium_required');
+  if (res.status === 404) throw new DrawingError('not_found');
+  if (res.status === 409) throw new DrawingError('limit_reached');
+  if (res.status === 413) throw new DrawingError('too_large');
+  if (res.status === 400) throw new DrawingError('invalid');
+  if (res.status === 503) throw new DrawingError('unavailable');
+  if (!res.ok) throw new DrawingError('error');
+  if (res.status === 204) return undefined as T;
+  return res.json();
+}
+
+export function fetchDrawings(): Promise<{ drawings: SavedDrawingSummary[]; limit: number }> {
+  return drawingRequest('/api/me/drawings');
+}
+
+export async function fetchDrawing(id: string): Promise<SavedDrawing> {
+  return (await drawingRequest<{ drawing: SavedDrawing }>(`/api/me/drawings/${encodeURIComponent(id)}`)).drawing;
+}
+
+export async function createDrawing(name: string, data: unknown): Promise<SavedDrawing> {
+  return (await drawingRequest<{ drawing: SavedDrawing }>('/api/me/drawings', jsonInit('POST', { name, data }))).drawing;
+}
+
+export async function updateDrawing(id: string, change: { name?: string; data?: unknown }): Promise<SavedDrawing> {
+  return (await drawingRequest<{ drawing: SavedDrawing }>(`/api/me/drawings/${encodeURIComponent(id)}`, jsonInit('PUT', change))).drawing;
+}
+
+export async function deleteDrawing(id: string): Promise<void> {
+  await drawingRequest<void>(`/api/me/drawings/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}

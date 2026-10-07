@@ -4,6 +4,7 @@ import { cleanLayerName, cleanLayerNote, makeLayer, MAX_LAYERS, nextLayerName, s
 import type { DrawLayer } from '../globe/draw/drawlayers';
 import { loadDrawPrefs, saveDrawPrefs } from '../globe/draw/prefs';
 import type { DrawPrefs } from '../globe/draw/prefs';
+import { DEFAULT_NAME } from '../globe/draw/draft';
 
 // State of the drawing tool that the interface needs: whether it is open, which tool is chosen, what can be undone, and
 // what is selected. The drawing itself lives in the engine (globe/draw/engine.ts), not here.
@@ -28,6 +29,14 @@ interface DrawState {
   setActiveLayer: (id: string) => void;
   // Removes a layer from the list (never the last one). Its shapes are removed by the caller first.
   removeLayer: (id: string) => void;
+  // The drawing being worked on: the saved drawing it came from (null when it has never been saved), its name, and whether
+  // it has changed since it was last saved or opened.
+  drawing: { id: string | null; name: string };
+  dirty: boolean;
+  setDrawing: (drawing: { id: string | null; name: string }) => void;
+  setDirty: (dirty: boolean) => void;
+  // Replaces the layers wholesale (opening or restoring a drawing); the first one becomes the active layer.
+  setLayers: (layers: DrawLayer[]) => void;
   // What the tool measures and shows (remembered in this browser).
   prefs: DrawPrefs;
   setPrefs: (change: Partial<DrawPrefs>) => void;
@@ -72,6 +81,11 @@ export const useDrawStore = create<DrawState>((set, get) => ({
       const layers = state.layers.filter((l) => l.id !== id);
       return { layers, activeLayerId: state.activeLayerId === id ? layers[0].id : state.activeLayerId };
     }),
+  drawing: { id: null, name: DEFAULT_NAME },
+  dirty: false,
+  setDrawing: (drawing) => set({ drawing }),
+  setDirty: (dirty) => set({ dirty }),
+  setLayers: (layers) => set({ layers, activeLayerId: layers[0].id }),
   prefs: loadDrawPrefs(),
   setPrefs: (change) =>
     set((state) => {

@@ -1,0 +1,136 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  width: 280px;
+  padding: var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-2);
+  background: var(--panel);
+  box-shadow: var(--shadow-pop);
+  color: var(--text);
+  font-size: var(--font-3);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.fieldLabel {
+  color: var(--text-3);
+  font-size: var(--font-2);
+}
+
+.input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--edge-control);
+  border-radius: var(--radius-1);
+  background: var(--raised);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-3);
+}
+
+.status,
+.hint {
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--font-2);
+  line-height: var(--leading);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.hiddenInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius-1);
+  background: var(--caution-soft);
+}
+
+.ok,
+.error {
+  margin: 0;
+  font-size: var(--font-2);
+  line-height: var(--leading);
+}
+
+.ok {
+  color: var(--text-2);
+}
+
+.error {
+  color: var(--alert-red-mark);
+}
+
+.divider {
+  height: 1px;
+  background: var(--line-strong);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.itemOpen {
+  box-shadow: inset 2px 0 0 var(--accent);
+  padding-left: var(--space-2);
+}
+
+.itemMain {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.itemName {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itemMeta {
+  color: var(--text-3);
+  font-size: var(--font-1);
+}
+
+@media (max-width: 768px) {
+  .panel {
+    width: auto;
+  }
+}

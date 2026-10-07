@@ -6,6 +6,7 @@ import Segmented from '../../ui/Segmented';
 import { drawController } from './controller';
 import type { DrawTool } from './engine';
 import type { DrawUnits } from './prefs';
+import DrawingsPanel from './DrawingsPanel';
 import LayersPanel from './LayersPanel';
 import ShapePanel from './ShapePanel';
 import styles from './DrawToolbar.module.css';
@@ -71,6 +72,8 @@ export default function DrawToolbar() {
   const shapeCount = useDrawStore((s) => s.shapeCount);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
+  const [drawingsOpen, setDrawingsOpen] = useState(false);
+  const dirty = useDrawStore((s) => s.dirty);
   if (!open) return null;
 
   const active = TOOLS.find((t) => t.tool === tool);
@@ -94,6 +97,14 @@ export default function DrawToolbar() {
       <IconButton icon="close" label="Clear everything" disabled={shapeCount === 0} onClick={() => drawController.clear()} />
       <div className={styles.divider} />
       <IconButton
+        icon="save"
+        label={dirty ? 'Drawings: save, open, export (unsaved changes)' : 'Drawings: save, open, export'}
+        variant={drawingsOpen ? 'primary' : 'quiet'}
+        aria-pressed={drawingsOpen}
+        aria-expanded={drawingsOpen}
+        onClick={() => setDrawingsOpen(!drawingsOpen)}
+      />
+      <IconButton
         icon="layers"
         label="Layers: group shapes into scenarios"
         variant={layersOpen ? 'primary' : 'quiet'}
@@ -112,6 +123,7 @@ export default function DrawToolbar() {
       <IconButton icon="check" label="Done: hide the drawing tools (the drawing stays on the map)" onClick={() => setOpen(false)} />
       {active && <div className={styles.status}>{active.hint}</div>}
       <div className={styles.side}>
+        {drawingsOpen && <DrawingsPanel />}
         {layersOpen && <LayersPanel />}
         <ShapePanel />
         {optionsOpen && <MeasureOptions />}

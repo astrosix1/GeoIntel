@@ -9,6 +9,9 @@ import { ensureDrawLayers, showDrawLayers } from './layers';
 import type { LabelOptions, UnitSystem } from './measure';
 import { hiddenIds } from './drawlayers';
 import type { DrawPrefs } from './prefs';
+import { loadDraft, saveDraft } from './draft';
+import { currentDrawing } from './session';
+import { isLoadedLayers, isLoadingDrawing, openDrawing } from './session';
 
 // The measuring choices, with "auto" units resolved to whatever the Units setting says.
 function labelOptions(prefs: DrawPrefs, appUnits: 'metric' | 'imperial'): LabelOptions {
@@ -25,8 +28,18 @@ export function useDraw(mapRef: MutableRefObject<maplibregl.Map | null>, mapRead
   const prefs = useDrawStore((s) => s.prefs);
   const engineRef = useRef<DrawEngine | null>(null);
   const loadingRef = useRef(false);
+  const draftTimer = useRef<number | undefined>(undefined);
   const optionsRef = useRef(labelOptions(prefs, appUnits));
   optionsRef.current = labelOptions(prefs, appUnits);
+
+  // Keeps the draft up to date a moment after the last change (not on every mouse move).
+  function scheduleDraft() {
+    window.clearTimeout(draftTimer.current);
+    draftTimer.current = window.setTimeout(() => {
+      const { drawing, dirty } = useDrawStore.getState();
+      saveDraft({ drawing, data: currentDrawing(), dirty });
+    }, 600);
+  }
 
   // Start the engine on first open.
   useEffect(() => {
@@ -39,9 +52,14 @@ export function useDraw(mapRef: MutableRefObject<maplibregl.Map | null>, mapRead
         const store = useDrawStore.getState();
         const engine = createDrawEngine(map, {
           onChange: (features) => {
-            useDrawStore.getState().setShapeCount(features.length);
-            useDrawStore.getState().bumpRevision();
+            const state = useDrawStore.getState();
+            state.setShapeCount(features.length);
+            state.bumpRevision();
             showDrawLayers(map, features, optionsRef.current);
+            if (!isLoadingDrawing()) {
+              state.setDirty(true);
+              scheduleDraft();
+            }
           },
           onSelect: (id) => store.setSelectedId(id),
           onHistory: (state) => store.setHistory(state),
@@ -57,6 +75,11 @@ export function useDraw(mapRef: MutableRefObject<maplibregl.Map | null>, mapRead
         engineRef.current = engine;
         drawController.attach(engine);
         engine.setHiddenLayers(hiddenIds(useDrawStore.getState().layers));
+        // Pick up where the last visit left off: the draft kept in this browser.
+        const draft = loadDraft();
+        if (draft) {
+          openDrawing({ version: 1, layers: draft.data.layers, features: draft.data.features }, draft.drawing, draft.dirty !== false);
+        }
         const current = useDrawStore.getState();
         engine.setTool(current.open ? current.tool : null);
       })
@@ -70,6 +93,18 @@ export function useDraw(mapRef: MutableRefObject<maplibregl.Map | null>, mapRead
     engineRef.current?.setTool(open ? tool : null);
     if (!open) useDrawStore.getState().setSelectedId(null);
   }, [open, tool]);
+
+  // A change to the layers (a name, a note, a new layer, which are shown) is a change to the drawing too.
+  const layers = useDrawStore((s) => s.layers);
+  const layersSeen = useRef(layers);
+  useEffect(() => {
+    if (layersSeen.current === layers) return;
+    layersSeen.current = layers;
+    if (isLoadingDrawing() || isLoadedLayers(layers) || !engineRef.current) return;
+    useDrawStore.getState().setDirty(true);
+    scheduleDraft();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layers]);
 
   // Hiding or showing a layer takes its shapes off the map or puts them back.
   const hiddenKey = useDrawStore((s) =>

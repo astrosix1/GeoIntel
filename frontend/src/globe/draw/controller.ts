@@ -20,6 +20,12 @@ export const drawController = {
   counts: (): Record<string, number> => engine?.counts() ?? {},
   deleteLayerShapes: (layerId: string) => engine?.deleteLayerShapes(layerId),
   allFeatures: (): DrawFeature[] => engine?.allFeatures() ?? [],
+  load: (features: DrawFeature[]) => engine?.load(features) ?? { added: 0, rejected: features.length },
   setStyle: (change: Partial<Record<keyof ShapeStyle, unknown>>) => engine?.setStyle(change),
   duplicate: (): boolean => engine?.duplicateSelected() ?? false,
 };
+
+// Every shape in the drawing, hidden layers included, each with its layer id: what is saved.
+export function controllerFeatures(): DrawFeature[] {
+  return drawController.allFeatures();
+}

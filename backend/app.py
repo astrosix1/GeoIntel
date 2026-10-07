@@ -34,6 +34,7 @@ from blueprints.weather import weather_bp
 from blueprints.watchlist import watchlist_bp
 from blueprints.me import me_bp
 from blueprints.dashboard import dashboard_bp
+from blueprints.drawings import drawings_bp
 from blueprints.comments import comments_bp
 
 load_dotenv()
@@ -191,6 +192,7 @@ def create_app():
     app.register_blueprint(weather_bp)
     app.register_blueprint(me_bp)
     app.register_blueprint(dashboard_bp)
+    app.register_blueprint(drawings_bp)
     app.register_blueprint(comments_bp)
     app.register_blueprint(watchlist_bp)
 

@@ -60,6 +60,9 @@ export interface DrawEngine {
   selected: () => DrawFeature | null;
   // Changes the style, name or note of the selected shape. A field set to undefined is cleared.
   setStyle: (change: Partial<Record<keyof ShapeStyle, unknown>>) => void;
+  // Replaces everything with these shapes (each with its layer id in `properties.layer`), clearing the undo history. Shapes the
+  // engine refuses are counted, not fatal.
+  load: (features: DrawFeature[]) => { added: number; rejected: number };
   // Which layer the selected shape is on, and moving it to another.
   selectedLayer: () => string | null;
   moveSelectedToLayer: (layerId: string) => void;
@@ -233,7 +236,9 @@ export function createDrawEngine(map: maplibregl.Map, handlers: DrawHandlers): D
         if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') properties[key] = value;
       }
     }
-    return { id: feature.id, type: 'Feature', geometry: feature.geometry, properties } as DrawFeature;
+    const shape = { type: 'Feature', geometry: feature.geometry, properties } as DrawFeature;
+    if (feature.id !== undefined) shape.id = feature.id;
+    return shape;
   }
 
   // Takes the shapes of hidden layers off the map and puts back those whose layer is shown.
@@ -297,6 +302,29 @@ export function createDrawEngine(map: maplibregl.Map, handlers: DrawHandlers): D
       layerOf.set(selected, layerId);
       applyHidden(); // the shape may have moved to a hidden layer
       handlers.onChange(visibleShapes());
+    },
+    load(features) {
+      stash.clear();
+      layerOf.clear();
+      draw.clear();
+      let added = 0;
+      let rejected = 0;
+      for (const feature of features) {
+        const layer = feature.properties?.layer;
+        const results = draw.addFeatures([plain(feature)]);
+        const ok = results.length > 0 && results.every((r) => r.valid);
+        if (!ok) {
+          rejected += 1;
+          continue;
+        }
+        added += 1;
+        const id = results[0].id ?? feature.id;
+        if (id !== undefined && typeof layer === 'string') layerOf.set(String(id), layer);
+      }
+      draw.clearUndoRedoHistory();
+      applyHidden();
+      publishHistory();
+      return { added, rejected };
     },
     setHiddenLayers(ids) {
       hidden = new Set(ids);
