@@ -156,3 +156,36 @@ describe('export', () => {
     assert.ok(drawingSize(buildDrawing([], [])) > 20);
   });
 });
+
+describe('coordinate precision', () => {
+  it('rounds positions to nine decimal places, as the drawing engine requires', () => {
+    const read = parseDrawing({
+      type: 'FeatureCollection',
+      features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [10.123456789012345, -20.987654321098765] }, properties: {} }],
+    });
+    assert.ok(read.ok);
+    if (read.ok) assert.deepEqual(read.drawing.data.features[0].geometry.coordinates, [10.123456789, -20.987654321]);
+  });
+
+  it('keeps ordinary positions exactly', () => {
+    const read = parseDrawing({ type: 'Feature', geometry: { type: 'Point', coordinates: [1.5, -2.25] }, properties: {} });
+    assert.ok(read.ok);
+    if (read.ok) assert.deepEqual(read.drawing.data.features[0].geometry.coordinates, [1.5, -2.25]);
+  });
+});
+
+describe('longitudes past the date line', () => {
+  it('wraps a longitude written past 180 round to the same place and leaves 180 itself alone', () => {
+    const read = parseDrawing({
+      type: 'FeatureCollection',
+      features: [
+        { type: 'Feature', geometry: { type: 'Point', coordinates: [190, 5] }, properties: {} },
+        { type: 'Feature', geometry: { type: 'Point', coordinates: [-181, 5] }, properties: {} },
+        { type: 'Feature', geometry: { type: 'Point', coordinates: [180, 5] }, properties: {} },
+        { type: 'Feature', geometry: { type: 'Point', coordinates: [-180, 5] }, properties: {} },
+      ],
+    });
+    assert.ok(read.ok);
+    if (read.ok) assert.deepEqual(read.drawing.data.features.map((f) => (f.geometry.coordinates as number[])[0]), [-170, 179, 180, -180]);
+  });
+});

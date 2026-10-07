@@ -30,6 +30,23 @@ export function lineLength(coords: Position[]): number {
   return segmentLengths(coords).reduce((sum, n) => sum + n, 0);
 }
 
+// Makes a run of points continuous across the date line: each longitude is shifted by whole turns so it is within half a turn
+// of the one before it (179 then -179 becomes 179 then 181). A shape drawn across the date line can arrive either way, with
+// longitudes that run on past 180 or that wrap round, and the area and label maths needs the continuous form.
+export function unwrapLongitudes(coords: Position[]): Position[] {
+  const out: Position[] = [];
+  for (const [lon, lat] of coords) {
+    let value = lon;
+    if (out.length > 0) {
+      const previous = out[out.length - 1][0];
+      while (value - previous > 180) value -= 360;
+      while (value - previous < -180) value += 360;
+    }
+    out.push([value, lat]);
+  }
+  return out;
+}
+
 function openRing(ring: Position[]): Position[] {
   // Closed when the last point repeats the first (within floating-point noise).
   const last = ring[ring.length - 1];
@@ -39,7 +56,7 @@ function openRing(ring: Position[]): Position[] {
 
 // Area of one ring in square metres (spherical excess). The ring may or may not repeat its first point at the end.
 export function ringArea(ring: Position[]): number {
-  const points = openRing(ring);
+  const points = unwrapLongitudes(openRing(ring));
   const n = points.length;
   if (n < 3) return 0;
   let total = 0;
@@ -60,7 +77,8 @@ export function polygonArea(rings: Position[][]): number {
 }
 
 // Where to put a label for a line: the point a fraction of the way along it, by distance.
-export function pointAlong(coords: Position[], fraction = 0.5): Position | null {
+export function pointAlong(path: Position[], fraction = 0.5): Position | null {
+  const coords = unwrapLongitudes(path);
   if (coords.length === 0) return null;
   if (coords.length === 1) return coords[0];
   const lengths = segmentLengths(coords);
@@ -70,7 +88,8 @@ export function pointAlong(coords: Position[], fraction = 0.5): Position | null 
   for (let i = 0; i < lengths.length; i++) {
     if (remaining <= lengths[i] || i === lengths.length - 1) {
       const t = lengths[i] === 0 ? 0 : Math.min(1, remaining / lengths[i]);
-      return [coords[i][0] + (coords[i + 1][0] - coords[i][0]) * t, coords[i][1] + (coords[i + 1][1] - coords[i][1]) * t];
+      const lon = coords[i][0] + (coords[i + 1][0] - coords[i][0]) * t;
+      return [((((lon + 180) % 360) + 360) % 360) - 180, coords[i][1] + (coords[i + 1][1] - coords[i][1]) * t];
     }
     remaining -= lengths[i];
   }

@@ -20,6 +20,7 @@ export const drawController = {
   counts: (): Record<string, number> => engine?.counts() ?? {},
   deleteLayerShapes: (layerId: string) => engine?.deleteLayerShapes(layerId),
   allFeatures: (): DrawFeature[] => engine?.allFeatures() ?? [],
+  selectShape: (id: string) => engine?.selectShape(id),
   load: (features: DrawFeature[]) => engine?.load(features) ?? { added: 0, rejected: features.length },
   setStyle: (change: Partial<Record<keyof ShapeStyle, unknown>>) => engine?.setStyle(change),
   duplicate: (): boolean => engine?.duplicateSelected() ?? false,

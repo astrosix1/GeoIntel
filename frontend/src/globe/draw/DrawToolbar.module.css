@@ -13,6 +13,15 @@
   color: var(--text);
 }
 
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 .divider {
   height: 1px;
   margin: var(--space-1) 0;
@@ -36,6 +45,11 @@
     flex-direction: row;
     align-items: center;
     overflow-x: auto;
+  }
+
+  /* The strip scrolls sideways; its buttons keep their full size rather than shrinking to fit. */
+  .toolbar > button {
+    flex-shrink: 0;
   }
 
   .divider {

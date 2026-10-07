@@ -108,7 +108,46 @@
   line-height: var(--leading);
 }
 
+.shapeList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 140px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.shapeButton {
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.shapeButton:hover {
+  background: var(--raised);
+}
+
+.shapeSelected,
+.shapeSelected:hover {
+  background: var(--accent-soft);
+}
+
 @media (pointer: coarse) {
+  .shapeButton {
+    min-height: 44px;
+  }
+
   .name {
     min-height: 44px;
   }

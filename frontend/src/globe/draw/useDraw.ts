@@ -4,8 +4,10 @@ import type * as maplibregl from 'maplibre-gl';
 import { useDrawStore } from '../../state/drawStore';
 import { useSettings } from '../../state/settings';
 import { drawController } from './controller';
-import type { DrawEngine } from './engine';
+import type { DrawEngine, DrawFeature } from './engine';
 import { ensureDrawLayers, setLabelScale, showDrawLayers } from './layers';
+import { labelsFor } from './measure';
+import { MODE_NAMES } from './modenames';
 import type { LabelOptions, UnitSystem } from './measure';
 import { hiddenIds } from './drawlayers';
 import type { DrawPrefs } from './prefs';
@@ -30,6 +32,9 @@ export function useDraw(mapRef: MutableRefObject<maplibregl.Map | null>, mapRead
   const engineRef = useRef<DrawEngine | null>(null);
   const loadingRef = useRef(false);
   const draftTimer = useRef<number | undefined>(undefined);
+  // The map's text is redrawn at most once per frame, however many changes arrive (a drag sends one per mouse move).
+  const pendingFeatures = useRef<DrawFeature[] | null>(null);
+  const frame = useRef(0);
   const optionsRef = useRef(labelOptions(prefs, appUnits));
   optionsRef.current = labelOptions(prefs, appUnits);
 
@@ -54,9 +59,18 @@ export function useDraw(mapRef: MutableRefObject<maplibregl.Map | null>, mapRead
         const engine = createDrawEngine(map, {
           onChange: (features) => {
             const state = useDrawStore.getState();
-            state.setShapeCount(features.length);
-            state.bumpRevision();
-            showDrawLayers(map, features, optionsRef.current);
+            pendingFeatures.current = features;
+            if (!frame.current) {
+              frame.current = window.requestAnimationFrame(() => {
+                frame.current = 0;
+                const latest = pendingFeatures.current;
+                if (!latest) return;
+                const current = useDrawStore.getState();
+                current.setShapeCount(latest.length);
+                current.bumpRevision();
+                showDrawLayers(map, latest, optionsRef.current);
+              });
+            }
             if (!isLoadingDrawing()) {
               state.setDirty(true);
               scheduleDraft();
@@ -65,6 +79,13 @@ export function useDraw(mapRef: MutableRefObject<maplibregl.Map | null>, mapRead
           onSelect: (id) => store.setSelectedId(id),
           onHistory: (state) => store.setHistory(state),
           onTool: (next) => store.setTool(next),
+          // Tells screen readers what was just drawn, with its main measurement.
+          onDrawn: (feature) => {
+            const mode = String(feature.properties?.mode ?? '');
+            const first = labelsFor([feature], optionsRef.current).find((l) => l.kind !== 'name' && l.kind !== 'text');
+            const text = first ? `: ${first.text.split(String.fromCharCode(10)).join(', ')}` : '';
+            useDrawStore.getState().setAnnouncement(`${MODE_NAMES[mode] ?? 'Shape'} added${text}`);
+          },
           // A new shape goes on the active layer; if that layer is hidden it is shown first, so the shape does not vanish.
           getActiveLayer: () => {
             const { activeLayerId, layers, setActiveLayer } = useDrawStore.getState();
@@ -134,6 +155,7 @@ export function useDraw(mapRef: MutableRefObject<maplibregl.Map | null>, mapRead
   useEffect(
     () => () => {
       drawController.attach(null);
+      window.cancelAnimationFrame(frame.current);
       engineRef.current?.destroy();
       engineRef.current = null;
     },

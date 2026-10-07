@@ -73,7 +73,12 @@ function readPosition(value: unknown): Position | null {
   if (value.length === 3 && (typeof value[2] !== 'number' || !Number.isFinite(value[2]))) return null;
   // A drawing across the date line on a flat map can run past 180; anything wilder is not a place.
   if (lon < -540 || lon > 540 || lat < -90 || lat > 90) return null;
-  return [lon, lat];
+  // The drawing engine refuses more than nine decimal places (about a tenth of a millimetre), and files from other tools
+  // often carry far more, so every position is rounded to that.
+  // GeoJSON longitudes run from -180 to 180, which is all the engine accepts: one written past that (a shape drawn across the
+  // date line on a flat map, continuing on 181, 182...) is wrapped round to the same place.
+  const wrapped = lon > 180 || lon < -180 ? ((((lon + 180) % 360) + 360) % 360) - 180 : lon;
+  return [Math.round(wrapped * 1e9) / 1e9, Math.round(lat * 1e9) / 1e9];
 }
 
 function readGeometry(geometry: { type: string; coordinates: unknown } | null | undefined): { geometry: DrawingGeometry; vertices: number } | null {

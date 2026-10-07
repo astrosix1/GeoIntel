@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   angleAt, bearingBetween, compassPoint, distanceBetween, formatAngle, formatArea, formatBearing, formatCoordinates, formatDistance,
-  labelsFor, lineLength, midpointBetween, pointAlong, polygonArea, ringArea, ringCenter, segmentLengths,
+  labelsFor, lineLength, midpointBetween, pointAlong, polygonArea, ringArea, ringCenter, segmentLengths, unwrapLongitudes,
 } from '../src/globe/draw/measure.ts';
 
 const near = (actual: number, expected: number, tolerance: number, what: string) =>
@@ -295,5 +295,31 @@ describe('names and text on shapes', () => {
   it('ignores a name that is not text', () => {
     const labels = labelsFor([{ id: 'a', properties: { mode: 'linestring', label: 7 }, geometry: { type: 'LineString', coordinates: [[0, 0], [1, 0]] } }], plain);
     assert.deepEqual(labels.map((l) => l.kind), ['total']);
+  });
+});
+
+describe('shapes across the date line', () => {
+  it('makes a run of longitudes continuous', () => {
+    assert.deepEqual(unwrapLongitudes([[179, 0], [-179, 0], [-177, 1]]), [[179, 0], [181, 0], [183, 1]]);
+    assert.deepEqual(unwrapLongitudes([[-179, 0], [179, 0]]), [[-179, 0], [-181, 0]]);
+    assert.deepEqual(unwrapLongitudes([[10, 0], [20, 5]]), [[10, 0], [20, 5]]);
+    assert.deepEqual(unwrapLongitudes([]), []);
+  });
+
+  it('gives a polygon the same area whichever way its longitudes are written', () => {
+    const continuous: [number, number][] = [[179, 0], [181, 0], [181, 2], [179, 2], [179, 0]];
+    const wrapped: [number, number][] = [[179, 0], [-179, 0], [-179, 2], [179, 2], [179, 0]];
+    near(ringArea(wrapped), ringArea(continuous), 1, 'wrapped vs continuous');
+    near(ringArea(wrapped), 2 * 2 * 111_195 * 111_195 * Math.cos((1 * Math.PI) / 180), 6e8, 'about two degrees square');
+  });
+
+  it('puts the middle of a line that crosses the date line on the date line, not on the far side of the world', () => {
+    const middle = pointAlong([[170, 10], [-170, 10]]);
+    assert.ok(middle);
+    assert.ok(Math.abs(Math.abs(middle![0]) - 180) < 0.01, `longitude ${middle![0]}`);
+  });
+
+  it('measures a line across the date line as short', () => {
+    near(lineLength([[179.5, 0], [-179.5, 0]]), 111_195, 50, 'one degree across the date line');
   });
 });

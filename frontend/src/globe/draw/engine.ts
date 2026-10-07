@@ -45,6 +45,8 @@ export interface DrawHandlers {
   onTool: (tool: DrawTool) => void;
   // The layer a newly drawn shape goes on.
   getActiveLayer: () => string;
+  // A shape has just been drawn (not edited): for announcing it.
+  onDrawn: (feature: DrawFeature) => void;
 }
 
 export interface DrawEngine {
@@ -64,6 +66,8 @@ export interface DrawEngine {
   // Replaces everything with these shapes (each with its layer id in `properties.layer`), clearing the undo history. Shapes the
   // engine refuses are counted, not fatal.
   load: (features: DrawFeature[]) => { added: number; rejected: number };
+  // Selects a shape by id (from the shape list) and switches to the Select tool.
+  selectShape: (id: string) => void;
   // Which layer the selected shape is on, and moving it to another.
   selectedLayer: () => string | null;
   moveSelectedToLayer: (layerId: string) => void;
@@ -216,9 +220,10 @@ export function createDrawEngine(map: maplibregl.Map, handlers: DrawHandlers): D
     handlers.onSelect(null);
   });
   // A new text label is selected straight away so its words can be typed in the panel.
-  draw.on('finish', (id) => {
+  draw.on('finish', (id, context) => {
     const feature = draw.getSnapshotFeature(id);
     if (feature && isShape(feature) && !layerOf.has(String(id))) layerOf.set(String(id), handlers.getActiveLayer());
+    if (feature && isShape(feature) && context.action === 'draw') handlers.onDrawn(feature);
     if (feature?.properties?.mode !== 'text') return;
     draw.setMode('select');
     draw.selectFeature(id);
@@ -246,17 +251,20 @@ export function createDrawEngine(map: maplibregl.Map, handlers: DrawHandlers): D
 
   // Takes the shapes of hidden layers off the map and puts back those whose layer is shown.
   function applyHidden() {
-    for (const feature of visibleShapes()) {
-      const layer = layerForShape(feature.id);
-      if (!hidden.has(layer) || feature.id === undefined) continue;
-      if (selected === String(feature.id)) draw.deselectFeature(feature.id);
-      stash.set(String(feature.id), plain(feature));
-      draw.removeFeatures([feature.id]);
+    // Each step is one call for all the shapes, not one per shape: the engine redraws after every call, so a layer of hundreds
+    // of shapes would otherwise take seconds to hide or show.
+    const toHide = visibleShapes().filter((f) => f.id !== undefined && hidden.has(layerForShape(f.id)));
+    if (toHide.length > 0) {
+      if (selected !== null && toHide.some((f) => String(f.id) === selected)) draw.deselectFeature(selected);
+      for (const feature of toHide) stash.set(String(feature.id), plain(feature));
+      draw.removeFeatures(toHide.map((f) => f.id as string | number));
     }
-    for (const [id, feature] of [...stash]) {
-      if (hidden.has(layerForShape(id))) continue;
-      const results = draw.addFeatures([feature]);
-      if (results.every((r) => r.valid)) stash.delete(id);
+    const toShow = [...stash].filter(([id]) => !hidden.has(layerForShape(id)));
+    if (toShow.length > 0) {
+      const results = draw.addFeatures(toShow.map(([, feature]) => feature));
+      results.forEach((result, i) => {
+        if (result.valid) stash.delete(toShow[i][0]);
+      });
     }
     publishFeatures();
   }
@@ -310,24 +318,30 @@ export function createDrawEngine(map: maplibregl.Map, handlers: DrawHandlers): D
       stash.clear();
       layerOf.clear();
       draw.clear();
+      // One call for the whole drawing (see applyHidden); the results line up with the shapes that were given.
+      const results = draw.addFeatures(features.map(plain));
       let added = 0;
       let rejected = 0;
-      for (const feature of features) {
-        const layer = feature.properties?.layer;
-        const results = draw.addFeatures([plain(feature)]);
-        const ok = results.length > 0 && results.every((r) => r.valid);
-        if (!ok) {
+      results.forEach((result, i) => {
+        if (!result.valid) {
           rejected += 1;
-          continue;
+          return;
         }
         added += 1;
-        const id = results[0].id ?? feature.id;
+        const layer = features[i].properties?.layer;
+        const id = result.id ?? features[i].id;
         if (id !== undefined && typeof layer === 'string') layerOf.set(String(id), layer);
-      }
+      });
       draw.clearUndoRedoHistory();
       applyHidden();
       publishHistory();
       return { added, rejected };
+    },
+    selectShape(id) {
+      if (selected !== null && selected !== id) draw.deselectFeature(selected);
+      if (draw.getMode() !== 'select') draw.setMode('select');
+      if (draw.hasFeature(id)) draw.selectFeature(id);
+      handlers.onTool('select');
     },
     setHiddenLayers(ids) {
       hidden = new Set(ids);

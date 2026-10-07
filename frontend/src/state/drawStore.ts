@@ -37,6 +37,9 @@ interface DrawState {
   setDirty: (dirty: boolean) => void;
   // Replaces the layers wholesale (opening or restoring a drawing); the first one becomes the active layer.
   setLayers: (layers: DrawLayer[]) => void;
+  // A sentence for screen readers about what has just happened (a shape added), read out by a live region.
+  announcement: string;
+  setAnnouncement: (text: string) => void;
   // Presentation mode: only the map and the drawing are shown.
   presenting: boolean;
   setPresenting: (presenting: boolean) => void;
@@ -89,6 +92,8 @@ export const useDrawStore = create<DrawState>((set, get) => ({
   setDrawing: (drawing) => set({ drawing }),
   setDirty: (dirty) => set({ dirty }),
   setLayers: (layers) => set({ layers, activeLayerId: layers[0].id }),
+  announcement: '',
+  setAnnouncement: (announcement) => set({ announcement }),
   presenting: false,
   setPresenting: (presenting) => set({ presenting }),
   prefs: loadDrawPrefs(),

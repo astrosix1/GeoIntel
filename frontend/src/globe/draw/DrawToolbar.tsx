@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { KeyboardEvent } from 'react';
 import { useDrawStore } from '../../state/drawStore';
 import { IconButton } from '../../ui/Button';
 import type { IconName } from '../../ui/Icon';
@@ -79,6 +80,7 @@ export default function DrawToolbar() {
   const dirty = useDrawStore((s) => s.dirty);
   const presenting = useDrawStore((s) => s.presenting);
   const drawingName = useDrawStore((s) => s.drawing.name);
+  const announcement = useDrawStore((s) => s.announcement);
   const [imageNote, setImageNote] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   if (!open || presenting) return null;
@@ -106,8 +108,30 @@ export default function DrawToolbar() {
 
   const active = TOOLS.find((t) => t.tool === tool);
 
+  // Arrow keys, Home and End move along the strip, as in any toolbar; Tab still leaves it. (Only the strip's own buttons, not
+  // the fields in the panels beside it.)
+  function onToolbarKey(event: KeyboardEvent<HTMLDivElement>) {
+    const strip = event.currentTarget;
+    const target = event.target as HTMLElement;
+    if (target.parentElement !== strip || target.tagName !== 'BUTTON') return;
+    const buttons = Array.from(strip.querySelectorAll<HTMLButtonElement>(':scope > button:not(:disabled)'));
+    const at = buttons.indexOf(target as HTMLButtonElement);
+    const next =
+      event.key === 'ArrowDown' || event.key === 'ArrowRight' ? (at + 1) % buttons.length
+      : event.key === 'ArrowUp' || event.key === 'ArrowLeft' ? (at - 1 + buttons.length) % buttons.length
+      : event.key === 'Home' ? 0
+      : event.key === 'End' ? buttons.length - 1
+      : -1;
+    if (next < 0) return;
+    event.preventDefault();
+    buttons[next].focus();
+  }
+
   return (
-    <div className={styles.toolbar} role="toolbar" aria-label="Drawing tools" data-ui-hover-surface>
+    <div className={styles.toolbar} role="toolbar" aria-label="Drawing tools" aria-orientation="vertical" data-ui-hover-surface onKeyDown={onToolbarKey}>
+      <div className={styles.srOnly} role="status" aria-live="polite">
+        {announcement}
+      </div>
       {TOOLS.map((t) => (
         <IconButton
           key={t.tool}

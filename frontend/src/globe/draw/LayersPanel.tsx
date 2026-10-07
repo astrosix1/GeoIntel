@@ -3,6 +3,7 @@ import { useDrawStore } from '../../state/drawStore';
 import Button, { IconButton } from '../../ui/Button';
 import { drawController } from './controller';
 import { MAX_LAYER_NAME, MAX_LAYER_NOTE, MAX_LAYERS } from './drawlayers';
+import { MODE_NAMES } from './modenames';
 import type { DrawLayer } from './drawlayers';
 import styles from './LayersPanel.module.css';
 
@@ -57,7 +58,16 @@ export default function LayersPanel() {
   const [confirming, setConfirming] = useState(false);
 
   const counts = drawController.counts();
+  const setTool = useDrawStore((s) => s.setTool);
+  const selectedId = useDrawStore((s) => s.selectedId);
   const active = layers.find((l) => l.id === activeLayerId) ?? layers[0];
+  // The shapes on the active layer as a list, so they can be reached and selected from the keyboard or a screen reader.
+  const shapes = active.visible
+    ? drawController
+        .allFeatures()
+        .filter((f) => f.properties?.layer === active.id && f.id !== undefined)
+        .map((f) => ({ id: String(f.id), name: MODE_NAMES[String(f.properties?.mode)] ?? 'Shape', label: typeof f.properties?.label === 'string' ? f.properties.label : '' }))
+    : [];
   const onlyActiveShown = layers.every((l) => l.visible === (l.id === active.id));
 
   return (
@@ -95,6 +105,30 @@ export default function LayersPanel() {
       </Button>
       <p className={styles.hint}>New shapes go on the highlighted layer. Use the eye to show or hide a layer.</p>
 
+      <div className={styles.divider} />
+      <span className={styles.fieldLabel}>Shapes on this layer</span>
+      {!active.visible && <p className={styles.hint}>This layer is hidden.</p>}
+      {active.visible && shapes.length === 0 && <p className={styles.hint}>No shapes yet.</p>}
+      {shapes.length > 0 && (
+        <ul className={styles.shapeList} aria-label="Shapes on this layer">
+          {shapes.map((shape) => (
+            <li key={shape.id}>
+              <button
+                type="button"
+                className={`${styles.shapeButton} ${selectedId === shape.id ? styles.shapeSelected : ''}`}
+                aria-pressed={selectedId === shape.id}
+                onClick={() => {
+                  setTool('select');
+                  drawController.selectShape(shape.id);
+                }}
+              >
+                {shape.name}
+                {shape.label ? `: ${shape.label}` : ''}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       <div className={styles.divider} />
       <LayerDetails key={active.id} layer={active} />
       <div className={styles.actions}>
