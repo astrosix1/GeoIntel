@@ -89,6 +89,8 @@ const PATHS: Record<string, ReactNode> = {
       <circle cx="18.5" cy="5.5" r="1.8" />
     </>
   ),
+  angle: <path d="M4 19h16M4 19L16 5M9 19a5 5 0 00-1.6-3.7" />,
+  ruler: <path d="M3 15L15 3l6 6L9 21l-6-6zM7 11l2 2M10 8l2 2M13 5l2 2" />,
   polygon: <path d="M12 4l8 6-3 9H7l-3-9 8-6z" />,
   rectangle: <rect x="4" y="6" width="16" height="12" rx="1" />,
   circle: <circle cx="12" cy="12" r="8" />,

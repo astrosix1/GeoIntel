@@ -19,7 +19,7 @@ import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
 // library can be upgraded or replaced without touching the interface or the store. Loaded on demand (a separate chunk)
 // the first time the drawing tool is opened.
 
-export type DrawTool = 'select' | 'point' | 'linestring' | 'polygon' | 'rectangle' | 'circle' | 'freehand';
+export type DrawTool = 'select' | 'point' | 'linestring' | 'angle' | 'polygon' | 'rectangle' | 'circle' | 'freehand';
 
 export type DrawFeature = GeoJSONStoreFeatures;
 
@@ -49,11 +49,16 @@ const SELECTED: HexColor = '#f59e0b';
 const WHITE: HexColor = '#ffffff';
 
 // Shapes the user sees: the helper points the engine adds while drawing are excluded.
-const SHAPE_MODES = new Set(['point', 'linestring', 'polygon', 'rectangle', 'circle', 'freehand']);
+const SHAPE_MODES = new Set(['point', 'linestring', 'angle', 'polygon', 'rectangle', 'circle', 'freehand']);
+
+// The small points the engine adds to a shape while it is drawn or selected (its corners, the closing point, snapping and
+// mid points). They carry the shape's mode name too, so they are told apart by these flags.
+const HELPER_FLAGS = ['coordinatePoint', 'closingPoint', 'snappingPoint', 'midPoint', 'selectionPoint'];
 
 function isShape(feature: DrawFeature): boolean {
   const mode = feature.properties?.mode;
-  return typeof mode === 'string' && SHAPE_MODES.has(mode);
+  if (typeof mode !== 'string' || !SHAPE_MODES.has(mode)) return false;
+  return !HELPER_FLAGS.some((flag) => feature.properties?.[flag]);
 }
 
 export function createDrawEngine(map: maplibregl.Map, handlers: DrawHandlers): DrawEngine {
@@ -69,6 +74,14 @@ export function createDrawEngine(map: maplibregl.Map, handlers: DrawHandlers): D
         snapping: { toCoordinate: true },
         showCoordinatePoints: true,
       }),
+      // The angle tool is a line that finishes on its third corner: the end of one leg, the corner, the end of the other.
+      new TerraDrawLineStringMode({
+        modeName: 'angle',
+        styles: { ...lineStyle, closingPointColor: WHITE, closingPointOutlineColor: STROKE, coordinatePointColor: STROKE },
+        snapping: { toCoordinate: true },
+        showCoordinatePoints: true,
+        finishOnNthCoordinate: 3,
+      }),
       new TerraDrawPolygonMode({
         styles: { ...polygonStyle, closingPointColor: WHITE, closingPointOutlineColor: STROKE, coordinatePointColor: STROKE },
         snapping: { toCoordinate: true },
@@ -82,6 +95,8 @@ export function createDrawEngine(map: maplibregl.Map, handlers: DrawHandlers): D
         flags: {
           point: { feature: { draggable: true } },
           linestring: { feature: { draggable: true, coordinates: { midpoints: true, draggable: true, deletable: true } } },
+          // An angle keeps its three corners: they can be moved but not added to or removed.
+          angle: { feature: { draggable: true, coordinates: { draggable: true } } },
           polygon: { feature: { draggable: true, coordinates: { midpoints: true, draggable: true, deletable: true } } },
           rectangle: { feature: { draggable: true, coordinates: { resizable: 'opposite' } } },
           circle: { feature: { draggable: true, coordinates: { resizable: 'center-fixed' } } },

@@ -49,3 +49,65 @@
     display: none;
   }
 }
+
+/* The measuring options open to the right of the strip (below it on phones). */
+.options {
+  position: absolute;
+  top: 0;
+  left: calc(100% + var(--space-2));
+  z-index: 17;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  width: 260px;
+  padding: var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-2);
+  background: var(--panel);
+  box-shadow: var(--shadow-pop);
+  font-size: var(--font-3);
+}
+
+.optionRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.optionLabel {
+  color: var(--text-3);
+  font-size: var(--font-2);
+}
+
+.switch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 28px;
+  cursor: pointer;
+}
+
+.switch input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.optionHint {
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--font-1);
+  line-height: var(--leading);
+}
+
+@media (max-width: 768px) {
+  .options {
+    position: fixed;
+    top: 152px;
+    right: var(--space-2);
+    left: var(--space-2);
+    width: auto;
+  }
+}

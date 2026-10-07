@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import type { DrawTool } from '../globe/draw/engine';
+import { loadDrawPrefs, saveDrawPrefs } from '../globe/draw/prefs';
+import type { DrawPrefs } from '../globe/draw/prefs';
 
 // State of the drawing tool that the interface needs: whether it is open, which tool is chosen, what can be undone, and
 // what is selected. The drawing itself lives in the engine (globe/draw/engine.ts), not here.
@@ -10,6 +12,9 @@ interface DrawState {
   canRedo: boolean;
   selectedId: string | null;
   shapeCount: number;
+  // What the tool measures and shows (remembered in this browser).
+  prefs: DrawPrefs;
+  setPrefs: (change: Partial<DrawPrefs>) => void;
   setOpen: (open: boolean) => void;
   setTool: (tool: DrawTool) => void;
   setHistory: (state: { canUndo: boolean; canRedo: boolean }) => void;
@@ -24,6 +29,13 @@ export const useDrawStore = create<DrawState>((set) => ({
   canRedo: false,
   selectedId: null,
   shapeCount: 0,
+  prefs: loadDrawPrefs(),
+  setPrefs: (change) =>
+    set((state) => {
+      const prefs = { ...state.prefs, ...change };
+      saveDrawPrefs(prefs);
+      return { prefs };
+    }),
   setOpen: (open) => set({ open }),
   setTool: (tool) => set({ tool }),
   setHistory: ({ canUndo, canRedo }) => set({ canUndo, canRedo }),

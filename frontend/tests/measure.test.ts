@@ -2,7 +2,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
-  distanceBetween, formatArea, formatDistance, labelsFor, lineLength, pointAlong, polygonArea, ringArea, ringCenter, segmentLengths,
+  angleAt, bearingBetween, compassPoint, distanceBetween, formatAngle, formatArea, formatBearing, formatCoordinates, formatDistance,
+  labelsFor, lineLength, midpointBetween, pointAlong, polygonArea, ringArea, ringCenter, segmentLengths,
 } from '../src/globe/draw/measure.ts';
 
 const near = (actual: number, expected: number, tolerance: number, what: string) =>
@@ -114,26 +115,145 @@ describe('formatting', () => {
   });
 });
 
-describe('labels for drawn shapes', () => {
-  it('shows nothing for a shape that has no size yet', () => {
-    const tiny = [[10, 10], [10.0000001, 10.0000001], [10.0000002, 10], [10, 10]];
-    assert.deepEqual(labelsFor([{ id: 'x', geometry: { type: 'Polygon', coordinates: [tiny] } }], 'metric'), []);
-    assert.deepEqual(labelsFor([{ id: 'y', geometry: { type: 'LineString', coordinates: [[10, 10], [10, 10.0000001]] } }], 'metric'), []);
+describe('bearings and angles', () => {
+  it('gives the compass bearing between points', () => {
+    near(bearingBetween([0, 0], [0, 1]), 0, 0.001, 'north');
+    near(bearingBetween([0, 0], [1, 0]), 90, 0.001, 'east');
+    near(bearingBetween([0, 0], [0, -1]), 180, 0.001, 'south');
+    near(bearingBetween([0, 0], [-1, 0]), 270, 0.001, 'west');
+    near(bearingBetween([0, 0], [1, 1]), 45, 0.1, 'north-east');
   });
 
-  it('labels a line with its length and a polygon with its area and perimeter, and skips points', () => {
+  it('names the eight compass points and pads bearings to three digits', () => {
+    assert.equal(compassPoint(0), 'N');
+    assert.equal(compassPoint(47), 'NE');
+    assert.equal(compassPoint(350), 'N');
+    assert.equal(compassPoint(180), 'S');
+    assert.equal(compassPoint(271), 'W');
+    assert.equal(formatBearing(47.2), '047° NE');
+    assert.equal(formatBearing(0), '000° N');
+    assert.equal(formatBearing(359.7), '000° N');
+  });
+
+  it('measures a right angle and a straight line', () => {
+    near(angleAt([0, 1], [0, 0], [1, 0]), 90, 0.01, 'right angle');
+    near(angleAt([-1, 0], [0, 0], [1, 0]), 180, 0.01, 'straight');
+    near(angleAt([0, 1], [0, 0], [0, 2]), 0, 0.01, 'folded back');
+  });
+
+  it('never reports more than 180 degrees, whichever way round the corners are given', () => {
+    near(angleAt([1, 0], [0, 0], [0, 1]), angleAt([0, 1], [0, 0], [1, 0]), 0.001, 'order');
+    near(angleAt([-1, 0.01], [0, 0], [0, 1]), 90, 1, 'obtuse side');
+  });
+
+  it('formats angles to one decimal', () => {
+    assert.equal(formatAngle(90), '90°');
+    assert.equal(formatAngle(62.349), '62.3°');
+  });
+});
+
+describe('midpoints and coordinates', () => {
+  it('finds the great-circle midpoint, including across the date line', () => {
+    const middle = midpointBetween([0, 0], [2, 0]);
+    near(middle[0], 1, 0.001, 'equator longitude');
+    near(middle[1], 0, 0.001, 'equator latitude');
+    const across = midpointBetween([179, 0], [-179, 0]);
+    assert.ok(Math.abs(Math.abs(across[0]) - 180) < 0.001, `date line ${across[0]}`);
+  });
+
+  it('bows towards the pole on a long east-west line', () => {
+    const middle = midpointBetween([-60, 50], [60, 50]);
+    assert.ok(middle[1] > 50, `latitude ${middle[1]}`);
+  });
+
+  it('formats coordinates with hemispheres', () => {
+    assert.equal(formatCoordinates([-0.1278, 51.5074]), '51.5074° N, 0.1278° W');
+    assert.equal(formatCoordinates([151.2093, -33.8688]), '33.8688° S, 151.2093° E');
+  });
+});
+
+describe('nautical units', () => {
+  it('formats nautical miles, and metres when short', () => {
+    assert.equal(formatDistance(1852, 'nautical'), '1 nm');
+    assert.equal(formatDistance(18_520, 'nautical'), '10 nm');
+    assert.equal(formatDistance(120, 'nautical'), '120 m');
+  });
+
+  it('uses the metric area units', () => {
+    assert.equal(formatArea(3_200_000, 'nautical'), '3.2 km²');
+  });
+});
+
+describe('labels for drawn shapes', () => {
+  const plain = { units: 'metric' as const, segments: false, angles: false, bearings: false };
+  const line = (id: string, coordinates: [number, number][], mode = 'linestring') => ({ id, properties: { mode }, geometry: { type: 'LineString', coordinates } });
+  const polygon = (id: string, ring: [number, number][], mode = 'polygon') => ({ id, properties: { mode }, geometry: { type: 'Polygon', coordinates: [ring] } });
+  const square: [number, number][] = [[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]];
+
+  it('labels a line with its length and a polygon with its area and perimeter, and a point with its coordinates', () => {
     const labels = labelsFor(
-      [
-        { id: 'a', geometry: { type: 'LineString', coordinates: [[0, 0], [1, 0]] } },
-        { id: 'b', geometry: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] } },
-        { id: 'c', geometry: { type: 'Point', coordinates: [0, 0] } },
-        { id: 'd', geometry: { type: 'LineString', coordinates: [[0, 0]] } },
-      ],
-      'metric',
+      [line('a', [[0, 0], [1, 0]]), polygon('b', square), { id: 'c', properties: { mode: 'point' }, geometry: { type: 'Point', coordinates: [10, 20] } }, line('d', [[0, 0]])],
+      plain,
     );
-    assert.deepEqual(labels.map((l) => l.id), ['a', 'b']);
+    assert.deepEqual(labels.map((l) => l.id), ['a', 'b', 'c']);
     assert.equal(labels[0].text, '111 km');
-    assert.ok(labels[1].text.startsWith('12,36'), labels[1].text);
-    assert.ok(labels[1].text.includes('around'));
+    assert.ok(labels[1].text.startsWith('12,36') && labels[1].text.includes('around'), labels[1].text);
+    assert.equal(labels[2].text, '20.0000° N, 10.0000° E');
+  });
+
+  it('shows nothing for a shape that has no size yet', () => {
+    const tiny: [number, number][] = [[10, 10], [10.0000001, 10.0000001], [10.0000002, 10], [10, 10]];
+    assert.deepEqual(labelsFor([polygon('x', tiny), line('y', [[10, 10], [10, 10.0000001]])], plain), []);
+  });
+
+  it('adds a length for every segment of a line only when asked', () => {
+    const bent = line('l', [[0, 0], [1, 0], [1, 1]]);
+    assert.equal(labelsFor([bent], plain).filter((l) => l.kind === 'segment').length, 0);
+    const segments = labelsFor([bent], { ...plain, segments: true }).filter((l) => l.kind === 'segment');
+    assert.equal(segments.length, 2);
+    assert.ok(segments.every((l) => l.text.endsWith('km')));
+  });
+
+  it('adds bearings, and puts a single segment bearing on the total label', () => {
+    const single = labelsFor([line('l', [[0, 0], [0, 1]])], { ...plain, bearings: true });
+    assert.equal(single.length, 1);
+    assert.equal(single[0].text, '111 km · 000° N');
+    const bent = labelsFor([line('l', [[0, 0], [1, 0], [1, 1]])], { ...plain, bearings: true }).filter((l) => l.kind === 'segment');
+    assert.deepEqual(bent.map((l) => l.text), ['090° E', '000° N']);
+  });
+
+  it('adds the angle at each inner corner of a line, and at every corner of a polygon', () => {
+    const bent = labelsFor([line('l', [[0, 1], [0, 0], [1, 0]])], { ...plain, angles: true }).filter((l) => l.kind === 'angle');
+    assert.equal(bent.length, 1);
+    assert.equal(bent[0].text, '90°');
+    const corners = labelsFor([polygon('p', square)], { ...plain, angles: true }).filter((l) => l.kind === 'angle');
+    assert.equal(corners.length, 4);
+  });
+
+  it('labels the angle tool with the angle and both legs, whatever the switches say', () => {
+    const labels = labelsFor([line('a', [[0, 1], [0, 0], [1, 0]], 'angle')], plain);
+    assert.deepEqual(labels.map((l) => l.kind).sort(), ['angle', 'segment', 'segment']);
+    assert.equal(labels.find((l) => l.kind === 'angle')?.text, '90°');
+  });
+
+  it('labels a circle with its radius, area and circumference', () => {
+    const ring: [number, number][] = [];
+    for (let i = 0; i <= 64; i++) {
+      const angle = (i / 64) * 2 * Math.PI;
+      ring.push([Math.cos(angle) * 0.1, Math.sin(angle) * 0.1]);
+    }
+    const [label] = labelsFor([polygon('c', ring, 'circle')], plain);
+    assert.ok(label.text.startsWith('r 11.1 km'), label.text);
+    assert.ok(label.text.includes('around'));
+  });
+
+  it('keeps a many-cornered polygon to its total', () => {
+    const ring: [number, number][] = [];
+    for (let i = 0; i <= 40; i++) {
+      const angle = (i / 40) * 2 * Math.PI;
+      ring.push([Math.cos(angle), Math.sin(angle)]);
+    }
+    const labels = labelsFor([polygon('many', ring)], { ...plain, segments: true, angles: true });
+    assert.equal(labels.length, 1);
   });
 });
