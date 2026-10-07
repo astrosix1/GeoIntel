@@ -1,5 +1,7 @@
 import { lazy, Suspense, useEffect } from 'react';
 import Globe from '../globe/Globe';
+import DrawFab from '../globe/draw/DrawFab';
+import DrawToolbar from '../globe/draw/DrawToolbar';
 import RadarBar from '../globe/RadarBar';
 import TimeBar from '../globe/TimeBar';
 import AnalysisSidebar from '../sidebars/AnalysisSidebar';
@@ -59,6 +61,8 @@ export default function Shell() {
             </div>
             <TimeBar />
             <RadarBar />
+            <DrawToolbar />
+            <DrawFab />
             <EdgeTab side="left" docked={docked} />
             <EdgeTab side="right" docked={docked} />
           </div>

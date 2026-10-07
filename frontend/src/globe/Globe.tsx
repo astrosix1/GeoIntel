@@ -24,7 +24,9 @@ import { isOnNearHemisphere } from './hemisphere';
 import { renderToStaticMarkup } from 'react-dom/server';
 import Icon from '../ui/Icon';
 import { hazardIconName } from './hazards';
+import { useDraw } from './draw/useDraw';
 import { useRadar } from './useRadar';
+import { isDrawingOpen } from '../state/drawStore';
 import { applyCrisisFilter, applyHazardFilter } from '../lib/filters';
 import { clearHazardGeometry, setHazardGeometry } from './hazardGeometry';
 import { useReportedAtNight } from '../state/useZoneIndex';
@@ -161,18 +163,6 @@ export default function Globe() {
 
     map.on('load', () => {
       setMapReady(true);
-
-      // Item 10.6 — real draw/measure tool (point/line/polygon/rectangle/
-      // circle/freehand), with real Turf-computed distance/area labels built
-      // into the plugin's own MaplibreMeasureControl. Added as a standard
-      // MapLibre IControl (like NavigationControl above) — it renders its own
-      // toggle button + toolbar, so no extra React UI is needed. Placed
-      // bottom-right (away from NavigationControl's top-right zoom buttons and
-      // the top bar). Loaded after the map is up (a
-      // separate chunk) so terra-draw/Turf stay off the critical path.
-      import('./DrawMeasureControl').then(({ createDrawMeasureControl }) => {
-        if (mapRef.current === map) map.addControl(createDrawMeasureControl(), 'bottom-right');
-      });
     });
 
     // Country click: must yield to a crisis pin/cluster under the cursor —
@@ -185,8 +175,8 @@ export default function Globe() {
     // country Analysis view underneath the timezone popup — the two
     // invisible hit-test fill layers otherwise sit on top of each other.
     map.on('click', COUNTRY_HIT_LAYER_ID, (e) => {
-      // Weather mode uses the click for a point forecast instead (below).
-      if (activeModeRef.current !== 'events') return;
+      // Weather mode uses the click for a point forecast instead (below). While drawing, clicks belong to the drawing tool.
+      if (activeModeRef.current !== 'events' || isDrawingOpen()) return;
       if (hitsCrisisLayer(map, e.point)) return;
       const feature = e.features?.[0];
       const props = feature?.properties as Record<string, unknown> | undefined;
@@ -211,7 +201,7 @@ export default function Globe() {
     // because showing the forecast is the whole point of the click. The country
     // name, when the point is on land, is just a friendlier title.
     map.on('click', (e) => {
-      if (activeModeRef.current !== 'weather') return;
+      if (activeModeRef.current !== 'weather' || isDrawingOpen()) return;
       let label: string | null = null;
       try {
         const hit = map.queryRenderedFeatures(e.point, { layers: [COUNTRY_HIT_LAYER_ID] })[0];
@@ -315,6 +305,7 @@ export default function Globe() {
       addTimezoneLayer(map);
       map.getCanvas().style.cursor = '';
       timezoneClickHandler = (e) => {
+        if (isDrawingOpen()) return;
         const feature = e.features?.[0];
         const tzid = feature?.properties?.tzid as string | undefined;
         if (!tzid) return;
@@ -390,6 +381,7 @@ export default function Globe() {
   }, [activeMode, mapReady, zoneLabelsOn, labelPts, timeOffset]);
 
   useRadar(mapRef, mapReady);
+  useDraw(mapRef, mapReady);
 
   // Weather mode: one pin per active hazard (cyclone, flood, wildfire,
   // drought). Rebuilt when the data or the legend's filter changes; the mode

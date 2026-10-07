@@ -63,6 +63,17 @@ Decisions:
 
 **D6: polish.** Phones (bottom-sheet tool strip), Light theme, an accessibility pass (keyboard drawing and selecting, labels for every tool), performance with large drawings, and the flat map's date-line behaviour.
 
+## D0 as built
+
+- **Our own tool replaces the plugin.** `@watergis/maplibre-gl-terradraw` and `DrawMeasureControl.tsx` are gone. `src/globe/draw/engine.ts` is the only file that touches `terra-draw`; the rest of the app sees a small interface (`setTool`, `undo`, `redo`, `deleteSelected`, `clear`, `features`). It loads as its own chunk the first time the tool is opened: **41 KB gzipped, down from 64 KB** with the plugin.
+- **Draw button and tool strip.** A Draw button in the top bar opens a strip over the map built from the kit's buttons: select and edit, point, line, area, rectangle, circle (by radius), freehand, undo, redo, delete the selected shape, clear everything, and Done (hides the tools; the drawing stays on the map). Tools have names for screen readers, a hint line says how to finish each shape, and targets are 44 px on touch. On phones the strip runs along the top of the map and the Draw button moves to a pill at the bottom centre (the top bar had no room).
+- **Measuring at parity, and better:** lines show their length; areas (rectangles and circles too) show area and perimeter. All geodesic, in the user's Units setting (metric or imperial), updating live while a shape is drawn. A shape with no size yet shows no label. `src/globe/draw/measure.ts` is pure and tested against known values (London to Paris, New York to Los Angeles, a degree square at the equator, date-line cases, holes, every unit format).
+- **Undo and redo** (also Ctrl+Z and Ctrl+Y) come from the engine's own session history. Snapping to existing corners is on for lines and areas. Circles stay true circles on the globe and the flat map.
+- **Map clicks stand down while the tool is open:** pins, clusters, countries, zones and the weather point forecast ignore clicks, so drawing never selects something underneath.
+- **Risk retired early:** the library accepts a style per shape (colour, width, dash) as a function of the shape, so D2 styling needs no workaround. It also ships undo and redo, snapping, marker, sector and polyline modes, which simplifies D1 and D2.
+- **Checked in the browser:** a line, an area and a circle drawn with real clicks on the globe and the flat map, labels in miles and square miles, undo and redo toggling, Done hiding the tools while the drawing and labels stay, and the phone layout; no console errors. Not yet checked by hand: select-and-edit dragging, delete selected, and the Light theme.
+- **Development note:** after removing a dependency the dev server must be restarted before the new chunk loads.
+
 ## Risks and how they are handled
 
 - **`terra-draw` has no text tool and no three-point angle mode.** Text labels are drawn as map symbols from the feature data rather than as drawn shapes, and the angle tool is a small custom mode. Both are part of D1 and D2 and tested before the stages build on them. If the custom mode proves awkward, the angle is computed and shown on a normal line instead (the fallback keeps the feature).

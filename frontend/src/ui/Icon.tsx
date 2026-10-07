@@ -74,6 +74,28 @@ const PATHS: Record<string, ReactNode> = {
   fire: <path d="M12 3c.5 3.5 4.500 4.5 4.500 9.500a4.500 4.500 0 01-9 0c0-1.800.800-3 1.800-4 .200 1.500.900 2.300 1.700 2.600C11 9.500 10.800 6 12 3z" />,
   play: <path d="M8 5l11 7-11 7V5z" />,
   pause: <path d="M8 5v14M16 5v14" />,
+  pencil: <path d="M4 20l1-4L16 5l3 3L8 19l-4 1zM14 7l3 3" />,
+  pointer: <path d="M6 3l12 7-5 2-2 5L6 3z" />,
+  dot: (
+    <>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 3v4M12 17v4M3 12h4M17 12h4" />
+    </>
+  ),
+  line: (
+    <>
+      <path d="M7 17L17 7" />
+      <circle cx="5.5" cy="18.5" r="1.8" />
+      <circle cx="18.5" cy="5.5" r="1.8" />
+    </>
+  ),
+  polygon: <path d="M12 4l8 6-3 9H7l-3-9 8-6z" />,
+  rectangle: <rect x="4" y="6" width="16" height="12" rx="1" />,
+  circle: <circle cx="12" cy="12" r="8" />,
+  freehand: <path d="M3 15c3-8 5 3 8-1s4-7 10-1" />,
+  undo: <path d="M9 4L5 8l4 4M5 8h8a6 6 0 010 12H8" />,
+  redo: <path d="M15 4l4 4-4 4M19 8h-8a6 6 0 000 12h5" />,
+  trash: <path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13" />,
   user: (
     <>
       <circle cx="12" cy="8" r="4" />

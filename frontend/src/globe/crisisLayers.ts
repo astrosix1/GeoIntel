@@ -1,6 +1,7 @@
 import * as maplibregl from 'maplibre-gl';
 import type { FeatureCollection, Point } from 'geojson';
 import type { CrisisSummary } from '../api/types';
+import { isDrawingOpen } from '../state/drawStore';
 import { labelForSeverity, severityTone } from './severity';
 import { pinTag, sourcesTag } from '../lib/precision';
 
@@ -261,6 +262,7 @@ export function attachCrisisInteractions(map: maplibregl.Map, { getGroup, onSele
   const popup = new maplibregl.Popup({ offset: 10, className: 'geo-popup' });
 
   const onPointClick = (e: maplibregl.MapLayerMouseEvent) => {
+    if (isDrawingOpen()) return;
     const key = e.features?.[0]?.properties?.id as string | undefined;
     const events = key ? getGroup(key) : undefined;
     if (!events || events.length === 0) return;
@@ -295,6 +297,7 @@ export function attachCrisisInteractions(map: maplibregl.Map, { getGroup, onSele
   };
 
   const onClusterClick = async (e: maplibregl.MapLayerMouseEvent) => {
+    if (isDrawingOpen()) return;
     const feature = e.features?.[0];
     const clusterId = feature?.properties?.cluster_id as number | undefined;
     const source = map.getSource(CRISIS_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;

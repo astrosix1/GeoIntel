@@ -170,3 +170,10 @@
     display: none;
   }
 }
+
+/* Phones: Draw lives at the bottom of the map instead (globe/draw/DrawFab.tsx). */
+@media (max-width: 768px) {
+  .drawTop {
+    display: none;
+  }
+}
