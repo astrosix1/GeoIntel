@@ -5,6 +5,7 @@ import type {
   Briefing,
   CommentsPage,
   Forecast,
+  CountryDetail,
   CountryProfile,
   EventComment,
   Me,
@@ -249,6 +250,15 @@ export async function fetchCountryProfile(countryCode: string): Promise<CountryP
   if (!res.ok) {
     throw new Error(`Failed to fetch country profile for ${countryCode}: ${res.status} ${res.statusText}`);
   }
+  return res.json();
+}
+
+export async function fetchCountryDetail(countryCode: string): Promise<CountryDetail> {
+  const res = await authedFetch(`/api/countries/${encodeURIComponent(countryCode)}/detail`);
+  if (res.status === 401) throw new ScenariosError('sign_in_required');
+  if (res.status === 403) throw new ScenariosError('premium_required');
+  if (res.status === 404) throw new ScenariosError('unavailable');
+  if (!res.ok) throw new ScenariosError('error');
   return res.json();
 }
 

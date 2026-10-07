@@ -1,0 +1,74 @@
+.tabs {
+  margin-bottom: var(--space-3);
+}
+
+.group {
+  margin-bottom: var(--space-4);
+}
+
+.groupTitle {
+  margin-bottom: var(--space-2);
+  font-size: var(--font-2);
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.asOf {
+  margin-top: var(--space-1);
+  font-size: var(--font-1);
+  color: var(--text-3);
+}
+
+.text {
+  font-size: var(--font-3);
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.share {
+  margin-bottom: var(--space-2);
+}
+
+.child {
+  margin: var(--space-1) 0 0 var(--space-4);
+}
+
+.shareHead {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--font-3);
+  color: var(--text);
+}
+
+.shareValue {
+  flex-shrink: 0;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.bar {
+  height: 6px;
+  margin-top: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--raised-strong);
+  overflow: hidden;
+}
+
+.fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+
+.childBar {
+  height: 4px;
+}
+
+.lockedBox {
+  padding: var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-2);
+  font-size: var(--font-3);
+  color: var(--text-2);
+}

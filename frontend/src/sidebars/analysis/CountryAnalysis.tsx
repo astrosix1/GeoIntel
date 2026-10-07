@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useCountryProfileQuery } from '../../state/queries';
+import CountryDetail from './CountryDetail';
 import eventStyles from './EventAnalysis.module.css';
 import styles from './CountryAnalysis.module.css';
 
@@ -74,6 +75,8 @@ export default function CountryAnalysis({ countryCode }: { countryCode: string }
           Source: {demographics_source}
         </div>
       </div>
+
+      <CountryDetail countryCode={countryCode} />
 
       <div className={eventStyles.section}>
         <div className={eventStyles.sectionTitle}>Geography &amp; Infrastructure</div>

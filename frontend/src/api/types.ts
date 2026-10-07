@@ -235,6 +235,108 @@ export interface CountryNarrative {
   world_contribution: string | null;
 }
 
+export interface ShareItem {
+  name: string;
+  percent: number;
+  under: boolean;
+  estimated_count?: number;
+  children?: ShareItem[];
+}
+export interface Shares {
+  items: ShareItem[];
+  as_of: number | null;
+  note: string | null;
+}
+export interface Leader {
+  text: string;
+  since: string | null;
+  summary: string;
+}
+export interface AgeBand {
+  band: string;
+  percent: number;
+  male: number | null;
+  female: number | null;
+  count: number | null;
+  as_of: number | null;
+}
+export interface Rate {
+  value: number;
+  as_of: number | null;
+}
+export interface ItemList {
+  items: string[];
+  as_of: number | null;
+}
+export interface MigrationOrigin {
+  country_code: string;
+  count: number;
+  percent_of_migrants: number | null;
+}
+
+// GET /api/countries/<code>/detail (premium). Every group may be missing; the UI says so instead of filling it in.
+export interface CountryDetail {
+  country_code: string;
+  sources: string[];
+  population: number | null;
+  population_year: number | null;
+  government?: {
+    type: string | null;
+    capital: string | null;
+    chief_of_state: Leader | null;
+    head_of_government: Leader | null;
+    cabinet: string | null;
+    election_process: string | null;
+    constitution: { history: string | null; amendment: string | null };
+    legislative: string | null;
+    judicial: string | null;
+    parties: string | null;
+    legal_system: string | null;
+    suffrage: string | null;
+  };
+  people?: {
+    religions: Shares | null;
+    ethnic_groups: Shares | null;
+    ethnic_groups_text: string | null;
+    age_structure: AgeBand[] | null;
+    birth_rate: Rate | null;
+    death_rate: Rate | null;
+    net_migration_rate: Rate | null;
+    median_age: string | null;
+    languages: string | null;
+  };
+  economy?: {
+    exports: ItemList | null;
+    imports: ItemList | null;
+    export_partners: Shares | null;
+    import_partners: Shares | null;
+    natural_resources: ItemList | null;
+  };
+  infrastructure?: {
+    airports: string | null;
+    ports: string | null;
+    key_ports: string | null;
+    railways: string | null;
+    roadways: string | null;
+    electricity_access: string | null;
+  };
+  security?: {
+    terrorist_groups: string | null;
+    refugees: string | null;
+    idps: string | null;
+    military_branches: string | null;
+  };
+  migration?: {
+    year: number;
+    source: string;
+    migrant_stock: number;
+    migrant_stock_year: number;
+    share_of_population: number | null;
+    origins: MigrationOrigin[];
+    other_count: number | null;
+  };
+}
+
 export interface CountryProfile {
   country_code: string;
   demographics: CountryDemographics;

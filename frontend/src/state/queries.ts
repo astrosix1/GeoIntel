@@ -29,6 +29,7 @@ import {
   fetchCrises,
   fetchCrisisBriefing,
   fetchCrisisDetail,
+  fetchCountryDetail,
   fetchCountryProfile,
   fetchCrisisScenarios,
   fetchMe,
@@ -240,6 +241,18 @@ export function useCountryProfileQuery(countryCode: string | undefined) {
     queryFn: () => fetchCountryProfile(countryCode as string),
     enabled: !!countryCode,
     staleTime: 6 * 60 * 60 * 1000, // matches the backend's own 6h cache TTL
+  });
+}
+
+// Premium government / people / migration facts. Only fetched once the viewer is unlocked; the server enforces premium.
+export function useCountryDetailQuery(countryCode: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ['country-detail', countryCode],
+    queryFn: () => fetchCountryDetail(countryCode as string),
+    enabled: !!countryCode && enabled,
+    retry: false,
+    staleTime: 24 * 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 }
 

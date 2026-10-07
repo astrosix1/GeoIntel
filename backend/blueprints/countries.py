@@ -9,7 +9,9 @@ import logging
 
 from flask import Blueprint, jsonify
 
+from services.country_detail import get_country_detail
 from services.country_profile import get_country_profile
+from services.gating import require_premium_feature
 
 logger = logging.getLogger(__name__)
 
@@ -30,4 +32,20 @@ def get_country(country_code):
         return jsonify(profile)
     except Exception as e:
         logger.error(f"Error fetching country profile for {country_code}: {e}")
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
+
+
+@countries_bp.route('/<country_code>/detail', methods=['GET'])
+@require_premium_feature
+def get_country_more(country_code):
+    """Premium: government, people, migration, economy, infrastructure and security for a country."""
+    try:
+        if not country_code or len(country_code) > 3:
+            return jsonify({'error': 'country_code must be a short ISO country code'}), 400
+        detail = get_country_detail(country_code)
+        if not detail:
+            return jsonify({'error': 'No detail is available for this country'}), 404
+        return jsonify(detail)
+    except Exception as e:
+        logger.error(f"Error fetching country detail for {country_code}: {e}")
         return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
