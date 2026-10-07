@@ -84,6 +84,22 @@ Decisions:
 - **Bug found while checking in the browser:** the engine's helper points (a shape's corners, closing and snapping points) carry the shape's mode name, so they were being counted as shapes and labelled with coordinates. They are now excluded by their flags, which also fixes the shape count behind "Clear everything".
 - **Checked in the browser:** an angle drawn with real clicks at 1000 px wide (legs "2,746 km, 129 degrees SE" and "2,454 km, 075 degrees E", angle 122.7 degrees at the corner), all three switches and the units control, preferences persisting, and the options panel on a phone (moved below the strip after the first look); no console errors. Not yet checked by hand: the options on polygons and circles, and the Light theme.
 
+## D2 as built (styling, names, text, arrows, duplicate)
+
+- **Per-shape look, kept on the shape.** Colour (six: blue, red, green, purple, black, white), line or outline width (thin, medium, thick), area fill (none, light, medium) and line pattern (solid, dashed) are stored in the shape's own properties (`globe/draw/style.ts`), so they are copied by Duplicate and will be saved with the drawing in D4. The engine asks for each shape's colour and width as it draws, so a restyle shows at once. Dashes apply to lines, arrows and angles (the library has no dashed area outline). The amber used for the selected shape is deliberately not in the palette.
+- **Shape panel** (opens beside the tool strip when a shape is selected): name, note, colour, width, fill, pattern, Duplicate and Delete. The name and note commit when the field is left or Enter is pressed, so one edit is one undo step, not one per keystroke. Text is capped (80 and 2,000 characters), stripped of control characters, and only ever drawn as text, never as HTML.
+- **Name on the map.** A shape's name is drawn at the shape, above its measurements; the note stays in the panel.
+- **Text tool.** Click where the words go and the panel opens with the field focused; the words are drawn on the map in the shape's colour (white words get a dark outline). The anchor point is invisible except while it is selected.
+- **Arrow tool.** A two-click line with an arrowhead at the tip that follows the great-circle bearing of the last segment and takes the arrow's colour (a coloured map symbol, `layers.ts`). It shows its length and bearing like a single line.
+- **Duplicate** copies the selected shape about 30 pixels over and down at any zoom, keeps its style and name, and selects the copy.
+- **Pure and tested:** the style readers and cleaners (valid values only, defaults, palette, text limits, markup treated as text), the arrowhead placement and bearing, and the new label kinds (names, Text tool words with colour). 232 frontend tests in all (17 new).
+- **Found and fixed while checking in the browser:**
+  - The library styles each shape by the mode it was drawn in, so styling a separate "hidden" mode did nothing; the leftover corner dots on finished shapes are gone by not drawing corner dots at all (each click still shows in the line).
+  - Duplicate was refused for having too many decimal places; moved copies are now rounded to the engine's precision.
+  - A new text label lost its selection because the app re-applied the Select tool; asking the engine for the tool it is already in now does nothing.
+  - The first arrowhead was too small to read; it is now sized to match the line.
+- **Checked in the browser:** an arrow restyled (red, dashed, named "Advance north") with its head and "956 mi" label; a green rectangle duplicated, each copy with area and perimeter; a red "Staging area" text label; no console errors. Not yet checked by hand: the panel on a phone, the Light theme, circle duplicate, and dragging text labels.
+
 ## Risks and how they are handled
 
 - **`terra-draw` has no text tool and no three-point angle mode.** Text labels are drawn as map symbols from the feature data rather than as drawn shapes, and the angle tool is a small custom mode. Both are part of D1 and D2 and tested before the stages build on them. If the custom mode proves awkward, the angle is computed and shown on a normal line instead (the fallback keeps the feature).

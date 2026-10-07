@@ -197,13 +197,15 @@ export function formatArea(squareMetres: number, units: UnitSystem): string {
 
 // ---- Map labels ------------------------------------------------------------------------------------------------------------------
 
-export type LabelKind = 'total' | 'segment' | 'angle' | 'point';
+// name: the user's own name for a shape; text: a text label drawn with the Text tool (the whole shape is the text).
+export type LabelKind = 'total' | 'segment' | 'angle' | 'point' | 'name' | 'text';
 
 export interface MapLabel {
   id: string;
   kind: LabelKind;
   position: Position;
   text: string;
+  color?: string; // the shape's colour, used for the Text tool's text
 }
 
 export interface LabelOptions {
@@ -255,6 +257,26 @@ export function labelsFor(features: LabelFeature[], options: LabelOptions): MapL
     const id = String(feature.id ?? '');
     const mode = feature.properties?.mode;
     const type = feature.geometry.type;
+
+    const name = typeof feature.properties?.label === 'string' ? feature.properties.label : '';
+    const color = typeof feature.properties?.color === 'string' ? feature.properties.color : undefined;
+
+    if (type === 'Point' && mode === 'text') {
+      // The Text tool: the label is the whole shape, so there are no coordinates and no separate name.
+      labels.push({ id, kind: 'text', position: feature.geometry.coordinates as Position, text: name || 'Text', color });
+      continue;
+    }
+    if (name) {
+      const anchor =
+        type === 'Point'
+          ? (feature.geometry.coordinates as Position)
+          : type === 'LineString'
+            ? pointAlong(feature.geometry.coordinates as Position[])
+            : type === 'Polygon'
+              ? ringCenter((feature.geometry.coordinates as Position[][])[0] ?? [])
+              : null;
+      if (anchor) labels.push({ id, kind: 'name', position: anchor, text: name });
+    }
 
     if (type === 'Point') {
       const at = feature.geometry.coordinates as Position;

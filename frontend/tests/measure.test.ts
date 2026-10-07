@@ -257,3 +257,43 @@ describe('labels for drawn shapes', () => {
     assert.equal(labels.length, 1);
   });
 });
+
+describe('names and text on shapes', () => {
+  const plain = { units: 'metric' as const, segments: false, angles: false, bearings: false };
+
+  it('adds the shape name at the shape, alongside its measurements', () => {
+    const labels = labelsFor(
+      [{ id: 'a', properties: { mode: 'linestring', label: 'Evacuation route' }, geometry: { type: 'LineString', coordinates: [[0, 0], [1, 0]] } }],
+      plain,
+    );
+    assert.deepEqual(labels.map((l) => l.kind).sort(), ['name', 'total']);
+    assert.equal(labels.find((l) => l.kind === 'name')?.text, 'Evacuation route');
+  });
+
+  it('names an area and a point too', () => {
+    const labels = labelsFor(
+      [
+        { id: 'p', properties: { mode: 'polygon', label: 'Zone A' }, geometry: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] } },
+        { id: 'q', properties: { mode: 'point', label: 'Checkpoint' }, geometry: { type: 'Point', coordinates: [5, 5] } },
+      ],
+      plain,
+    );
+    assert.deepEqual(labels.filter((l) => l.kind === 'name').map((l) => l.text).sort(), ['Checkpoint', 'Zone A']);
+  });
+
+  it('draws the Text tool as its text alone, in the shape colour, with no coordinates', () => {
+    const labels = labelsFor([{ id: 't', properties: { mode: 'text', label: 'Staging area', color: '#ef4444' }, geometry: { type: 'Point', coordinates: [5, 5] } }], plain);
+    assert.equal(labels.length, 1);
+    assert.deepEqual([labels[0].kind, labels[0].text, labels[0].color], ['text', 'Staging area', '#ef4444']);
+  });
+
+  it('gives the Text tool a placeholder until it has words', () => {
+    const labels = labelsFor([{ id: 't', properties: { mode: 'text' }, geometry: { type: 'Point', coordinates: [5, 5] } }], plain);
+    assert.equal(labels[0].text, 'Text');
+  });
+
+  it('ignores a name that is not text', () => {
+    const labels = labelsFor([{ id: 'a', properties: { mode: 'linestring', label: 7 }, geometry: { type: 'LineString', coordinates: [[0, 0], [1, 0]] } }], plain);
+    assert.deepEqual(labels.map((l) => l.kind), ['total']);
+  });
+});

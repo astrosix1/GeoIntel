@@ -1,0 +1,87 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  width: 260px;
+  padding: var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-2);
+  background: var(--panel);
+  box-shadow: var(--shadow-pop);
+  color: var(--text);
+  font-size: var(--font-3);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.fieldLabel {
+  color: var(--text-3);
+  font-size: var(--font-2);
+}
+
+.input,
+.textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--edge-control);
+  border-radius: var(--radius-1);
+  background: var(--raised);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-3);
+  line-height: var(--leading);
+}
+
+.textarea {
+  resize: vertical;
+}
+
+.swatches {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.swatch {
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 2px solid var(--line-strong);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.swatchOn {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--accent);
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.hint {
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--font-1);
+}
+
+@media (pointer: coarse) {
+  .swatch {
+    width: 36px;
+    height: 36px;
+  }
+}
+
+@media (max-width: 768px) {
+  .panel {
+    width: auto;
+  }
+}

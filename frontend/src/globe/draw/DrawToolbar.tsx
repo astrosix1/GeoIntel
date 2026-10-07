@@ -6,12 +6,15 @@ import Segmented from '../../ui/Segmented';
 import { drawController } from './controller';
 import type { DrawTool } from './engine';
 import type { DrawUnits } from './prefs';
+import ShapePanel from './ShapePanel';
 import styles from './DrawToolbar.module.css';
 
 const TOOLS: { tool: DrawTool; icon: IconName; label: string; hint: string }[] = [
   { tool: 'select', icon: 'pointer', label: 'Select and edit', hint: 'Click a shape to select it; drag to move it or its corners.' },
   { tool: 'point', icon: 'dot', label: 'Point (shows its coordinates)', hint: 'Click to drop a point.' },
+  { tool: 'text', icon: 'text', label: 'Text (add words to the map)', hint: 'Click where the words go, then type them in the panel.' },
   { tool: 'linestring', icon: 'line', label: 'Line (measure a distance)', hint: 'Click to add corners; click the last corner again, or press Enter, to finish.' },
+  { tool: 'arrow', icon: 'arrow', label: 'Arrow (shows its length and bearing)', hint: 'Click the start, then click the tip.' },
   { tool: 'angle', icon: 'angle', label: 'Angle (measure an angle)', hint: 'Click the end of one leg, then the corner, then the end of the other leg.' },
   { tool: 'polygon', icon: 'polygon', label: 'Area (measure an area)', hint: 'Click to add corners; click the first corner, or press Enter, to finish.' },
   { tool: 'rectangle', icon: 'rectangle', label: 'Rectangle', hint: 'Click and drag, or click two opposite corners.' },
@@ -98,7 +101,10 @@ export default function DrawToolbar() {
       />
       <IconButton icon="check" label="Done: hide the drawing tools (the drawing stays on the map)" onClick={() => setOpen(false)} />
       {active && <div className={styles.status}>{active.hint}</div>}
-      {optionsOpen && <MeasureOptions />}
+      <div className={styles.side}>
+        <ShapePanel />
+        {optionsOpen && <MeasureOptions />}
+      </div>
     </div>
   );
 }

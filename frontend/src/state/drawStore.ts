@@ -12,6 +12,9 @@ interface DrawState {
   canRedo: boolean;
   selectedId: string | null;
   shapeCount: number;
+  // Goes up on every change to the drawing, so panels that show the selected shape know to read it again.
+  revision: number;
+  bumpRevision: () => void;
   // What the tool measures and shows (remembered in this browser).
   prefs: DrawPrefs;
   setPrefs: (change: Partial<DrawPrefs>) => void;
@@ -29,6 +32,8 @@ export const useDrawStore = create<DrawState>((set) => ({
   canRedo: false,
   selectedId: null,
   shapeCount: 0,
+  revision: 0,
+  bumpRevision: () => set((state) => ({ revision: state.revision + 1 })),
   prefs: loadDrawPrefs(),
   setPrefs: (change) =>
     set((state) => {
