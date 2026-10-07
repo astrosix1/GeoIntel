@@ -224,3 +224,10 @@ Still open (small, can be decided when we reach them): the exact light-theme val
 ## Out of scope
 
 Changing what any feature does, new features beyond the Settings panel and the flat map option, a rebrand of the product name, a bundled typeface, account-synced settings, and changes to the backend or data.
+
+## Follow-up features (after the redesign)
+
+- **Radar over satellite:** the weather radar always draws above the satellite imagery and the relief, whichever was switched on first (`globe/baseLayers.ts` slots the imagery below the first radar frame).
+- **Radar timeline** (`globe/RadarBar.tsx`, Weather mode): play or pause, a slider over the radar frames of the past two hours, a readout ("Radar 8:10 PM, 120 min earlier"), and a Latest button. It shares the look of the Time Zone time bar. Dragging pauses the loop. Phones and low-power devices still load only the latest frame, and the bar says so. The "Play the radar loop" switch left the Layers menu (the bar has it) and the radar time left the strip.
+- **More Info tab** on an event: the location note (including "statement or talks: the pin shows where the story is set") and "First reported at ..." moved out of the header into a third tab beside Analysis and Comments.
+- **New categories** (`lib/topics.ts`): Shootings, Protests, Elections and Crime join the By category list, with counts. The feed has no such types, so they are read from the headline with narrow whole-word rules (a missile shoot-down is not a shooting; a market rally is not a protest) and an event can be in several. Checked on 10,000 live events, 3-day window: Shootings 348, Protests 1,067, Elections 277, Crime 1,164 matches by headline. The feed's own "civil unrest" type is not used for Protests: about two thirds of those events were not protests, so it stays as its own looser category. The same filter drives the list and the globe pins.

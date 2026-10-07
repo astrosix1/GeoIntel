@@ -1,5 +1,6 @@
 import type { CrisisSummary, Storm } from '../api/types';
 import type { EventsTab } from '../state/uiStore';
+import { isTopic, topicsOf } from './topics.ts';
 
 // The All / Major / Categories filter, applied identically to the left-hand
 // list and to what the globe draws, in both Events and Weather mode. Keeping
@@ -17,7 +18,10 @@ export function applyCrisisFilter(
 ): CrisisSummary[] {
   let result = list;
   if (tab === 'major') result = result.filter((c) => c.severity >= MAJOR_SEVERITY);
-  else if (tab === 'categories' && category) result = result.filter((c) => c.type === category);
+  else if (tab === 'categories' && category) {
+    // A category is either one of the feed's own types or one of the headline topics (Shootings, Protests, ...).
+    result = isTopic(category) ? result.filter((c) => topicsOf(c).includes(category)) : result.filter((c) => c.type === category);
+  }
   if (nightIds) result = result.filter((c) => nightIds.has(c.id));
   return result;
 }

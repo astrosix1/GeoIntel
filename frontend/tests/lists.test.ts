@@ -1,7 +1,7 @@
 // Run with: npm test
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { defaultDirection, DEFAULT_CRISIS_SORT, sortCrises } from '../src/lib/filters.ts';
+import { applyCrisisFilter, defaultDirection, DEFAULT_CRISIS_SORT, sortCrises } from '../src/lib/filters.ts';
 import { shortAge } from '../src/lib/time.ts';
 import { severityTone } from '../src/globe/severity.ts';
 
@@ -85,5 +85,27 @@ describe('severity badge tone', () => {
   it('stays in range for odd values', () => {
     assert.equal(severityTone(-5), 'sev1');
     assert.equal(severityTone(250), 'sev5');
+  });
+});
+
+describe('category filter with headline topics', () => {
+  const make = (id: string, title: string, type: string) =>
+    ({ id, title, type, country: 'X', severity: 50, scope: 'global', date: '2026-10-06T00:00:00', lat: 0, lon: 0, source_url: '' }) as never;
+  const events = [
+    make('1', 'Gunman opens fire at a market', 'conflict'),
+    make('2', 'Thousands protest against the law', 'civil_unrest'),
+    make('3', 'Ministers meet to discuss trade', 'diplomatic'),
+    make('4', 'Parliament meets', 'election'),
+  ];
+
+  it('a topic category matches on the headline, a feed type on the type', () => {
+    assert.deepEqual(applyCrisisFilter(events, 'categories', 'shooting').map((c: { id: string }) => c.id), ['1']);
+    assert.deepEqual(applyCrisisFilter(events, 'categories', 'protest').map((c: { id: string }) => c.id), ['2']);
+    assert.deepEqual(applyCrisisFilter(events, 'categories', 'election').map((c: { id: string }) => c.id), ['4']);
+    assert.deepEqual(applyCrisisFilter(events, 'categories', 'diplomatic').map((c: { id: string }) => c.id), ['3']);
+  });
+
+  it('with no category chosen, nothing is filtered out', () => {
+    assert.equal(applyCrisisFilter(events, 'categories', null).length, 4);
   });
 });

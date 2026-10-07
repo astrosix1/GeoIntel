@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import type { MutableRefObject } from 'react';
 import type * as maplibregl from 'maplibre-gl';
 import { isLiteDevice } from '../lite';
@@ -27,6 +27,9 @@ export function useRadar(mapRef: MutableRefObject<maplibregl.Map | null>, mapRea
   const radarOn = useUiStore((s) => s.radarOn);
   const playing = useUiStore((s) => s.radarPlaying);
   const setRadarTime = useUiStore((s) => s.setRadarTime);
+  const cursor = useUiStore((s) => s.radarCursor);
+  const setCursor = useUiStore((s) => s.setRadarCursor);
+  const setFrameTimes = useUiStore((s) => s.setRadarFrameTimes);
 
   const enabled = activeMode === 'weather' && radarOn;
   const { data } = useRadarFramesQuery(enabled);
@@ -42,24 +45,29 @@ export function useRadar(mapRef: MutableRefObject<maplibregl.Map | null>, mapRea
     return data.frames.filter((_, i) => (last - i) % 2 === 0);
   }, [data, animate]);
 
-  // Starts past the end so the first frame shown is the newest; clamped below.
-  const [cursor, setCursor] = useState(Number.MAX_SAFE_INTEGER);
+  // The cursor starts past the end so the first frame shown is the newest; it is clamped here.
   const shown = Math.min(cursor, Math.max(frames.length - 1, 0));
 
   useEffect(() => {
     if (!enabled || !animate || !playing || frames.length < 2) return;
-    const id = window.setInterval(
-      () => setCursor((c) => (Math.min(c, frames.length - 1) + 1) % frames.length),
-      FRAME_MS,
-    );
+    const id = window.setInterval(() => {
+      const c = useUiStore.getState().radarCursor;
+      setCursor((Math.min(c, frames.length - 1) + 1) % frames.length);
+    }, FRAME_MS);
     return () => window.clearInterval(id);
-  }, [enabled, animate, playing, frames.length]);
+  }, [enabled, animate, playing, frames.length, setCursor]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
     syncRadar(map, enabled && data && frames.length ? { host: data.host, frames, index: shown } : null);
   }, [mapRef, mapReady, enabled, data, frames, shown]);
+
+  // The timeline needs the times of the frames in use.
+  const frameTimes = useMemo(() => (enabled ? frames.map((f) => f.time) : []), [enabled, frames]);
+  useEffect(() => {
+    setFrameTimes(frameTimes);
+  }, [frameTimes, setFrameTimes]);
 
   const currentTime = enabled && frames[shown] ? frames[shown].time : null;
   useEffect(() => {

@@ -1,5 +1,4 @@
 import PremiumGate from '../components/PremiumGate';
-import { radarCanAnimate } from '../globe/useRadar';
 import { useUiStore } from '../state/uiStore';
 import { Popover } from '../ui/Overlay';
 import styles from './Menus.module.css';
@@ -24,8 +23,6 @@ export default function LayersMenu() {
   const setRelief = useUiStore((s) => s.setRelief);
   const radarOn = useUiStore((s) => s.radarOn);
   const setRadarOn = useUiStore((s) => s.setRadarOn);
-  const radarPlaying = useUiStore((s) => s.radarPlaying);
-  const setRadarPlaying = useUiStore((s) => s.setRadarPlaying);
   const nightOn = useUiStore((s) => s.nightOn);
   const setNightOn = useUiStore((s) => s.setNightOn);
   const labelsOn = useUiStore((s) => s.zoneLabelsOn);
@@ -47,7 +44,6 @@ export default function LayersMenu() {
           <div>
             <span className={styles.groupTitle}>Weather</span>
             <SwitchRow label="Radar (past 2 hours)" checked={radarOn} onChange={setRadarOn} />
-            {radarOn && radarCanAnimate() && <SwitchRow label="Play the radar loop" checked={radarPlaying} onChange={setRadarPlaying} />}
           </div>
         )}
         {mode === 'timezone' && (

@@ -33,7 +33,6 @@ function WeatherStrip() {
   const setTab = useUiStore((s) => s.setWeatherTab);
   const setCategory = useUiStore((s) => s.setWeatherCategory);
   const radarOn = useUiStore((s) => s.radarOn);
-  const radarTime = useUiStore((s) => s.radarTime);
   const notice = useUiStore((s) => s.weatherNotice);
   const setNotice = useUiStore((s) => s.setWeatherNotice);
   const { data, isLoading, isError, refetch } = useStormsQuery(true);
@@ -66,11 +65,6 @@ function WeatherStrip() {
         })}
       </div>
       {radarOn && radarError && <span className={styles.noteWarn}>Radar isn&apos;t available right now.</span>}
-      {radarOn && !radarError && radarTime && (
-        <span className={styles.note}>
-          Radar {new Date(radarTime * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · past 2 hours
-        </span>
-      )}
       {notice && (
         <span className={styles.noteWarn}>
           {notice}{' '}

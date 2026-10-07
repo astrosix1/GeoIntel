@@ -7,6 +7,7 @@ import { useStormsQuery, useVisibleCrises } from '../state/queries';
 import { useReportedAtNight } from '../state/useZoneIndex';
 import { hazardIconName, HAZARD_TYPES } from '../globe/hazards';
 import { labelForSeverity, severityTone } from '../globe/severity';
+import { TOPICS, TYPES_COVERED_BY_TOPICS, topicsOf, typeLabel } from '../lib/topics';
 import { applyCrisisFilter, applyHazardFilter, defaultDirection, sortCrises } from '../lib/filters';
 import type { CrisisSortKey } from '../lib/filters';
 import { parseUtc } from '../lib/eventTime';
@@ -63,8 +64,23 @@ function EventsList() {
   // the backend actually classified and bounded.
   const { data: crises, isLoading, isError, refetch } = useVisibleCrises(scope, timeRange);
 
-  // Real distinct `type` values present in the fetched data, not a hardcoded list.
-  const categories = useMemo(() => Array.from(new Set((crises ?? []).map((c) => c.type).filter(Boolean))).sort(), [crises]);
+  // The categories to offer, with how many events each has: the headline topics first (only those with events), then the
+  // feed's own types present in the data. Types a topic already covers (civil unrest, election) are not repeated.
+  const categories = useMemo(() => {
+    const typeCounts = new Map<string, number>();
+    const topicCounts = new Map<string, number>();
+    for (const c of crises ?? []) {
+      if (c.type) typeCounts.set(c.type, (typeCounts.get(c.type) ?? 0) + 1);
+      for (const topic of topicsOf(c)) topicCounts.set(topic, (topicCounts.get(topic) ?? 0) + 1);
+    }
+    return [
+      ...TOPICS.filter((t) => topicCounts.has(t.value)).map((t) => ({ value: t.value as string, label: t.label, count: topicCounts.get(t.value) ?? 0 })),
+      ...[...typeCounts.keys()]
+        .filter((type) => !TYPES_COVERED_BY_TOPICS.has(type))
+        .sort()
+        .map((type) => ({ value: type, label: typeLabel(type), count: typeCounts.get(type) ?? 0 })),
+    ];
+  }, [crises]);
 
   // The same filter the globe applies, so list and pins always agree. Sorting only changes the list.
   const night = useReportedAtNight(crises);
@@ -113,8 +129,13 @@ function EventsList() {
                 <div className={styles.chips}>
                   {categories.length === 0 && <span className={styles.hint}>No categories yet.</span>}
                   {categories.map((category) => (
-                    <Chip key={category} pressed={activeCategory === category} onClick={() => setActiveCategory(activeCategory === category ? null : category)}>
-                      {category}
+                    <Chip
+                      key={category.value}
+                      pressed={activeCategory === category.value}
+                      count={category.count}
+                      onClick={() => setActiveCategory(activeCategory === category.value ? null : category.value)}
+                    >
+                      {category.label}
                     </Chip>
                   ))}
                 </div>

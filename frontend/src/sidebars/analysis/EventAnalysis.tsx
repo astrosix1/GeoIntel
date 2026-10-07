@@ -49,7 +49,7 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
   const refine = useRefineLocationMutation();
   const refineAsked = useRef(false);
   const [imageFailed, setImageFailed] = useState(false);
-  const [tab, setTab] = useState<'analysis' | 'comments'>('analysis');
+  const [tab, setTab] = useState<'analysis' | 'info' | 'comments'>('analysis');
 
   // Prefer the real image extracted from the crisis's own source article
   // (og:image) over the generic Wikipedia illustrative image — it's the
@@ -112,15 +112,6 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
         <Badge>{new Date(crisis.date).toLocaleDateString()}</Badge>
         <SaveButton crisisId={crisis.id} />
       </div>
-      {locationNote && <div className={styles.locationNote}>{locationNote}</div>}
-      {reported && reportZone && (
-        <div className={styles.locationNote}>
-          First reported at {reported.time} local time{reported.night ? ' (night there)' : ''}
-          {reported.approximate ? ', approximate: the pin is only country or region level' : ''} &middot; {cityName(reportZone)} time. This is when the report
-          appeared, not necessarily when it happened.
-        </div>
-      )}
-
       <div className={styles.tabs}>
         <Tabs
           label="Event panel"
@@ -128,12 +119,30 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
           onChange={setTab}
           tabs={[
             { id: 'analysis', label: 'Analysis' },
+            { id: 'info', label: 'More Info' },
             { id: 'comments', label: 'Comments' },
           ]}
         />
       </div>
 
       {tab === 'comments' && <Comments crisisId={crisis.id} />}
+
+      {tab === 'info' && (
+        <>
+          <Section title="Location">
+            <div className={styles.briefingText}>{locationNote ?? 'No extra detail about this pin.'}</div>
+          </Section>
+          {reported && reportZone && (
+            <Section title="First reported">
+              <div className={styles.briefingText}>
+                {reported.time} local time{reported.night ? ' (night there)' : ''}
+                {reported.approximate ? ', approximate: the pin is only country or region level' : ''} &middot; {cityName(reportZone)} time. This is when
+                the report appeared, not necessarily when it happened.
+              </div>
+            </Section>
+          )}
+        </>
+      )}
 
       {tab === 'analysis' && (
         <>

@@ -40,6 +40,12 @@ function firstLayerId(map: maplibregl.Map, prefix: string): string | undefined {
   return map.getStyle().layers.find((layer) => layer.id.startsWith(prefix))?.id;
 }
 
+// Weather radar (radarLayer.ts) always draws above the imagery and the relief, whichever was switched on first, so the
+// imagery and relief are slotted in below the first radar frame when there is one, and just below the borders when not.
+function belowRadarOr(map: maplibregl.Map, fallback: string | undefined): string | undefined {
+  return firstLayerId(map, 'radar-layer-') ?? fallback;
+}
+
 function removeLayerAndSource(map: maplibregl.Map, layerId: string | null, sourceId: string): void {
   if (layerId && map.getLayer(layerId)) map.removeLayer(layerId);
   if (map.getSource(sourceId)) map.removeSource(sourceId);
@@ -55,7 +61,7 @@ function removeLayerAndSource(map: maplibregl.Map, layerId: string | null, sourc
 // the imagery instead of being hidden by it). Crisis pins are added last by
 // crisisLayers.ts, so they always stay above everything here.
 export function syncBaseLayers(map: maplibregl.Map, want: BaseLayerState): void {
-  const boundaryAnchor = firstLayerId(map, 'boundary_');
+  const boundaryAnchor = belowRadarOr(map, firstLayerId(map, 'boundary_'));
 
   if (want.satellite) {
     if (!map.getSource(SATELLITE_SOURCE_ID)) {
@@ -70,6 +76,9 @@ export function syncBaseLayers(map: maplibregl.Map, want: BaseLayerState): void 
     }
     if (!map.getLayer(SATELLITE_LAYER_ID)) {
       map.addLayer({ id: SATELLITE_LAYER_ID, type: 'raster', source: SATELLITE_SOURCE_ID }, boundaryAnchor);
+    } else if (firstLayerId(map, 'radar-layer-')) {
+      // Radar was added after the imagery, or the imagery is redrawn: keep the imagery under it.
+      map.moveLayer(SATELLITE_LAYER_ID, boundaryAnchor);
     }
   } else {
     removeLayerAndSource(map, SATELLITE_LAYER_ID, SATELLITE_SOURCE_ID);

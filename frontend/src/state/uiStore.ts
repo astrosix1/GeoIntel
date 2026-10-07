@@ -121,6 +121,12 @@ interface UiState {
   radarOn: boolean;
   radarPlaying: boolean;
   radarTime: number | null;
+  // Which radar frame is showing (an index into the frames in use; a number past the end means the newest) and the
+  // times of those frames, for the radar timeline.
+  radarCursor: number;
+  radarFrameTimes: number[];
+  setRadarCursor: (cursor: number) => void;
+  setRadarFrameTimes: (times: number[]) => void;
   setRadarOn: (on: boolean) => void;
   setRadarPlaying: (playing: boolean) => void;
   setRadarTime: (time: number | null) => void;
@@ -237,6 +243,10 @@ export const useUiStore = create<UiState>((set) => ({
   radarOn: true,
   radarPlaying: true,
   radarTime: null,
+  radarCursor: Number.MAX_SAFE_INTEGER,
+  radarFrameTimes: [],
+  setRadarCursor: (cursor) => set({ radarCursor: cursor }),
+  setRadarFrameTimes: (times) => set({ radarFrameTimes: times }),
   setRadarOn: (on) => set({ radarOn: on }),
   setRadarPlaying: (playing) => set({ radarPlaying: playing }),
   setRadarTime: (time) => set({ radarTime: time }),
