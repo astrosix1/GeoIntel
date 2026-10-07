@@ -26,7 +26,8 @@ import Icon from '../ui/Icon';
 import { hazardIconName } from './hazards';
 import { useDraw } from './draw/useDraw';
 import { useRadar } from './useRadar';
-import { isDrawingOpen } from '../state/drawStore';
+import { isDrawingOpen, useDrawStore } from '../state/drawStore';
+import { applyInteraction } from './viewLock';
 import { applyCrisisFilter, applyHazardFilter } from '../lib/filters';
 import { clearHazardGeometry, setHazardGeometry } from './hazardGeometry';
 import { useReportedAtNight } from '../state/useZoneIndex';
@@ -235,7 +236,7 @@ export default function Globe() {
       if ((e as { originalEvent?: unknown }).originalEvent) userZoomedRef.current = true;
     });
     map.once('style.load', () => {
-      applyViewLimits(map, mapViewRef.current);
+      applyInteraction(map, mapViewRef.current, useDrawStore.getState().viewLocked);
       fit();
     });
     const resizeObserver = new ResizeObserver(() => {
@@ -261,12 +262,32 @@ export default function Globe() {
     };
   }, []);
 
+  // The view lock (the lock button on the drawing tools): nothing moves the map until it is unlocked.
+  const viewLocked = useDrawStore((s) => s.viewLocked);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    document.documentElement.classList.toggle('view-locked', viewLocked);
+    applyInteraction(map, mapViewRef.current, viewLocked);
+    if (!viewLocked) return;
+    // The drawing engine switches map dragging back on when a shape has been dragged, so the lock is put back after any release.
+    const again = () => {
+      window.setTimeout(() => applyInteraction(map, mapViewRef.current, true), 0);
+    };
+    window.addEventListener('pointerup', again, true);
+    window.addEventListener('pointercancel', again, true);
+    return () => {
+      window.removeEventListener('pointerup', again, true);
+      window.removeEventListener('pointercancel', again, true);
+    };
+  }, [viewLocked, mapReady]);
+
   // Switching between Globe and Flat in Settings: change the projection, refit the whole view, and show or hide the far-side pins.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
     map.setProjection({ type: mapView === 'flat' ? 'mercator' : 'globe' });
-    applyViewLimits(map, mapView);
+    applyInteraction(map, mapView, useDrawStore.getState().viewLocked);
     userZoomedRef.current = false;
     if (mapView === 'flat') fitFlat(map);
     else fitGlobe(map);
@@ -599,19 +620,4 @@ function updateMarkerVisibility(map: maplibregl.Map, markers: maplibregl.Marker[
     const near = isOnNearHemisphere(centerPoint, [lngLat.lng, lngLat.lat]);
     marker.getElement().style.display = near ? '' : 'none';
   });
-}
-
-// The flat map has no rotation or tilt to lose track of; the globe keeps both.
-function applyViewLimits(map: maplibregl.Map, view: 'globe' | 'flat') {
-  if (view === 'flat') {
-    map.setPitch(0);
-    map.setBearing(0);
-    map.dragRotate.disable();
-    map.touchZoomRotate.disableRotation();
-    map.touchPitch.disable();
-  } else {
-    map.dragRotate.enable();
-    map.touchZoomRotate.enableRotation();
-    map.touchPitch.enable();
-  }
 }

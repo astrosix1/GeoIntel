@@ -3,7 +3,9 @@ import { useDrawStore } from '../../state/drawStore';
 import Button from '../../ui/Button';
 import Segmented from '../../ui/Segmented';
 import { drawController } from './controller';
-import { colorOf, dashOf, FILLS, fillOf, MAX_LABEL_LENGTH, MAX_NOTE_LENGTH, PALETTE, WIDTHS, widthOf } from './style';
+import {
+  colorOf, dashOf, FILLS, fillOf, HIGHLIGHT_COLORS, HIGHLIGHT_WIDTHS, highlightColorOf, highlightWidthOf, MAX_LABEL_LENGTH, MAX_NOTE_LENGTH, PALETTE, WIDTHS, widthOf,
+} from './style';
 import type { Dash } from './style';
 import styles from './ShapePanel.module.css';
 
@@ -61,7 +63,12 @@ export default function ShapePanel() {
   const geometry = feature.geometry.type;
   const isText = mode === 'text';
   const hasLine = geometry === 'LineString' || geometry === 'Polygon';
-  const color = colorOf(props);
+  // A highlighter stroke has its own marker colours and thicknesses, and no fill or pattern.
+  const marker = mode === 'highlighter';
+  const palette = marker ? HIGHLIGHT_COLORS : PALETTE;
+  const widths = marker ? HIGHLIGHT_WIDTHS : WIDTHS;
+  const color = marker ? highlightColorOf(props) : colorOf(props);
+  const width = marker ? highlightWidthOf(props) : widthOf(props);
 
   return (
     <div className={styles.panel} role="group" aria-label="Selected shape">
@@ -70,7 +77,7 @@ export default function ShapePanel() {
       <div className={styles.field}>
         <span className={styles.fieldLabel}>Colour</span>
         <div className={styles.swatches} role="group" aria-label="Colour">
-          {PALETTE.map((c) => (
+          {palette.map((c) => (
             <button
               key={c.value}
               type="button"
@@ -87,13 +94,13 @@ export default function ShapePanel() {
 
       {hasLine && !isText && (
         <div className={styles.field}>
-          <span className={styles.fieldLabel}>{geometry === 'Polygon' ? 'Outline' : 'Line'}</span>
+          <span className={styles.fieldLabel}>{marker ? 'Thickness' : geometry === 'Polygon' ? 'Outline' : 'Line'}</span>
           <Segmented
             label="Line width"
             size="sm"
-            value={String(widthOf(props))}
+            value={String(width)}
             onChange={(v) => drawController.setStyle({ width: Number(v) })}
-            options={WIDTHS.map((w) => ({ value: String(w.value), label: w.label }))}
+            options={widths.map((w) => ({ value: String(w.value), label: w.label }))}
           />
         </div>
       )}
@@ -109,7 +116,7 @@ export default function ShapePanel() {
           />
         </div>
       )}
-      {geometry === 'LineString' && (
+      {geometry === 'LineString' && !marker && (
         <div className={styles.field}>
           <span className={styles.fieldLabel}>Pattern</span>
           <Segmented

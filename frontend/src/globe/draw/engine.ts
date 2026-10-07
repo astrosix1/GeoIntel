@@ -2,6 +2,7 @@ import type * as maplibregl from 'maplibre-gl';
 import {
   TerraDraw,
   TerraDrawCircleMode,
+  TerraDrawFreehandLineStringMode,
   TerraDrawFreehandMode,
   TerraDrawLineStringMode,
   TerraDrawPointMode,
@@ -15,7 +16,7 @@ import {
 import type { GeoJSONStoreFeatures, HexColor } from 'terra-draw';
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
 import { captureMapImage } from './snapshot';
-import { cleanStyle, colorOf, dashOf, fillOf, widthOf } from './style';
+import { cleanStyle, colorOf, dashOf, fillOf, HIGHLIGHT_OPACITY, highlightColorOf, highlightWidthOf, widthOf } from './style';
 import type { ShapeStyle } from './style';
 
 // The only file that talks to the drawing library (terra-draw). The rest of the app sees a small, plain interface, so the
@@ -32,7 +33,8 @@ export type DrawTool =
   | 'polygon'
   | 'rectangle'
   | 'circle'
-  | 'freehand';
+  | 'freehand'
+  | 'highlighter';
 
 export type DrawFeature = GeoJSONStoreFeatures;
 
@@ -112,10 +114,16 @@ const POINT_STYLE = {
 };
 const LINE_STYLE = { lineStringColor: color, lineStringWidth: width, lineStringDash: dash };
 const POLYGON_STYLE = { fillColor: color, fillOpacity: fill, outlineColor: color, outlineWidth: width };
+// The highlighter: a wide, see-through stroke in a marker colour.
+const HIGHLIGHTER_STYLE = {
+  lineStringColor: (f: DrawFeature) => highlightColorOf(f.properties) as HexColor,
+  lineStringWidth: (f: DrawFeature) => highlightWidthOf(f.properties),
+  lineStringOpacity: HIGHLIGHT_OPACITY,
+};
 const CORNER_STYLE = { closingPointColor: WHITE, closingPointOutlineColor: color, coordinatePointColor: color };
 
 // Shapes the user sees: the helper points the engine adds while drawing are excluded.
-const SHAPE_MODES = new Set(['point', 'text', 'linestring', 'arrow', 'angle', 'polygon', 'rectangle', 'circle', 'freehand']);
+const SHAPE_MODES = new Set(['point', 'text', 'linestring', 'arrow', 'angle', 'polygon', 'rectangle', 'circle', 'freehand', 'highlighter']);
 
 function isShape(feature: DrawFeature): boolean {
   const mode = feature.properties?.mode;
@@ -159,10 +167,13 @@ export function createDrawEngine(map: maplibregl.Map, handlers: DrawHandlers): D
         finishOnNthCoordinate: 3,
       }),
       new TerraDrawPolygonMode({ styles: { ...POLYGON_STYLE, ...CORNER_STYLE }, snapping: { toCoordinate: true } }),
-      new TerraDrawRectangleMode({ styles: POLYGON_STYLE }),
+      // Rectangle, circle and the freehand tools accept either press-and-drag or click, move and click again.
+      new TerraDrawRectangleMode({ styles: POLYGON_STYLE, drawInteraction: 'click-move-or-drag' }),
       // The globe projection keeps the circle a true circle on the sphere at any latitude, on the flat map too.
-      new TerraDrawCircleMode({ styles: POLYGON_STYLE, projection: 'globe' }),
-      new TerraDrawFreehandMode({ styles: POLYGON_STYLE }),
+      new TerraDrawCircleMode({ styles: POLYGON_STYLE, projection: 'globe', drawInteraction: 'click-move-or-drag' }),
+      new TerraDrawFreehandMode({ styles: POLYGON_STYLE, drawInteraction: 'click-move-or-drag' }),
+      // Press and drag to lay a marker stroke; it is a line, not an area, so it measures nothing.
+      new TerraDrawFreehandLineStringMode({ modeName: 'highlighter', styles: HIGHLIGHTER_STYLE, drawInteraction: 'click-move-or-drag' }),
       new TerraDrawSelectMode({
         flags: {
           point: { feature: { draggable: true } },
@@ -175,9 +186,14 @@ export function createDrawEngine(map: maplibregl.Map, handlers: DrawHandlers): D
           rectangle: { feature: { draggable: true, coordinates: { resizable: 'opposite' } } },
           circle: { feature: { draggable: true, coordinates: { resizable: 'center-fixed' } } },
           freehand: { feature: { draggable: true } },
+          highlighter: { feature: { draggable: true } },
         },
         styles: {
-          selectedLineStringColor: SELECTED,
+          // A selected highlighter stroke keeps its marker colour and thickness (only more solid), so the stroke being edited
+          // can still be seen; every other line turns amber.
+          selectedLineStringColor: (f: DrawFeature) => (f.properties?.mode === 'highlighter' ? (highlightColorOf(f.properties) as HexColor) : SELECTED),
+          selectedLineStringWidth: (f: DrawFeature) => (f.properties?.mode === 'highlighter' ? highlightWidthOf(f.properties) : 4),
+          selectedLineStringOpacity: (f: DrawFeature) => (f.properties?.mode === 'highlighter' ? 0.75 : 1),
           selectedPolygonColor: SELECTED,
           selectedPolygonOutlineColor: SELECTED,
           selectedPointColor: SELECTED,

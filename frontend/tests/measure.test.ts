@@ -323,3 +323,12 @@ describe('shapes across the date line', () => {
     near(lineLength([[179.5, 0], [-179.5, 0]]), 111_195, 50, 'one degree across the date line');
   });
 });
+
+describe('highlighter labels', () => {
+  it('shows no measurement for a highlighter stroke, only its name', () => {
+    const stroke = { id: 'h', properties: { mode: 'highlighter', label: 'Area of interest' }, geometry: { type: 'LineString', coordinates: [[0, 0], [1, 1], [2, 0]] } };
+    const labels = labelsFor([stroke], { units: 'metric', segments: true, angles: true, bearings: true });
+    assert.deepEqual(labels.map((l) => [l.kind, l.text]), [['name', 'Area of interest']]);
+    assert.deepEqual(labelsFor([{ ...stroke, properties: { mode: 'highlighter' } }], { units: 'metric', segments: true, angles: true, bearings: true }), []);
+  });
+});

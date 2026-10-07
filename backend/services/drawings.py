@@ -29,9 +29,12 @@ DATA_VERSION = 1
 # These mirror frontend/src/globe/draw/style.ts: the palette and the steps the tool offers.
 COLORS = {'#3b82f6', '#ef4444', '#22c55e', '#a855f7', '#0f172a', '#ffffff'}
 WIDTHS = {2, 3, 5}
+# The highlighter's marker colours and thicknesses.
+HIGHLIGHT_COLORS = {'#facc15', '#f472b6', '#4ade80', '#38bdf8', '#fb923c'}
+HIGHLIGHT_WIDTHS = {12, 20, 32}
 FILLS = {0, 0.2, 0.4}
 DASHES = {'solid', 'dashed'}
-MODES = {'point', 'text', 'linestring', 'arrow', 'angle', 'polygon', 'rectangle', 'circle', 'freehand'}
+MODES = {'point', 'text', 'linestring', 'arrow', 'angle', 'polygon', 'rectangle', 'circle', 'freehand', 'highlighter'}
 GEOMETRIES = {'Point', 'LineString', 'Polygon'}
 
 _ID_RE = re.compile(r'^[A-Za-z0-9_-]{1,64}$')
@@ -115,10 +118,10 @@ def _properties(props, layer_ids, default_layer):
     if not isinstance(mode, str) or mode not in MODES:
         raise InvalidDrawing('mode')
     out = {'mode': mode}
-    if isinstance(props.get('color'), str) and props['color'] in COLORS:
+    if isinstance(props.get('color'), str) and props['color'] in (COLORS | HIGHLIGHT_COLORS):
         out['color'] = props['color']
     # bool is an int in Python, so True would pass for a width of 1 without this check.
-    if _number(props.get('width')) and props['width'] in WIDTHS:
+    if _number(props.get('width')) and props['width'] in (WIDTHS | HIGHLIGHT_WIDTHS):
         out['width'] = props['width']
     if _number(props.get('fill')) and props['fill'] in FILLS:
         out['fill'] = props['fill']

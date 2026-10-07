@@ -4,8 +4,14 @@
   left: var(--space-3);
   z-index: 16;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-1);
+  box-sizing: border-box;
+  width: fit-content;
+  /* Clear of the map's zoom and compass buttons on the right; wraps to a second row on a narrow map. */
+  max-width: calc(100% - 76px);
   padding: var(--space-1);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-2);
@@ -23,39 +29,35 @@
 }
 
 .divider {
-  height: 1px;
-  margin: var(--space-1) 0;
+  flex-shrink: 0;
+  width: 1px;
+  height: 24px;
+  margin: 0 var(--space-1);
   background: var(--line-strong);
 }
 
+/* The hint for the chosen tool: its own line along the bottom of the bar. */
 .status {
-  max-width: 120px;
+  flex-basis: 100%;
   padding: 0 var(--space-1);
   color: var(--text-3);
   font-size: var(--font-1);
   line-height: var(--leading);
 }
 
-/* Phones: a strip along the top of the map, clear of the zoom buttons. */
+/* Phones: one row that scrolls sideways, whose buttons keep their full size, and no hint line. */
 @media (max-width: 768px) {
   .toolbar {
     top: var(--space-2);
     right: 56px;
     left: var(--space-2);
-    flex-direction: row;
-    align-items: center;
+    flex-wrap: nowrap;
+    width: auto;
+    max-width: none;
     overflow-x: auto;
   }
 
-  /* The strip scrolls sideways; its buttons keep their full size rather than shrinking to fit. */
   .toolbar > button {
-    flex-shrink: 0;
-  }
-
-  .divider {
-    width: 1px;
-    height: 24px;
-    margin: 0 var(--space-1);
     flex-shrink: 0;
   }
 
@@ -64,16 +66,16 @@
   }
 }
 
-/* The shape panel and the measuring options open to the right of the strip (below it on phones), one above the other. */
+/* The Drawings, Layers, shape and Measuring panels open below the bar, so the left of the globe stays clear. */
 .side {
   position: absolute;
-  top: 0;
-  left: calc(100% + var(--space-2));
+  top: calc(100% + var(--space-2));
+  left: 0;
   z-index: 17;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  max-height: calc(100dvh - 140px);
+  max-height: calc(100dvh - 210px);
   overflow-y: auto;
 }
 

@@ -39,6 +39,23 @@ export const FILLS: { value: number; label: string }[] = [
 ];
 export const DEFAULT_FILL = 0.2;
 
+// The highlighter: a wide, see-through marker stroke, in colours that read as a marker pen on a map, in three thicknesses.
+export const HIGHLIGHT_COLORS: { value: string; label: string }[] = [
+  { value: '#facc15', label: 'Yellow' },
+  { value: '#f472b6', label: 'Pink' },
+  { value: '#4ade80', label: 'Green' },
+  { value: '#38bdf8', label: 'Blue' },
+  { value: '#fb923c', label: 'Orange' },
+];
+export const HIGHLIGHT_WIDTHS: { value: number; label: string }[] = [
+  { value: 12, label: 'Thin' },
+  { value: 20, label: 'Medium' },
+  { value: 32, label: 'Thick' },
+];
+export const DEFAULT_HIGHLIGHT_COLOR = HIGHLIGHT_COLORS[0].value;
+export const DEFAULT_HIGHLIGHT_WIDTH = 20;
+export const HIGHLIGHT_OPACITY = 0.4;
+
 export const MAX_LABEL_LENGTH = 80;
 export const MAX_NOTE_LENGTH = 2000;
 
@@ -49,6 +66,16 @@ const isHex = (value: unknown): value is string => typeof value === 'string' && 
 export function colorOf(props: Props): string {
   const value = props?.color;
   return isHex(value) && PALETTE.some((c) => c.value === value.toLowerCase()) ? value.toLowerCase() : DEFAULT_COLOR;
+}
+
+export function highlightColorOf(props: Props): string {
+  const value = props?.color;
+  return isHex(value) && HIGHLIGHT_COLORS.some((c) => c.value === value.toLowerCase()) ? value.toLowerCase() : DEFAULT_HIGHLIGHT_COLOR;
+}
+
+export function highlightWidthOf(props: Props): number {
+  const value = props?.width;
+  return typeof value === 'number' && HIGHLIGHT_WIDTHS.some((w) => w.value === value) ? value : DEFAULT_HIGHLIGHT_WIDTH;
 }
 
 export function widthOf(props: Props): number {
@@ -78,8 +105,9 @@ export function cleanText(value: unknown, max: number): string | undefined {
 // Only the style fields we know, each checked, so nothing unexpected is stored on a shape.
 export function cleanStyle(input: Record<string, unknown>): ShapeStyle {
   const style: ShapeStyle = {};
-  if (typeof input.color === 'string' && PALETTE.some((c) => c.value === input.color)) style.color = input.color;
-  if (typeof input.width === 'number' && WIDTHS.some((w) => w.value === input.width)) style.width = input.width;
+  // A shape's colour and width are one of the ordinary choices or one of the highlighter's.
+  if (typeof input.color === 'string' && [...PALETTE, ...HIGHLIGHT_COLORS].some((c) => c.value === input.color)) style.color = input.color;
+  if (typeof input.width === 'number' && [...WIDTHS, ...HIGHLIGHT_WIDTHS].some((w) => w.value === input.width)) style.width = input.width;
   if (typeof input.fill === 'number' && FILLS.some((f) => f.value === input.fill)) style.fill = input.fill;
   if (input.dash === 'solid' || input.dash === 'dashed') style.dash = input.dash;
   const label = cleanText(input.label, MAX_LABEL_LENGTH);

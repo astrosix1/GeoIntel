@@ -120,3 +120,10 @@
 .presenting .maplibregl-ctrl-bottom-left {
   display: none;
 }
+
+/* The view is locked (the lock button on the drawing tools): the map's own zoom and compass buttons dim and stop responding, so
+   nobody wonders why they do nothing. */
+.view-locked .maplibregl-ctrl-top-right {
+  opacity: 0.4;
+  pointer-events: none;
+}

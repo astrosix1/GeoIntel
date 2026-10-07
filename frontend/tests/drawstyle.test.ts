@@ -2,7 +2,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
-  cleanStyle, cleanText, colorOf, dashOf, DEFAULT_COLOR, DEFAULT_FILL, DEFAULT_WIDTH, fillOf, MAX_LABEL_LENGTH, MAX_NOTE_LENGTH, PALETTE, widthOf,
+  cleanStyle, cleanText, colorOf, dashOf, DEFAULT_COLOR, DEFAULT_FILL, DEFAULT_HIGHLIGHT_COLOR, DEFAULT_HIGHLIGHT_WIDTH, DEFAULT_WIDTH, fillOf,
+  HIGHLIGHT_COLORS, HIGHLIGHT_OPACITY, highlightColorOf, highlightWidthOf, MAX_LABEL_LENGTH, MAX_NOTE_LENGTH, PALETTE, widthOf,
 } from '../src/globe/draw/style.ts';
 
 describe('shape style readers', () => {
@@ -59,5 +60,34 @@ describe('cleaning text and styles for storing', () => {
     const style = cleanStyle({ color: '#22c55e', width: 5, fill: 0.4, dash: 'dashed', label: ' Zone A ', note: 'n', evil: 'x', __proto__: { a: 1 } });
     assert.deepEqual(style, { color: '#22c55e', width: 5, fill: 0.4, dash: 'dashed', label: ' Zone A ', note: 'n' });
     assert.deepEqual(cleanStyle({ color: '#000000', width: 99, fill: 2, dash: 'dotted', label: '', note: 3 }), {});
+  });
+});
+
+describe('highlighter style', () => {
+  it('reads the marker colour and thickness, with a yellow medium marker as the default', () => {
+    assert.equal(highlightColorOf({ color: '#f472b6' }), '#f472b6');
+    assert.equal(highlightColorOf({ color: '#FACC15' }), '#facc15');
+    assert.equal(highlightWidthOf({ width: 32 }), 32);
+    for (const props of [undefined, null, {}, { color: '#ef4444', width: 5 }, { color: 5, width: 'x' }]) {
+      assert.equal(highlightColorOf(props as never), DEFAULT_HIGHLIGHT_COLOR);
+      assert.equal(highlightWidthOf(props as never), DEFAULT_HIGHLIGHT_WIDTH);
+    }
+  });
+
+  it('keeps ordinary shapes from borrowing marker values and the other way round', () => {
+    assert.equal(colorOf({ color: '#facc15' }), DEFAULT_COLOR);
+    assert.equal(widthOf({ width: 20 }), DEFAULT_WIDTH);
+  });
+
+  it('is stored: a highlighter colour and thickness pass the cleaner, anything else still does not', () => {
+    assert.deepEqual(cleanStyle({ color: '#4ade80', width: 12 }), { color: '#4ade80', width: 12 });
+    assert.deepEqual(cleanStyle({ color: '#123456', width: 13 }), {});
+  });
+
+  it('has distinct valid marker colours that are not the ordinary palette', () => {
+    const values = HIGHLIGHT_COLORS.map((c) => c.value);
+    assert.equal(new Set(values).size, values.length);
+    assert.ok(values.every((v) => /^#[0-9a-f]{6}$/.test(v) && !PALETTE.some((p) => p.value === v)));
+    assert.ok(HIGHLIGHT_OPACITY > 0 && HIGHLIGHT_OPACITY < 1);
   });
 });

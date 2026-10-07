@@ -397,3 +397,25 @@ class TestEndpoints:
         supabase.fail = True
         res = call(client, 'get', '/api/me/drawings', new_user())
         assert res.status_code == 503 and res.get_json()['error'] == 'user_data_unavailable'
+
+
+class TestHighlighter:
+    def stroke(self, **props):
+        return shape('highlighter', {'type': 'LineString', 'coordinates': [[0, 0], [1, 1], [2, 0]]}, **props)
+
+    def test_a_highlighter_stroke_with_marker_colour_and_thickness_is_kept(self):
+        out = clean_drawing(drawing(self.stroke(color='#f472b6', width=32, label='Zone')))['features'][0]['properties']
+        assert out == {'mode': 'highlighter', 'color': '#f472b6', 'width': 32, 'label': 'Zone', 'layer': LAYER}
+
+    @pytest.mark.parametrize('color,width', [('#123456', 13), ('red', 7), (['#facc15'], True)])
+    def test_other_colours_and_thicknesses_are_still_dropped(self, color, width):
+        out = clean_drawing(drawing(self.stroke(color=color, width=width)))['features'][0]['properties']
+        assert out == {'mode': 'highlighter', 'layer': LAYER}
+
+    def test_every_marker_value_is_accepted_and_nothing_else_was_loosened(self):
+        for colour in drawings.HIGHLIGHT_COLORS:
+            assert clean_drawing(drawing(self.stroke(color=colour)))['features'][0]['properties']['color'] == colour
+        for width in drawings.HIGHLIGHT_WIDTHS:
+            assert clean_drawing(drawing(self.stroke(width=width)))['features'][0]['properties']['width'] == width
+        assert drawings.COLORS == {'#3b82f6', '#ef4444', '#22c55e', '#a855f7', '#0f172a', '#ffffff'}
+        assert drawings.WIDTHS == {2, 3, 5}

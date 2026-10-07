@@ -9,4 +9,5 @@ export const MODE_NAMES: Record<string, string> = {
   rectangle: 'Rectangle',
   circle: 'Circle',
   freehand: 'Freehand shape',
+  highlighter: 'Highlighter',
 };

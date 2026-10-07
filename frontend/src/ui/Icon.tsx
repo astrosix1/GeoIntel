@@ -115,6 +115,13 @@ const PATHS: Record<string, ReactNode> = {
       <path d="M8 20h8M12 16v4" />
     </>
   ),
+  highlighter: <path d="M14 4l6 6-8 8-6-6 8-8zM6 12l-2 8 8-2M14 4l-2 2" />,
+  unlock: (
+    <>
+      <rect x="5" y="11" width="14" height="9" rx="1" />
+      <path d="M8 11V8a4 4 0 017.6-1.6" />
+    </>
+  ),
   polygon: <path d="M12 4l8 6-3 9H7l-3-9 8-6z" />,
   rectangle: <rect x="4" y="6" width="16" height="12" rx="1" />,
   circle: <circle cx="12" cy="12" r="8" />,

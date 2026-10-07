@@ -25,7 +25,8 @@ const TOOLS: { tool: DrawTool; icon: IconName; label: string; hint: string }[] =
   { tool: 'polygon', icon: 'polygon', label: 'Area (measure an area)', hint: 'Click to add corners; click the first corner, or press Enter, to finish.' },
   { tool: 'rectangle', icon: 'rectangle', label: 'Rectangle', hint: 'Click and drag, or click two opposite corners.' },
   { tool: 'circle', icon: 'circle', label: 'Circle (shows its radius)', hint: 'Click the centre, then click or drag out to the edge.' },
-  { tool: 'freehand', icon: 'freehand', label: 'Freehand', hint: 'Press and drag to draw; let go to finish.' },
+  { tool: 'freehand', icon: 'freehand', label: 'Freehand', hint: 'Press and drag to draw (or click, move, click again).' },
+  { tool: 'highlighter', icon: 'highlighter', label: 'Highlighter (mark an area for emphasis)', hint: 'Press and drag to lay a marker stroke (or click, move, click again). It measures nothing.' },
 ];
 
 const UNIT_OPTIONS: { value: DrawUnits; label: string }[] = [
@@ -79,6 +80,8 @@ export default function DrawToolbar() {
   const [drawingsOpen, setDrawingsOpen] = useState(false);
   const dirty = useDrawStore((s) => s.dirty);
   const presenting = useDrawStore((s) => s.presenting);
+  const viewLocked = useDrawStore((s) => s.viewLocked);
+  const setViewLocked = useDrawStore((s) => s.setViewLocked);
   const drawingName = useDrawStore((s) => s.drawing.name);
   const announcement = useDrawStore((s) => s.announcement);
   const [imageNote, setImageNote] = useState<string | null>(null);
@@ -117,8 +120,8 @@ export default function DrawToolbar() {
     const buttons = Array.from(strip.querySelectorAll<HTMLButtonElement>(':scope > button:not(:disabled)'));
     const at = buttons.indexOf(target as HTMLButtonElement);
     const next =
-      event.key === 'ArrowDown' || event.key === 'ArrowRight' ? (at + 1) % buttons.length
-      : event.key === 'ArrowUp' || event.key === 'ArrowLeft' ? (at - 1 + buttons.length) % buttons.length
+      event.key === 'ArrowRight' || event.key === 'ArrowDown' ? (at + 1) % buttons.length
+      : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? (at - 1 + buttons.length) % buttons.length
       : event.key === 'Home' ? 0
       : event.key === 'End' ? buttons.length - 1
       : -1;
@@ -128,7 +131,7 @@ export default function DrawToolbar() {
   }
 
   return (
-    <div className={styles.toolbar} role="toolbar" aria-label="Drawing tools" aria-orientation="vertical" data-ui-hover-surface onKeyDown={onToolbarKey}>
+    <div className={styles.toolbar} role="toolbar" aria-label="Drawing tools" aria-orientation="horizontal" data-ui-hover-surface onKeyDown={onToolbarKey}>
       <div className={styles.srOnly} role="status" aria-live="polite">
         {announcement}
       </div>
@@ -171,6 +174,13 @@ export default function DrawToolbar() {
         aria-pressed={optionsOpen}
         aria-expanded={optionsOpen}
         onClick={() => setOptionsOpen(!optionsOpen)}
+      />
+      <IconButton
+        icon={viewLocked ? 'lock' : 'unlock'}
+        label={viewLocked ? 'Unlock the view (let the globe move again)' : 'Lock the view (stop the globe moving while you draw)'}
+        variant={viewLocked ? 'primary' : 'quiet'}
+        aria-pressed={viewLocked}
+        onClick={() => setViewLocked(!viewLocked)}
       />
       <IconButton
         icon="camera"
