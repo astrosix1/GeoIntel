@@ -42,6 +42,8 @@ export interface DrawHandlers {
   onHistory: (state: { canUndo: boolean; canRedo: boolean }) => void;
   // The engine changed the tool itself (a new text label is selected straight away so its words can be typed).
   onTool: (tool: DrawTool) => void;
+  // The layer a newly drawn shape goes on.
+  getActiveLayer: () => string;
 }
 
 export interface DrawEngine {
@@ -51,10 +53,22 @@ export interface DrawEngine {
   redo: () => void;
   deleteSelected: () => void;
   clear: () => void;
+  // The shapes on the map now (those on hidden layers are not).
   features: () => DrawFeature[];
+  // Every shape, hidden or not, each with its layer id in `properties.layer`: what a saved drawing is made of.
+  allFeatures: () => DrawFeature[];
   selected: () => DrawFeature | null;
   // Changes the style, name or note of the selected shape. A field set to undefined is cleared.
   setStyle: (change: Partial<Record<keyof ShapeStyle, unknown>>) => void;
+  // Which layer the selected shape is on, and moving it to another.
+  selectedLayer: () => string | null;
+  moveSelectedToLayer: (layerId: string) => void;
+  // The layers whose shapes are not shown. Their shapes are taken off the map and put back when the layer is shown again.
+  setHiddenLayers: (ids: Set<string>) => void;
+  // How many shapes each layer holds, hidden ones included.
+  counts: () => Record<string, number>;
+  // Removes every shape on a layer (the layer itself is removed by the caller).
+  deleteLayerShapes: (layerId: string) => void;
   // Copies the selected shape a little way over and selects the copy. False if the copy was refused.
   duplicateSelected: () => boolean;
   destroy: () => void;
@@ -172,6 +186,12 @@ export function createDrawEngine(map: maplibregl.Map, handlers: DrawHandlers): D
   });
 
   let selected: string | null = null;
+  // Layer membership is kept here, beside the shapes, not in their properties: a layer change is not an undo step, and a
+  // shape keeps its layer if it is hidden and shown again.
+  const layerOf = new Map<string, string>();
+  // Shapes on hidden layers, taken off the map until their layer is shown again.
+  const stash = new Map<string, DrawFeature>();
+  let hidden = new Set<string>();
 
   const publishHistory = () => handlers.onHistory({ canUndo: draw.canUndo(), canRedo: draw.canRedo() });
   const publishFeatures = () => handlers.onChange(draw.getSnapshot().filter(isShape));
@@ -192,6 +212,7 @@ export function createDrawEngine(map: maplibregl.Map, handlers: DrawHandlers): D
   // A new text label is selected straight away so its words can be typed in the panel.
   draw.on('finish', (id) => {
     const feature = draw.getSnapshotFeature(id);
+    if (feature && isShape(feature) && !layerOf.has(String(id))) layerOf.set(String(id), handlers.getActiveLayer());
     if (feature?.properties?.mode !== 'text') return;
     draw.setMode('select');
     draw.selectFeature(id);
@@ -200,6 +221,37 @@ export function createDrawEngine(map: maplibregl.Map, handlers: DrawHandlers): D
 
   draw.start();
   draw.setMode('render');
+
+  const visibleShapes = () => draw.getSnapshot().filter(isShape);
+  const layerForShape = (id: string | number | undefined) => layerOf.get(String(id)) ?? handlers.getActiveLayer();
+
+  // What a shape is stored as while it is off the map and when it goes back: its mode and our own fields only, with its id.
+  function plain(feature: DrawFeature): DrawFeature {
+    const properties: Record<string, string | number | boolean> = {};
+    for (const [key, value] of Object.entries(feature.properties ?? {})) {
+      if (key === 'mode' || key === 'color' || key === 'width' || key === 'fill' || key === 'dash' || key === 'label' || key === 'note') {
+        if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') properties[key] = value;
+      }
+    }
+    return { id: feature.id, type: 'Feature', geometry: feature.geometry, properties } as DrawFeature;
+  }
+
+  // Takes the shapes of hidden layers off the map and puts back those whose layer is shown.
+  function applyHidden() {
+    for (const feature of visibleShapes()) {
+      const layer = layerForShape(feature.id);
+      if (!hidden.has(layer) || feature.id === undefined) continue;
+      if (selected === String(feature.id)) draw.deselectFeature(feature.id);
+      stash.set(String(feature.id), plain(feature));
+      draw.removeFeatures([feature.id]);
+    }
+    for (const [id, feature] of [...stash]) {
+      if (hidden.has(layerForShape(id))) continue;
+      const results = draw.addFeatures([feature]);
+      if (results.every((r) => r.valid)) stash.delete(id);
+    }
+    publishFeatures();
+  }
 
   const selectedFeature = (): DrawFeature | null => (selected === null ? null : (draw.getSnapshotFeature(selected) ?? null));
 
@@ -227,12 +279,43 @@ export function createDrawEngine(map: maplibregl.Map, handlers: DrawHandlers): D
       draw.removeFeatures([id]);
     },
     clear() {
+      stash.clear();
+      layerOf.clear();
       draw.clear();
       publishFeatures();
       publishHistory();
     },
-    features: () => draw.getSnapshot().filter(isShape),
+    features: visibleShapes,
+    allFeatures: () => {
+      const withLayer = (f: DrawFeature): DrawFeature => ({ ...f, properties: { ...f.properties, layer: layerForShape(f.id) } }) as DrawFeature;
+      return [...visibleShapes(), ...stash.values()].map(withLayer);
+    },
     selected: selectedFeature,
+    selectedLayer: () => (selected === null ? null : layerForShape(selected)),
+    moveSelectedToLayer(layerId) {
+      if (selected === null) return;
+      layerOf.set(selected, layerId);
+      applyHidden(); // the shape may have moved to a hidden layer
+      handlers.onChange(visibleShapes());
+    },
+    setHiddenLayers(ids) {
+      hidden = new Set(ids);
+      applyHidden();
+    },
+    counts() {
+      const counts: Record<string, number> = {};
+      for (const f of visibleShapes()) counts[layerForShape(f.id)] = (counts[layerForShape(f.id)] ?? 0) + 1;
+      for (const id of stash.keys()) counts[layerForShape(id)] = (counts[layerForShape(id)] ?? 0) + 1;
+      return counts;
+    },
+    deleteLayerShapes(layerId) {
+      const ids = visibleShapes().filter((f) => layerForShape(f.id) === layerId && f.id !== undefined).map((f) => f.id as string | number);
+      if (selected !== null && ids.map(String).includes(selected)) draw.deselectFeature(selected);
+      if (ids.length > 0) draw.removeFeatures(ids);
+      for (const id of [...stash.keys()]) if (layerForShape(id) === layerId) stash.delete(id);
+      for (const [id, layer] of [...layerOf]) if (layer === layerId) layerOf.delete(id);
+      publishFeatures();
+    },
     setStyle(change) {
       if (selected === null) return;
       const clean = cleanStyle(change as Record<string, unknown>);
@@ -256,6 +339,7 @@ export function createDrawEngine(map: maplibregl.Map, handlers: DrawHandlers): D
       if (results.some((r) => !r.valid)) return false;
       const copy = draw.getSnapshot().filter(isShape).at(-1);
       if (copy?.id !== undefined && selected !== null) {
+        layerOf.set(String(copy.id), layerForShape(selected));
         draw.deselectFeature(selected);
         draw.selectFeature(copy.id);
       }

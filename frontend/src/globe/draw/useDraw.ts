@@ -7,6 +7,7 @@ import { drawController } from './controller';
 import type { DrawEngine } from './engine';
 import { ensureDrawLayers, showDrawLayers } from './layers';
 import type { LabelOptions, UnitSystem } from './measure';
+import { hiddenIds } from './drawlayers';
 import type { DrawPrefs } from './prefs';
 
 // The measuring choices, with "auto" units resolved to whatever the Units setting says.
@@ -45,10 +46,17 @@ export function useDraw(mapRef: MutableRefObject<maplibregl.Map | null>, mapRead
           onSelect: (id) => store.setSelectedId(id),
           onHistory: (state) => store.setHistory(state),
           onTool: (next) => store.setTool(next),
+          // A new shape goes on the active layer; if that layer is hidden it is shown first, so the shape does not vanish.
+          getActiveLayer: () => {
+            const { activeLayerId, layers, setActiveLayer } = useDrawStore.getState();
+            if (layers.some((l) => l.id === activeLayerId && !l.visible)) setActiveLayer(activeLayerId);
+            return useDrawStore.getState().activeLayerId;
+          },
         });
         ensureDrawLayers(map);
         engineRef.current = engine;
         drawController.attach(engine);
+        engine.setHiddenLayers(hiddenIds(useDrawStore.getState().layers));
         const current = useDrawStore.getState();
         engine.setTool(current.open ? current.tool : null);
       })
@@ -62,6 +70,19 @@ export function useDraw(mapRef: MutableRefObject<maplibregl.Map | null>, mapRead
     engineRef.current?.setTool(open ? tool : null);
     if (!open) useDrawStore.getState().setSelectedId(null);
   }, [open, tool]);
+
+  // Hiding or showing a layer takes its shapes off the map or puts them back.
+  const hiddenKey = useDrawStore((s) =>
+    s.layers
+      .filter((l) => !l.visible)
+      .map((l) => l.id)
+      .sort()
+      .join(','),
+  );
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (engine) engine.setHiddenLayers(new Set(hiddenKey === '' ? [] : hiddenKey.split(',')));
+  }, [hiddenKey]);
 
   // Units or measuring choices changed: redraw the text.
   useEffect(() => {

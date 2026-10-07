@@ -15,6 +15,11 @@ export const drawController = {
   deleteSelected: () => engine?.deleteSelected(),
   clear: () => engine?.clear(),
   selected: (): DrawFeature | null => engine?.selected() ?? null,
+  selectedLayer: (): string | null => engine?.selectedLayer() ?? null,
+  moveSelectedToLayer: (layerId: string) => engine?.moveSelectedToLayer(layerId),
+  counts: (): Record<string, number> => engine?.counts() ?? {},
+  deleteLayerShapes: (layerId: string) => engine?.deleteLayerShapes(layerId),
+  allFeatures: (): DrawFeature[] => engine?.allFeatures() ?? [],
   setStyle: (change: Partial<Record<keyof ShapeStyle, unknown>>) => engine?.setStyle(change),
   duplicate: (): boolean => engine?.duplicateSelected() ?? false,
 };

@@ -50,6 +50,7 @@ function TextFields({ initialName, initialNote, isText }: { initialName: string;
 // The panel for the selected shape: its name and note, colour, line width, fill and dashes, and Duplicate and Delete.
 export default function ShapePanel() {
   const selectedId = useDrawStore((s) => s.selectedId);
+  const layers = useDrawStore((s) => s.layers);
   useDrawStore((s) => s.revision); // read the shape again after every change
   const [duplicateFailed, setDuplicateFailed] = useState(false);
   const feature = selectedId === null ? null : drawController.selected();
@@ -119,6 +120,24 @@ export default function ShapePanel() {
             options={[{ value: 'solid', label: 'Solid' }, { value: 'dashed', label: 'Dashed' }]}
           />
         </div>
+      )}
+
+      {layers.length > 1 && (
+        <label className={styles.field}>
+          <span className={styles.fieldLabel}>Layer</span>
+          <select
+            className={styles.input}
+            value={drawController.selectedLayer() ?? layers[0].id}
+            onChange={(e) => drawController.moveSelectedToLayer(e.target.value)}
+          >
+            {layers.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name}
+                {l.visible ? '' : ' (hidden)'}
+              </option>
+            ))}
+          </select>
+        </label>
       )}
 
       <div className={styles.actions}>

@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import type { DrawTool } from '../globe/draw/engine';
+import { cleanLayerName, cleanLayerNote, makeLayer, MAX_LAYERS, nextLayerName, soloLayers } from '../globe/draw/drawlayers';
+import type { DrawLayer } from '../globe/draw/drawlayers';
 import { loadDrawPrefs, saveDrawPrefs } from '../globe/draw/prefs';
 import type { DrawPrefs } from '../globe/draw/prefs';
 
@@ -15,6 +17,17 @@ interface DrawState {
   // Goes up on every change to the drawing, so panels that show the selected shape know to read it again.
   revision: number;
   bumpRevision: () => void;
+  // The drawing's layers, and the one new shapes go on.
+  layers: DrawLayer[];
+  activeLayerId: string;
+  addLayer: () => string | null;
+  renameLayer: (id: string, name: string) => void;
+  setLayerNote: (id: string, note: string) => void;
+  toggleLayer: (id: string) => void;
+  soloLayer: (id: string) => void;
+  setActiveLayer: (id: string) => void;
+  // Removes a layer from the list (never the last one). Its shapes are removed by the caller first.
+  removeLayer: (id: string) => void;
   // What the tool measures and shows (remembered in this browser).
   prefs: DrawPrefs;
   setPrefs: (change: Partial<DrawPrefs>) => void;
@@ -25,7 +38,9 @@ interface DrawState {
   setShapeCount: (count: number) => void;
 }
 
-export const useDrawStore = create<DrawState>((set) => ({
+const firstLayer = makeLayer('Layer 1');
+
+export const useDrawStore = create<DrawState>((set, get) => ({
   open: false,
   tool: 'select',
   canUndo: false,
@@ -34,6 +49,29 @@ export const useDrawStore = create<DrawState>((set) => ({
   shapeCount: 0,
   revision: 0,
   bumpRevision: () => set((state) => ({ revision: state.revision + 1 })),
+  layers: [firstLayer],
+  activeLayerId: firstLayer.id,
+  addLayer: () => {
+    const { layers } = get();
+    if (layers.length >= MAX_LAYERS) return null;
+    const layer = makeLayer(nextLayerName(layers));
+    set({ layers: [...layers, layer], activeLayerId: layer.id });
+    return layer.id;
+  },
+  renameLayer: (id, name) =>
+    set((state) => ({ layers: state.layers.map((l, i) => (l.id === id ? { ...l, name: cleanLayerName(name, `Layer ${i + 1}`) } : l)) })),
+  setLayerNote: (id, note) => set((state) => ({ layers: state.layers.map((l) => (l.id === id ? { ...l, note: cleanLayerNote(note) } : l)) })),
+  toggleLayer: (id) => set((state) => ({ layers: state.layers.map((l) => (l.id === id ? { ...l, visible: !l.visible } : l)) })),
+  soloLayer: (id) => set((state) => ({ layers: soloLayers(state.layers, id), activeLayerId: id })),
+  // Choosing the layer to draw on also shows it, so what is drawn next is never invisible.
+  setActiveLayer: (id) =>
+    set((state) => ({ activeLayerId: id, layers: state.layers.map((l) => (l.id === id ? { ...l, visible: true } : l)) })),
+  removeLayer: (id) =>
+    set((state) => {
+      if (state.layers.length <= 1) return {};
+      const layers = state.layers.filter((l) => l.id !== id);
+      return { layers, activeLayerId: state.activeLayerId === id ? layers[0].id : state.activeLayerId };
+    }),
   prefs: loadDrawPrefs(),
   setPrefs: (change) =>
     set((state) => {

@@ -100,6 +100,16 @@ Decisions:
   - The first arrowhead was too small to read; it is now sized to match the line.
 - **Checked in the browser:** an arrow restyled (red, dashed, named "Advance north") with its head and "956 mi" label; a green rectangle duplicated, each copy with area and perimeter; a red "Staging area" text label; no console errors. Not yet checked by hand: the panel on a phone, the Light theme, circle duplicate, and dragging text labels.
 
+## D3 as built (layers and scenarios)
+
+- **Named layers.** A drawing has up to 20 layers, starting with "Layer 1". Every shape is on one layer; new shapes go on the active layer (highlighted in the list). The Layers button on the tool strip opens the panel: an eye to show or hide each layer, its name (click to make it the active layer), a count of its shapes, **New layer**, and for the active layer its **name**, a **note** (for what a scenario assumes), **Show only this layer** (a second press shows them all again) and **Delete layer** (two steps: it says how many shapes go with it; the last layer cannot be deleted).
+- **Hiding is real.** A hidden layer's shapes are taken off the map (so they cannot be selected or edited by accident, and their measurements and labels go too) and put back, with the same ids and styling, when it is shown again. Choosing a hidden layer to draw on shows it, so a new shape never vanishes.
+- **Moving shapes between layers.** The shape panel has a Layer picker (when there is more than one layer); a shape moved to a hidden layer leaves the map at once. Duplicate keeps the original's layer.
+- **Layer membership lives beside the shapes, not in them** (`engine.ts` keeps a shape-to-layer map): moving a shape or hiding a layer is not an undo step, which keeps Ctrl+Z to what was drawn. `allFeatures()` returns every shape, hidden ones too, each with its layer id, which is what D4 will save; the layer list (names, notes, visibility) is cleaned by `cleanLayers` when read back.
+- **Pure and tested** (`globe/draw/drawlayers.ts`): default names, name and note cleaning, reading a layer list back (bad entries, repeated ids, caps, always at least one), per-layer counts, hidden ids, and the solo toggle. 243 frontend tests in all (11 new).
+- **Checked in the browser:** a rectangle on Layer 1 and a circle on Layer 2 (each with its measurements); hiding Layer 1 (struck through in the list, rectangle gone from the map, circle kept) and showing it again (rectangle back with its area and perimeter); Show only this layer and Show all layers; deleting Layer 2 (circle removed, only Layer 1 left, delete disabled); moving a shape to another layer with the picker (counts 0 and 1); no console errors.
+- **Not yet checked by hand:** the layers panel on a phone, the Light theme, moving a shape to a hidden layer, and the layer list surviving a reload (it does not yet: saving arrives in D4, with a local draft for people who are not premium).
+
 ## Risks and how they are handled
 
 - **`terra-draw` has no text tool and no three-point angle mode.** Text labels are drawn as map symbols from the feature data rather than as drawn shapes, and the angle tool is a small custom mode. Both are part of D1 and D2 and tested before the stages build on them. If the custom mode proves awkward, the angle is computed and shown on a normal line instead (the fallback keeps the feature).

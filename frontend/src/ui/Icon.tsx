@@ -93,6 +93,13 @@ const PATHS: Record<string, ReactNode> = {
   ruler: <path d="M3 15L15 3l6 6L9 21l-6-6zM7 11l2 2M10 8l2 2M13 5l2 2" />,
   arrow: <path d="M5 19L19 5M9 5h10v10" />,
   text: <path d="M5 6h14M12 6v13M9 19h6" />,
+  eye: (
+    <>
+      <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" />
+      <circle cx="12" cy="12" r="3" />
+    </>
+  ),
+  'eye-off': <path d="M3 3l18 18M10.6 6.2A9.6 9.6 0 0112 6c6 0 10 6 10 6a17 17 0 01-3.2 3.7M6.3 7.7A17 17 0 002 12s4 7 10 7c1.7 0 3.2-.4 4.6-1M9.9 9.9a3 3 0 004.2 4.2" />,
   polygon: <path d="M12 4l8 6-3 9H7l-3-9 8-6z" />,
   rectangle: <rect x="4" y="6" width="16" height="12" rx="1" />,
   circle: <circle cx="12" cy="12" r="8" />,
