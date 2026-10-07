@@ -14,7 +14,7 @@ export const MAX_SHAPES = 500;
 export const MAX_VERTICES = 20_000;
 export const MAX_BYTES = 1_000_000;
 
-const MODES = ['point', 'text', 'linestring', 'arrow', 'angle', 'polygon', 'rectangle', 'circle', 'freehand', 'highlighter'];
+const MODES = ['point', 'text', 'linestring', 'arrow', 'angle', 'polygon', 'rectangle', 'circle', 'freehand', 'highlighter', 'pen'];
 const FOREIGN_MODE: Record<string, string> = { Point: 'point', LineString: 'linestring', Polygon: 'polygon' };
 
 export type Position = [number, number];

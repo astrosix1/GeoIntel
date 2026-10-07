@@ -419,3 +419,16 @@ class TestHighlighter:
             assert clean_drawing(drawing(self.stroke(width=width)))['features'][0]['properties']['width'] == width
         assert drawings.COLORS == {'#3b82f6', '#ef4444', '#22c55e', '#a855f7', '#0f172a', '#ffffff'}
         assert drawings.WIDTHS == {2, 3, 5}
+
+
+class TestPen:
+    def stroke(self, **props):
+        return shape('pen', {'type': 'LineString', 'coordinates': [[0, 0], [1, 1], [2, 0]]}, **props)
+
+    def test_a_pen_stroke_is_kept_with_an_ordinary_colour_and_width(self):
+        out = clean_drawing(drawing(self.stroke(color='#ef4444', width=5, label='Sketch')))['features'][0]['properties']
+        assert out == {'mode': 'pen', 'color': '#ef4444', 'width': 5, 'label': 'Sketch', 'layer': LAYER}
+
+    def test_it_is_a_line_so_a_pen_stroke_drawn_as_an_area_is_still_a_valid_shape_but_bad_geometry_is_not(self):
+        with pytest.raises(InvalidDrawing):
+            clean_drawing(drawing(shape('pen', {'type': 'LineString', 'coordinates': [[0, 0]]})))

@@ -34,7 +34,7 @@ HIGHLIGHT_COLORS = {'#facc15', '#f472b6', '#4ade80', '#38bdf8', '#fb923c'}
 HIGHLIGHT_WIDTHS = {12, 20, 32}
 FILLS = {0, 0.2, 0.4}
 DASHES = {'solid', 'dashed'}
-MODES = {'point', 'text', 'linestring', 'arrow', 'angle', 'polygon', 'rectangle', 'circle', 'freehand', 'highlighter'}
+MODES = {'point', 'text', 'linestring', 'arrow', 'angle', 'polygon', 'rectangle', 'circle', 'freehand', 'highlighter', 'pen'}
 GEOMETRIES = {'Point', 'LineString', 'Polygon'}
 
 _ID_RE = re.compile(r'^[A-Za-z0-9_-]{1,64}$')

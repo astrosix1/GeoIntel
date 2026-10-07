@@ -116,7 +116,7 @@ export default function ShapePanel() {
           />
         </div>
       )}
-      {geometry === 'LineString' && !marker && (
+      {geometry === 'LineString' && !marker && mode !== 'pen' && (
         <div className={styles.field}>
           <span className={styles.fieldLabel}>Pattern</span>
           <Segmented

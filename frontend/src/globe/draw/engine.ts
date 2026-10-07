@@ -34,7 +34,8 @@ export type DrawTool =
   | 'rectangle'
   | 'circle'
   | 'freehand'
-  | 'highlighter';
+  | 'highlighter'
+  | 'pen';
 
 export type DrawFeature = GeoJSONStoreFeatures;
 
@@ -114,6 +115,9 @@ const POINT_STYLE = {
 };
 const LINE_STYLE = { lineStringColor: color, lineStringWidth: width, lineStringDash: dash };
 const POLYGON_STYLE = { fillColor: color, fillOpacity: fill, outlineColor: color, outlineWidth: width };
+// The pen: a thin, solid freehand line in any of the ordinary colours and widths, for sketching and handwriting.
+const PEN_STYLE = { lineStringColor: color, lineStringWidth: width, lineStringOpacity: 1 };
+
 // The highlighter: a wide, see-through stroke in a marker colour.
 const HIGHLIGHTER_STYLE = {
   lineStringColor: (f: DrawFeature) => highlightColorOf(f.properties) as HexColor,
@@ -123,7 +127,7 @@ const HIGHLIGHTER_STYLE = {
 const CORNER_STYLE = { closingPointColor: WHITE, closingPointOutlineColor: color, coordinatePointColor: color };
 
 // Shapes the user sees: the helper points the engine adds while drawing are excluded.
-const SHAPE_MODES = new Set(['point', 'text', 'linestring', 'arrow', 'angle', 'polygon', 'rectangle', 'circle', 'freehand', 'highlighter']);
+const SHAPE_MODES = new Set(['point', 'text', 'linestring', 'arrow', 'angle', 'polygon', 'rectangle', 'circle', 'freehand', 'highlighter', 'pen']);
 
 function isShape(feature: DrawFeature): boolean {
   const mode = feature.properties?.mode;
@@ -172,6 +176,8 @@ export function createDrawEngine(map: maplibregl.Map, handlers: DrawHandlers): D
       // The globe projection keeps the circle a true circle on the sphere at any latitude, on the flat map too.
       new TerraDrawCircleMode({ styles: POLYGON_STYLE, projection: 'globe', drawInteraction: 'click-move-or-drag' }),
       new TerraDrawFreehandMode({ styles: POLYGON_STYLE, drawInteraction: 'click-move-or-drag' }),
+      // Press and drag to write or sketch; points closer together than a few pixels are dropped so the line stays smooth and small.
+      new TerraDrawFreehandLineStringMode({ modeName: 'pen', styles: PEN_STYLE, drawInteraction: 'click-move-or-drag', minDistance: 4 }),
       // Press and drag to lay a marker stroke; it is a line, not an area, so it measures nothing.
       new TerraDrawFreehandLineStringMode({ modeName: 'highlighter', styles: HIGHLIGHTER_STYLE, drawInteraction: 'click-move-or-drag' }),
       new TerraDrawSelectMode({
@@ -187,12 +193,14 @@ export function createDrawEngine(map: maplibregl.Map, handlers: DrawHandlers): D
           circle: { feature: { draggable: true, coordinates: { resizable: 'center-fixed' } } },
           freehand: { feature: { draggable: true } },
           highlighter: { feature: { draggable: true } },
+          pen: { feature: { draggable: true } },
         },
         styles: {
           // A selected highlighter stroke keeps its marker colour and thickness (only more solid), so the stroke being edited
           // can still be seen; every other line turns amber.
           selectedLineStringColor: (f: DrawFeature) => (f.properties?.mode === 'highlighter' ? (highlightColorOf(f.properties) as HexColor) : SELECTED),
-          selectedLineStringWidth: (f: DrawFeature) => (f.properties?.mode === 'highlighter' ? highlightWidthOf(f.properties) : 4),
+          selectedLineStringWidth: (f: DrawFeature) =>
+            f.properties?.mode === 'highlighter' ? highlightWidthOf(f.properties) : f.properties?.mode === 'pen' ? Math.max(3, widthOf(f.properties)) : 4,
           selectedLineStringOpacity: (f: DrawFeature) => (f.properties?.mode === 'highlighter' ? 0.75 : 1),
           selectedPolygonColor: SELECTED,
           selectedPolygonOutlineColor: SELECTED,

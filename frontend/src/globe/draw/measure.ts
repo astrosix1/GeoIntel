@@ -300,8 +300,8 @@ export function labelsFor(features: LabelFeature[], options: LabelOptions): MapL
     if (type === 'Point') {
       const at = feature.geometry.coordinates as Position;
       labels.push({ id, kind: 'point', position: at, text: formatCoordinates(at) });
-    } else if (type === 'LineString' && mode === 'highlighter') {
-      // A highlighter stroke is for pointing at something, not measuring it: it shows only its name (added above).
+    } else if (type === 'LineString' && (mode === 'highlighter' || mode === 'pen')) {
+      // A highlighter or pen stroke is for pointing and sketching, not measuring: it shows only its name (added above).
       continue;
     } else if (type === 'LineString' && mode === 'angle') {
       const coords = feature.geometry.coordinates as Position[];

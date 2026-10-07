@@ -189,3 +189,14 @@ describe('longitudes past the date line', () => {
     if (read.ok) assert.deepEqual(read.drawing.data.features.map((f) => (f.geometry.coordinates as number[])[0]), [-170, 179, 180, -180]);
   });
 });
+
+describe('pen strokes in a drawing', () => {
+  const pen = { type: 'Feature', geometry: { type: 'LineString', coordinates: [[0, 0], [1, 1], [2, 0]] }, properties: { mode: 'pen', color: '#ef4444', width: 5, label: 'Sketch' } };
+
+  it('are kept with their colour, width and name, and read back', () => {
+    const built = buildDrawing([{ id: 'pen1', ...pen }], layers);
+    assert.deepEqual(built.features[0].properties, { color: '#ef4444', width: 5, label: 'Sketch', mode: 'pen', layer: 'a' });
+    const read = parseDrawing(JSON.parse(JSON.stringify(built)));
+    assert.ok(read.ok && read.drawing.data.features[0].properties.mode === 'pen');
+  });
+});

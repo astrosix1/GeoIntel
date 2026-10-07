@@ -332,3 +332,12 @@ describe('highlighter labels', () => {
     assert.deepEqual(labelsFor([{ ...stroke, properties: { mode: 'highlighter' } }], { units: 'metric', segments: true, angles: true, bearings: true }), []);
   });
 });
+
+describe('pen labels', () => {
+  it('shows no measurement for a pen stroke, only its name', () => {
+    const stroke = { id: 'p', properties: { mode: 'pen', label: 'Route sketch' }, geometry: { type: 'LineString', coordinates: [[0, 0], [1, 1], [2, 0]] } };
+    const all = { units: 'metric' as const, segments: true, angles: true, bearings: true };
+    assert.deepEqual(labelsFor([stroke], all).map((l) => [l.kind, l.text]), [['name', 'Route sketch']]);
+    assert.deepEqual(labelsFor([{ ...stroke, properties: { mode: 'pen' } }], all), []);
+  });
+});

@@ -10,4 +10,5 @@ export const MODE_NAMES: Record<string, string> = {
   circle: 'Circle',
   freehand: 'Freehand shape',
   highlighter: 'Highlighter',
+  pen: 'Pen stroke',
 };

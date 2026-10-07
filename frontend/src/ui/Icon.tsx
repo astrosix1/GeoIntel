@@ -115,6 +115,7 @@ const PATHS: Record<string, ReactNode> = {
       <path d="M8 20h8M12 16v4" />
     </>
   ),
+  pen: <path d="M4 20l1.5-5L15 5.5a2.1 2.1 0 013 3L8.5 18 4 20zM13 7.5l3.5 3.5" />,
   highlighter: <path d="M14 4l6 6-8 8-6-6 8-8zM6 12l-2 8 8-2M14 4l-2 2" />,
   unlock: (
     <>

@@ -26,6 +26,7 @@ const TOOLS: { tool: DrawTool; icon: IconName; label: string; hint: string }[] =
   { tool: 'rectangle', icon: 'rectangle', label: 'Rectangle', hint: 'Click and drag, or click two opposite corners.' },
   { tool: 'circle', icon: 'circle', label: 'Circle (shows its radius)', hint: 'Click the centre, then click or drag out to the edge.' },
   { tool: 'freehand', icon: 'freehand', label: 'Freehand', hint: 'Press and drag to draw (or click, move, click again).' },
+  { tool: 'pen', icon: 'pen', label: 'Pen (write or sketch)', hint: 'Press and drag to write or sketch (or click, move, click again). It measures nothing.' },
   { tool: 'highlighter', icon: 'highlighter', label: 'Highlighter (mark an area for emphasis)', hint: 'Press and drag to lay a marker stroke (or click, move, click again). It measures nothing.' },
 ];
 
