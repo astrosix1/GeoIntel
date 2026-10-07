@@ -11,6 +11,14 @@ const ARROW_SOURCE = 'draw-arrows';
 const ARROW_LAYER = 'draw-arrow-heads';
 const ARROW_IMAGE = 'draw-arrowhead';
 
+const TEXT_SIZE: maplibregl.ExpressionSpecification = ['match', ['get', 'kind'], 'text', 16, 'name', 14, 'total', 13, 11];
+
+// Presentation mode draws the text larger so it reads from across a room; 1 is the normal size.
+export function setLabelScale(map: maplibregl.Map, scale: number): void {
+  if (!map.getLayer(LABEL_LAYER)) return;
+  map.setLayoutProperty(LABEL_LAYER, 'text-size', scale === 1 ? TEXT_SIZE : ['*', scale, TEXT_SIZE]);
+}
+
 // A white triangle pointing up with its tip at the top edge, registered as an SDF image so each arrow can be coloured.
 function addArrowImage(map: maplibregl.Map): void {
   if (map.hasImage(ARROW_IMAGE)) return;
@@ -69,7 +77,7 @@ export function ensureDrawLayers(map: maplibregl.Map): void {
         'text-font': ['Noto Sans Bold'],
         // Words the user typed are the biggest; totals next; the per-segment and per-corner figures are smaller. Angles
         // sit off their corner and names above their shape.
-        'text-size': ['match', ['get', 'kind'], 'text', 16, 'name', 14, 'total', 13, 11],
+        'text-size': TEXT_SIZE,
         'text-offset': ['match', ['get', 'kind'], 'angle', ['literal', [1.6, -1.1]], 'name', ['literal', [0, -1.7]], ['literal', [0, 0]]],
         'text-line-height': 1.2,
         'text-allow-overlap': true,

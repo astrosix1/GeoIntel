@@ -135,7 +135,8 @@ export default function DrawingsPanel() {
     document.body.appendChild(link);
     link.click();
     link.remove();
-    URL.revokeObjectURL(url);
+    // Not at once: some browsers are still starting the download.
+    window.setTimeout(() => URL.revokeObjectURL(url), 2000);
     setMessage({ kind: 'ok', text: 'Exported as GeoJSON.' });
   }
 

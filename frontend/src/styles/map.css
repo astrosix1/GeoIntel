@@ -113,3 +113,10 @@
 .geo-pin-Orange { background: var(--alert-orange); color: var(--alert-orange-fg); }
 .geo-pin-Green { background: var(--alert-green); color: var(--alert-green-fg); }
 .geo-pin-Unknown { background: var(--sky); color: var(--accent-fg); }
+
+/* Presentation mode (the page has the class `presenting`): the map's zoom and compass buttons go; its credits stay. */
+.presenting .maplibregl-ctrl-top-right,
+.presenting .maplibregl-ctrl-top-left,
+.presenting .maplibregl-ctrl-bottom-left {
+  display: none;
+}

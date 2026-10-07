@@ -2,12 +2,15 @@ import { lazy, Suspense, useEffect } from 'react';
 import Globe from '../globe/Globe';
 import DrawFab from '../globe/draw/DrawFab';
 import DrawToolbar from '../globe/draw/DrawToolbar';
+import PresentExit from '../globe/draw/PresentExit';
+import { handleFullscreenChange, stopPresenting } from '../globe/draw/present';
 import RadarBar from '../globe/RadarBar';
 import TimeBar from '../globe/TimeBar';
 import AnalysisSidebar from '../sidebars/AnalysisSidebar';
 import EdgeTab from '../sidebars/EdgeTab';
 import EventsSidebar from '../sidebars/EventsSidebar';
 import Dashboard from '../components/Dashboard';
+import { useDrawStore } from '../state/drawStore';
 import { useSettings, usePanelsDocked } from '../state/settings';
 import { useUiStore } from '../state/uiStore';
 import ContextStrip from './ContextStrip';
@@ -27,6 +30,7 @@ export default function Shell() {
   const pinned = useUiStore((s) => s.pinnedSelection);
   const setLeftOpen = useUiStore((s) => s.setLeftOpen);
   const setRightOpen = useUiStore((s) => s.setRightOpen);
+  const presenting = useDrawStore((s) => s.presenting);
 
   // Docked: the events panel is there from the start, and the analysis panel opens when something is selected.
   useEffect(() => {
@@ -35,6 +39,21 @@ export default function Shell() {
   useEffect(() => {
     if (docked && pinned) setRightOpen(true);
   }, [docked, pinned, setRightOpen]);
+
+  // Presentation mode: a class on the page lets the map's own controls be hidden too, and Escape leaves it.
+  useEffect(() => {
+    document.documentElement.classList.toggle('presenting', presenting);
+    if (!presenting) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') stopPresenting();
+    };
+    window.addEventListener('keydown', onKey);
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, [presenting]);
 
   // Phones: panels are bottom sheets, so picking something swaps the list sheet for its details.
   useEffect(() => {
@@ -50,7 +69,7 @@ export default function Shell() {
           <SolarSystem />
         </Suspense>
       )}
-      <div className={styles.shell}>
+      <div className={`${styles.shell} ${presenting ? styles.presenting : ''}`}>
         <TopBar />
         <ContextStrip />
         <div className={docked ? styles.body : styles.bodyOverlay}>
@@ -63,6 +82,7 @@ export default function Shell() {
             <RadarBar />
             <DrawToolbar />
             <DrawFab />
+            <PresentExit />
             <EdgeTab side="left" docked={docked} />
             <EdgeTab side="right" docked={docked} />
           </div>

@@ -6,6 +6,9 @@ import Segmented from '../../ui/Segmented';
 import { drawController } from './controller';
 import type { DrawTool } from './engine';
 import type { DrawUnits } from './prefs';
+import { imageFileName } from './imagetext';
+import { DEFAULT_NAME } from './draft';
+import { startPresenting } from './present';
 import DrawingsPanel from './DrawingsPanel';
 import LayersPanel from './LayersPanel';
 import ShapePanel from './ShapePanel';
@@ -74,7 +77,32 @@ export default function DrawToolbar() {
   const [layersOpen, setLayersOpen] = useState(false);
   const [drawingsOpen, setDrawingsOpen] = useState(false);
   const dirty = useDrawStore((s) => s.dirty);
-  if (!open) return null;
+  const presenting = useDrawStore((s) => s.presenting);
+  const drawingName = useDrawStore((s) => s.drawing.name);
+  const [imageNote, setImageNote] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  if (!open || presenting) return null;
+
+  async function saveImage() {
+    setSaving(true);
+    setImageNote(null);
+    const blob = await drawController.captureImage(drawingName === DEFAULT_NAME ? null : drawingName);
+    setSaving(false);
+    if (!blob) {
+      setImageNote('The image could not be saved. Try again.');
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = imageFileName(drawingName);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    // Not at once: some browsers are still starting the download.
+    window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+    setImageNote('Image saved.');
+  }
 
   const active = TOOLS.find((t) => t.tool === tool);
 
@@ -120,8 +148,20 @@ export default function DrawToolbar() {
         aria-expanded={optionsOpen}
         onClick={() => setOptionsOpen(!optionsOpen)}
       />
+      <IconButton
+        icon="camera"
+        label="Save the view as an image (PNG)"
+        disabled={saving}
+        onClick={() => void saveImage()}
+      />
+      <IconButton icon="present" label="Presentation mode: hide everything but the map (Escape leaves)" onClick={startPresenting} />
       <IconButton icon="check" label="Done: hide the drawing tools (the drawing stays on the map)" onClick={() => setOpen(false)} />
       {active && <div className={styles.status}>{active.hint}</div>}
+      {imageNote && (
+        <div className={styles.status} role="status">
+          {imageNote}
+        </div>
+      )}
       <div className={styles.side}>
         {drawingsOpen && <DrawingsPanel />}
         {layersOpen && <LayersPanel />}

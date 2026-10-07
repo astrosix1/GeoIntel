@@ -37,6 +37,9 @@ interface DrawState {
   setDirty: (dirty: boolean) => void;
   // Replaces the layers wholesale (opening or restoring a drawing); the first one becomes the active layer.
   setLayers: (layers: DrawLayer[]) => void;
+  // Presentation mode: only the map and the drawing are shown.
+  presenting: boolean;
+  setPresenting: (presenting: boolean) => void;
   // What the tool measures and shows (remembered in this browser).
   prefs: DrawPrefs;
   setPrefs: (change: Partial<DrawPrefs>) => void;
@@ -86,6 +89,8 @@ export const useDrawStore = create<DrawState>((set, get) => ({
   setDrawing: (drawing) => set({ drawing }),
   setDirty: (dirty) => set({ dirty }),
   setLayers: (layers) => set({ layers, activeLayerId: layers[0].id }),
+  presenting: false,
+  setPresenting: (presenting) => set({ presenting }),
   prefs: loadDrawPrefs(),
   setPrefs: (change) =>
     set((state) => {
@@ -100,7 +105,9 @@ export const useDrawStore = create<DrawState>((set, get) => ({
   setShapeCount: (count) => set({ shapeCount: count }),
 }));
 
-// True while the drawing tool is open: map clicks then belong to the tool, so pins, countries and zones must not react.
+// True while the drawing tool is open or the page is presenting: map clicks then belong to the tool (or to nobody), so pins,
+// countries and zones must not react.
 export function isDrawingOpen(): boolean {
-  return useDrawStore.getState().open;
+  const { open, presenting } = useDrawStore.getState();
+  return open || presenting;
 }

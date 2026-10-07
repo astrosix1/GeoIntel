@@ -5,7 +5,7 @@ import { useDrawStore } from '../../state/drawStore';
 import { useSettings } from '../../state/settings';
 import { drawController } from './controller';
 import type { DrawEngine } from './engine';
-import { ensureDrawLayers, showDrawLayers } from './layers';
+import { ensureDrawLayers, setLabelScale, showDrawLayers } from './layers';
 import type { LabelOptions, UnitSystem } from './measure';
 import { hiddenIds } from './drawlayers';
 import type { DrawPrefs } from './prefs';
@@ -23,6 +23,7 @@ function labelOptions(prefs: DrawPrefs, appUnits: 'metric' | 'imperial'): LabelO
 // draw never download it), keeps the chosen tool and the text on the map in step, and detaches on unmount.
 export function useDraw(mapRef: MutableRefObject<maplibregl.Map | null>, mapReady: boolean): void {
   const open = useDrawStore((s) => s.open);
+  const presenting = useDrawStore((s) => s.presenting);
   const tool = useDrawStore((s) => s.tool);
   const appUnits = useSettings((s) => s.units);
   const prefs = useDrawStore((s) => s.prefs);
@@ -81,7 +82,7 @@ export function useDraw(mapRef: MutableRefObject<maplibregl.Map | null>, mapRead
           openDrawing({ version: 1, layers: draft.data.layers, features: draft.data.features }, draft.drawing, draft.dirty !== false);
         }
         const current = useDrawStore.getState();
-        engine.setTool(current.open ? current.tool : null);
+        engine.setTool(current.open && !current.presenting ? current.tool : null);
       })
       .finally(() => {
         loadingRef.current = false;
@@ -89,10 +90,14 @@ export function useDraw(mapRef: MutableRefObject<maplibregl.Map | null>, mapRead
   }, [open, mapReady, mapRef]);
 
   // The chosen tool, or hidden when the toolbar is closed (the drawing stays on the map).
+  // While presenting nothing can be drawn or edited, and the text is drawn larger so it reads from across a room.
   useEffect(() => {
-    engineRef.current?.setTool(open ? tool : null);
-    if (!open) useDrawStore.getState().setSelectedId(null);
-  }, [open, tool]);
+    const active = open && !presenting;
+    engineRef.current?.setTool(active ? tool : null);
+    if (!active) useDrawStore.getState().setSelectedId(null);
+    const map = mapRef.current;
+    if (map) setLabelScale(map, presenting ? 1.3 : 1);
+  }, [open, tool, presenting, mapRef]);
 
   // A change to the layers (a name, a note, a new layer, which are shown) is a change to the drawing too.
   const layers = useDrawStore((s) => s.layers);

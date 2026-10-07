@@ -23,6 +23,7 @@ export const drawController = {
   load: (features: DrawFeature[]) => engine?.load(features) ?? { added: 0, rejected: features.length },
   setStyle: (change: Partial<Record<keyof ShapeStyle, unknown>>) => engine?.setStyle(change),
   duplicate: (): boolean => engine?.duplicateSelected() ?? false,
+  captureImage: (title: string | null): Promise<Blob | null> => engine?.captureImage(title) ?? Promise.resolve(null),
 };
 
 // Every shape in the drawing, hidden layers included, each with its layer id: what is saved.

@@ -6,6 +6,8 @@ import styles from './DrawFab.module.css';
 export default function DrawFab() {
   const open = useDrawStore((s) => s.open);
   const setOpen = useDrawStore((s) => s.setOpen);
+  const presenting = useDrawStore((s) => s.presenting);
+  if (presenting) return null;
   return (
     <div className={styles.fab} data-ui-hover-surface>
       <Button icon="pencil" variant={open ? 'primary' : 'default'} aria-pressed={open} onClick={() => setOpen(!open)}>

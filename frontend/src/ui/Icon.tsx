@@ -103,6 +103,18 @@ const PATHS: Record<string, ReactNode> = {
   save: <path d="M5 4h11l3 3v13H5V4zM8 4v5h7V4M8 20v-6h8v6" />,
   download: <path d="M12 4v12M7 11l5 5 5-5M5 20h14" />,
   upload: <path d="M12 16V4M7 9l5-5 5 5M5 20h14" />,
+  camera: (
+    <>
+      <path d="M4 8h3l2-3h6l2 3h3v11H4V8z" />
+      <circle cx="12" cy="13" r="3.5" />
+    </>
+  ),
+  present: (
+    <>
+      <rect x="3" y="4" width="18" height="12" rx="1" />
+      <path d="M8 20h8M12 16v4" />
+    </>
+  ),
   polygon: <path d="M12 4l8 6-3 9H7l-3-9 8-6z" />,
   rectangle: <rect x="4" y="6" width="16" height="12" rx="1" />,
   circle: <circle cx="12" cy="12" r="8" />,

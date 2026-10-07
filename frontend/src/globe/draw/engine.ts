@@ -14,6 +14,7 @@ import {
 } from 'terra-draw';
 import type { GeoJSONStoreFeatures, HexColor } from 'terra-draw';
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
+import { captureMapImage } from './snapshot';
 import { cleanStyle, colorOf, dashOf, fillOf, widthOf } from './style';
 import type { ShapeStyle } from './style';
 
@@ -74,6 +75,8 @@ export interface DrawEngine {
   deleteLayerShapes: (layerId: string) => void;
   // Copies the selected shape a little way over and selects the copy. False if the copy was refused.
   duplicateSelected: () => boolean;
+  // The map as it looks now, drawing included, as a PNG (with the map credits and, if given, a title). Null if it could not be taken.
+  captureImage: (title: string | null) => Promise<Blob | null>;
   destroy: () => void;
 }
 
@@ -374,6 +377,7 @@ export function createDrawEngine(map: maplibregl.Map, handlers: DrawHandlers): D
       publishFeatures();
       return true;
     },
+    captureImage: (title) => captureMapImage(map, title),
     destroy() {
       draw.stop();
     },

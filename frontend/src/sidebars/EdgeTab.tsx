@@ -1,3 +1,4 @@
+import { useDrawStore } from '../state/drawStore';
 import { useUiStore } from '../state/uiStore';
 import styles from './EdgeTab.module.css';
 
@@ -19,6 +20,9 @@ export default function EdgeTab({ side, docked = false }: EdgeTabProps) {
   const setRightOpen = useUiStore((s) => s.setRightOpen);
   const leftOpen = useUiStore((s) => s.leftOpen);
   const rightOpen = useUiStore((s) => s.rightOpen);
+
+  const presenting = useDrawStore((s) => s.presenting);
+  if (presenting) return null;
 
   const isOpen = side === 'left' ? leftOpen : rightOpen;
   const otherOpen = side === 'left' ? rightOpen : leftOpen;

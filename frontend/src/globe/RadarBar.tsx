@@ -1,5 +1,6 @@
 import { radarCanAnimate } from './useRadar';
 import { useRadarFramesQuery } from '../state/queries';
+import { useDrawStore } from '../state/drawStore';
 import { useUiStore } from '../state/uiStore';
 import { IconButton } from '../ui/Button';
 import Button from '../ui/Button';
@@ -20,8 +21,9 @@ export default function RadarBar() {
   const cursor = useUiStore((s) => s.radarCursor);
   const setCursor = useUiStore((s) => s.setRadarCursor);
   const times = useUiStore((s) => s.radarFrameTimes);
+  const presenting = useDrawStore((s) => s.presenting);
   const failed = useRadarFramesQuery(radarOn && activeMode === 'weather').isError;
-  if (activeMode !== 'weather' || !radarOn || failed || times.length === 0) return null;
+  if (presenting || activeMode !== 'weather' || !radarOn || failed || times.length === 0) return null;
 
   const last = times.length - 1;
   const index = Math.min(cursor, last);

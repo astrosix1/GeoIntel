@@ -1,4 +1,5 @@
 import { MAX_TIME_OFFSET_MINUTES, useUiStore } from '../state/uiStore';
+import { useDrawStore } from '../state/drawStore';
 import { useShownNow } from '../state/useNow';
 import Button from '../ui/Button';
 import styles from './TimeBar.module.css';
@@ -20,7 +21,8 @@ export default function TimeBar() {
   const offset = useUiStore((s) => s.timeOffsetMinutes);
   const setOffset = useUiStore((s) => s.setTimeOffsetMinutes);
   const shown = useShownNow();
-  if (activeMode !== 'timezone') return null;
+  const presenting = useDrawStore((s) => s.presenting);
+  if (presenting || activeMode !== 'timezone') return null;
 
   const label = new Intl.DateTimeFormat('en-US', {
     timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,

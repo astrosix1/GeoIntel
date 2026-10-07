@@ -55,3 +55,27 @@
     grid-template-rows: 48px auto minmax(0, 1fr) 28px;
   }
 }
+
+/* Presentation mode: only the map. The bars, panels and edge tabs are hidden, and the map fills the page. */
+.presenting {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.presenting > :not(.body):not(.bodyOverlay) {
+  display: none;
+}
+
+.presenting .body,
+.presenting .bodyOverlay {
+  display: block;
+  grid-row: 1;
+}
+
+.presenting aside {
+  display: none;
+}
+
+.presenting .map {
+  position: absolute;
+  inset: 0;
+}
