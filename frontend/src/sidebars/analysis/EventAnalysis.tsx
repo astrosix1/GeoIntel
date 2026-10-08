@@ -253,7 +253,7 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
           {isError && <div className={styles.error}>Failed to load analysis.</div>}
         </Section>
       )}
-      {briefing && <BriefingBlocks briefing={briefing} premium={premium} />}
+      {briefing && <BriefingBlocks briefing={briefing} />}
 
       {patternData && <EventPattern data={patternData} />}
 

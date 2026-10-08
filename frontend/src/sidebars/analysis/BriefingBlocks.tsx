@@ -32,8 +32,8 @@ function Cites({ numbers, briefing }: { numbers: number[]; briefing: Briefing })
 }
 
 // The structured briefing: summary, key points that cite their sources, and what the sources do not say.
-// Facts are what the article states; parties (actor codes) are for premium readers.
-export function BriefingBlocks({ briefing, premium }: { briefing: Briefing; premium: boolean }) {
+// Facts are what the article states.
+export function BriefingBlocks({ briefing }: { briefing: Briefing }) {
   const s = briefing.structured;
   const facts = briefing.facts;
   const chips: string[] = [];
@@ -43,7 +43,6 @@ export function BriefingBlocks({ briefing, premium }: { briefing: Briefing; prem
     if (facts.place) chips.push(facts.place);
     for (const cue of facts.scale_cues) if (CUE_LABELS[cue]) chips.push(CUE_LABELS[cue]);
   }
-  const parties = briefing.parties ?? [];
   return (
     <>
       <Section title="What we know">
@@ -79,15 +78,6 @@ export function BriefingBlocks({ briefing, premium }: { briefing: Briefing; prem
             ))}
           </div>
           <div className={styles.mediaCaption}>Stated in the article; nothing is estimated.</div>
-        </Section>
-      )}
-      {premium && parties.length > 0 && (
-        <Section title="Parties">
-          <div>
-            {parties.map((p) => (
-              <Badge key={p}>{p}</Badge>
-            ))}
-          </div>
         </Section>
       )}
     </>

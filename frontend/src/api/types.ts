@@ -817,18 +817,17 @@ export interface EventPattern {
   counted: string;
   source: string;
 }
-export interface RelatedEvent {
-  id: string;
-  title: string;
-  type: string;
-  country: string;
-  severity: number;
-  severity_level: number | null;
-  date: string;
-  sources: number;
+export type RelatedEvent = Crisis;
+
+export interface EventParty {
+  code: string;
+  name: string;
+  country_code: string | null;
 }
 export interface EventAnalysisData {
   crisis_id: string;
+  country_code: string | null;
   pattern: EventPattern | null;
   related: RelatedEvent[];
+  parties: EventParty[];
 }

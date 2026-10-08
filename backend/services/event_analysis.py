@@ -7,7 +7,7 @@ import math
 from datetime import datetime, timedelta
 
 from cache import cache_get, cache_set
-from models import Session, Crisis
+from models import Session, Crisis, Actor
 from services.country_detail import VIOLENT_TYPES, _country_names
 import json
 from pathlib import Path
@@ -84,14 +84,28 @@ def build_related(session, crisis, limit=RELATED_LIMIT):
         days = abs((crisis.date_start - c.date_start).days)
         scored.append((days - (30 if same_country else 0), c))
     scored.sort(key=lambda pair: pair[0])
-    return [{'id': c.id, 'title': c.title, 'type': c.type, 'country': c.country, 'severity': c.severity,
-             'severity_level': c.severity_level, 'date': c.date_start.isoformat(), 'sources': c.source_count or 1}
-            for _, c in scored[:limit]]
+    return [c.to_dict() for _, c in scored[:limit]]
+
+
+def build_parties(session, crisis):
+    """The actors the event involves: code, name and, for states, the country code that opens the country analysis."""
+    codes = [c for c in (crisis.stakeholders or '').split(',') if c]
+    if not codes:
+        return []
+    found = {a.id: a for a in session.query(Actor).filter(Actor.id.in_(codes)).all()}
+    out = []
+    for code in codes:
+        actor = found.get(code)
+        if not actor:
+            continue
+        is_state = (actor.category or '').upper() == 'STATE' and len(code) == 2
+        out.append({'code': code, 'name': actor.name, 'country_code': code if is_state else None})
+    return out
 
 
 def get_event_analysis(crisis_id):
     """{'pattern', 'related'} for the event, or None when it does not exist. Cached briefly."""
-    key = f'event_analysis:v1:{crisis_id}'
+    key = f'event_analysis:v2:{crisis_id}'
     cached = cache_get(key)
     if cached is not None:
         return cached
@@ -100,7 +114,8 @@ def get_event_analysis(crisis_id):
         crisis = session.query(Crisis).filter(Crisis.id == crisis_id).first()
         if not crisis:
             return None
-        result = {'crisis_id': crisis_id, 'pattern': build_pattern(session, crisis), 'related': build_related(session, crisis)}
+        result = {'crisis_id': crisis_id, 'country_code': _iso2_for(crisis.country), 'pattern': build_pattern(session, crisis),
+                  'related': build_related(session, crisis), 'parties': build_parties(session, crisis)}
     finally:
         session.close()
     cache_set(key, result, ttl=15 * 60)
