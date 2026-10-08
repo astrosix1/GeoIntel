@@ -58,31 +58,10 @@ function Trade({ profile }: { profile: CountryProfile }) {
   );
 }
 
-function Contribution({ profile }: { profile: CountryProfile }) {
-  const text = profile.narrative.world_contribution;
-  return (
-    <div className={styles.group}>
-      <div className={styles.groupTitle}>Contribution to the world</div>
-      {text ? (
-        <div className={eventStyles.briefingText}>{text}</div>
-      ) : (
-        <Unavailable>No generated narrative is available. See the real GDP and trade figures above.</Unavailable>
-      )}
-    </div>
-  );
-}
-
 export function Economy({ detail, profile }: { detail: Detail | undefined; profile: CountryProfile }) {
   const eco = detail?.economy;
   const infra = detail?.infrastructure;
-  if (!detail) {
-    return (
-      <>
-        <Trade profile={profile} />
-        <Contribution profile={profile} />
-      </>
-    );
-  }
+  if (!detail) return <Trade profile={profile} />;
   return (
     <>
       {detail.stats && detail.stats.length > 0 && (
@@ -114,7 +93,6 @@ export function Economy({ detail, profile }: { detail: Detail | undefined; profi
           <Unavailable>Infrastructure figures are unavailable for this country.</Unavailable>
         )}
       </div>
-      <Contribution profile={profile} />
     </>
   );
 }
