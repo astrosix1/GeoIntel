@@ -67,6 +67,7 @@ export default function ComparePlaces({ units }: { units: UnitSystem }) {
       refetchOnWindowFocus: false,
     })),
   });
+  const attribution = results.find((r) => r.data?.attribution)?.data?.attribution;
   if (places.length === 0) return null;
 
   return (
@@ -124,8 +125,13 @@ export default function ComparePlaces({ units }: { units: UnitSystem }) {
         </tbody>
       </table>
       <div className={styles.mediaCaption}>
-        Hazards are listed by their pin&apos;s distance from the place, not their full footprint. Forecast data:
-        Open-Meteo.
+        Hazards are listed by their pin&apos;s distance from the place, not their full footprint. Forecast data:{' '}
+        {attribution ? (
+          <a className={styles.sourceLink} href={attribution.url} target="_blank" rel="noopener noreferrer">{attribution.name}</a>
+        ) : (
+          'MET Norway'
+        )}{' '}
+        ({attribution?.license ?? 'CC BY 4.0 / NLOD 2.0'}).
       </div>
     </div>
   );

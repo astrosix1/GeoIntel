@@ -112,6 +112,9 @@ function AddPlaceForm() {
               </button>
             </li>
           ))}
+          <li className={dashboard.status}>
+            Place search: &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors.
+          </li>
         </ul>
       )}
 

@@ -674,26 +674,29 @@ export interface Forecast {
   elevation_m: number | null;
   // Offset of the place's local time from UTC, in seconds (for the Local / UTC toggle).
   utc_offset_seconds?: number | null;
+  // Who the forecast comes from and the licence to show; and the fields this source does not publish (shown as missing, never estimated).
+  attribution?: { name: string; url: string; license: string; license_url: string };
+  capabilities?: { wind_gusts: boolean; precipitation_probability: boolean; visibility: boolean; uv_hours: number };
   current: ForecastCurrent;
   hourly: {
     time: string[];
-    temperature_2m?: number[];
+    temperature_2m?: (number | null)[];
     precipitation_probability?: (number | null)[];
-    precipitation?: number[];
-    wind_speed_10m?: number[];
-    wind_gusts_10m?: number[];
-    weather_code?: number[];
+    precipitation?: (number | null)[];
+    wind_speed_10m?: (number | null)[];
+    wind_gusts_10m?: (number | null)[];
+    weather_code?: (number | null)[];
   };
   // The model's own values for the hours just gone (analysis, not station readings); oldest first.
   recent?: { time: string[]; temperature_2m?: (number | null)[]; precipitation?: (number | null)[] };
   daily: {
     time: string[];
-    weather_code?: number[];
-    temperature_2m_max?: number[];
-    temperature_2m_min?: number[];
-    precipitation_sum?: number[];
+    weather_code?: (number | null)[];
+    temperature_2m_max?: (number | null)[];
+    temperature_2m_min?: (number | null)[];
+    precipitation_sum?: (number | null)[];
     precipitation_probability_max?: (number | null)[];
-    wind_gusts_10m_max?: number[];
+    wind_gusts_10m_max?: (number | null)[];
   };
   source: string;
   generated_at: string;
@@ -760,6 +763,8 @@ export interface AlertSettings {
   alert_email: boolean;
   alert_min_level: AlertMinLevel;
   alert_conditions: Partial<Record<ConditionKey, number>>;
+  // Limits the current forecast source cannot check (for example gusts), so they are not offered.
+  unavailable_conditions?: ConditionKey[];
 }
 
 export interface GeoResult {

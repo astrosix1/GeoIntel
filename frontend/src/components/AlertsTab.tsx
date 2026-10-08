@@ -130,7 +130,7 @@ function Settings() {
       </label>
       <div>
         <div className={styles.note}>Forecast alerts: tell me when a place&apos;s forecast for the next 3 days passes a limit.</div>
-        {CONDITIONS.map((spec) => (
+        {CONDITIONS.filter((spec) => !data.unavailable_conditions?.includes(spec.key)).map((spec) => (
           <ConditionRow
             key={spec.key}
             spec={spec}
@@ -140,6 +140,12 @@ function Settings() {
           />
         ))}
       </div>
+      {data.unavailable_conditions?.includes('gust_kmh') && (
+        <span className={styles.note}>
+          Gust alerts are not offered: the forecast source (MET Norway) does not publish wind gusts. The UV limit looks at the next two days,
+          using the clear-sky UV index.
+        </span>
+      )}
       {save.isError && <span className={styles.note}>Couldn&apos;t save that setting.</span>}
     </div>
   );

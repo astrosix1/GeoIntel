@@ -9,7 +9,7 @@ import math
 import re
 from datetime import datetime, timezone
 
-from services.condition_alerts import InvalidConditions, clean_conditions, stored_conditions
+from services.condition_alerts import InvalidConditions, clean_conditions, stored_conditions, unavailable_conditions
 from services.geo import distance_km
 from services.supabase_rest import SupabaseConflict, check_uuid, rest
 
@@ -172,6 +172,7 @@ def get_alert_settings(user_id):
         else DEFAULT_ALERT_SETTINGS['alert_email'],
         'alert_min_level': row.get('alert_min_level') or DEFAULT_ALERT_SETTINGS['alert_min_level'],
         'alert_conditions': stored_conditions(row.get('alert_conditions')),
+        'unavailable_conditions': unavailable_conditions(),
     }
 
 

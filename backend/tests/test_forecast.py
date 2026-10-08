@@ -14,7 +14,7 @@ from services.forecast import ForecastUnavailable, InvalidCoordinates, check_coo
 def clean(app_module, monkeypatch):
     limiter.reset()
     cache_clear_prefix('forecast:')
-    monkeypatch.delenv('OPEN_METEO_API_KEY', raising=False)
+    monkeypatch.setenv('OPEN_METEO_API_KEY', 'test-key')  # these tests cover the Open-Meteo path, used only with a commercial key
     yield
     cache_clear_prefix('forecast:')
 
@@ -105,8 +105,8 @@ class TestGetForecast:
         params = get.call_args.kwargs['params']
         assert (params['latitude'], params['longitude']) == (29.8, -95.4)
         assert params['timezone'] == 'auto' and params['forecast_days'] == 7
-        assert 'apikey' not in params
-        assert get.call_args.args[0] == 'https://api.open-meteo.com/v1/forecast'
+        assert params['apikey'] == 'test-key'
+        assert get.call_args.args[0] == 'https://customer-api.open-meteo.com/v1/forecast'
 
         assert result['current']['temperature_2m'] == 26.6
         assert result['current']['weather_code'] == 3
@@ -160,9 +160,14 @@ class TestGetForecast:
         assert get.call_args.kwargs['params']['apikey'] == 'secret-key'
 
     def test_geocoding_host_follows_the_same_switch(self, monkeypatch):
-        assert forecast.provider_url('geocoding') == 'https://geocoding-api.open-meteo.com'
-        monkeypatch.setenv('OPEN_METEO_API_KEY', 'k')
         assert forecast.provider_url('geocoding') == 'https://customer-geocoding-api.open-meteo.com'
+        monkeypatch.delenv('OPEN_METEO_API_KEY')
+        assert forecast.provider_url('geocoding') == 'https://geocoding-api.open-meteo.com'
+
+    def test_without_a_key_the_provider_is_met_norway(self, monkeypatch):
+        assert forecast.provider() == 'open-meteo'
+        monkeypatch.delenv('OPEN_METEO_API_KEY')
+        assert forecast.provider() == 'met-norway'
 
 
 class TestForecastEndpoint:

@@ -218,12 +218,12 @@ class TestAlerts:
 
 class TestAlertSettings:
     def test_defaults(self, db):
-        assert svc.get_alert_settings(uid()) == {'alert_email': True, 'alert_min_level': 'orange', 'alert_conditions': {}}
+        assert svc.get_alert_settings(uid()) == {'alert_email': True, 'alert_min_level': 'orange', 'alert_conditions': {}, 'unavailable_conditions': ['gust_kmh']}
 
     def test_set_one_field_keeps_the_other(self, db):
         user = uid()
-        assert svc.set_alert_settings(user, alert_min_level='red') == {'alert_email': True, 'alert_min_level': 'red', 'alert_conditions': {}}
-        assert svc.set_alert_settings(user, alert_email=False) == {'alert_email': False, 'alert_min_level': 'red', 'alert_conditions': {}}
+        assert svc.set_alert_settings(user, alert_min_level='red') == {'alert_email': True, 'alert_min_level': 'red', 'alert_conditions': {}, 'unavailable_conditions': ['gust_kmh']}
+        assert svc.set_alert_settings(user, alert_email=False) == {'alert_email': False, 'alert_min_level': 'red', 'alert_conditions': {}, 'unavailable_conditions': ['gust_kmh']}
 
     def test_does_not_clobber_hidden_outlets(self, db):
         user = uid()
@@ -376,9 +376,9 @@ class TestAlertEndpoints:
     def test_settings_round_trip(self, client, secret, db):
         user = uid()
         assert call(client, 'get', '/api/me/alert-settings', user).get_json() == {
-            'alert_email': True, 'alert_min_level': 'orange', 'alert_conditions': {}}
+            'alert_email': True, 'alert_min_level': 'orange', 'alert_conditions': {}, 'unavailable_conditions': ['gust_kmh']}
         res = call(client, 'put', '/api/me/alert-settings', user, json={'alert_email': False, 'alert_min_level': 'red'})
-        assert res.get_json() == {'alert_email': False, 'alert_min_level': 'red', 'alert_conditions': {}}
+        assert res.get_json() == {'alert_email': False, 'alert_min_level': 'red', 'alert_conditions': {}, 'unavailable_conditions': ['gust_kmh']}
 
     def test_conditions_round_trip_merge_and_switch_off(self, client, secret, db):
         user = uid()

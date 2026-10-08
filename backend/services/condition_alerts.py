@@ -37,6 +37,13 @@ CONDITIONS = {
 }
 
 
+def unavailable_conditions():
+    """Limits the current forecast source cannot check (MET Norway publishes no wind gusts for a global point), so the settings
+    screen does not offer them and says why. Empty with the Open-Meteo commercial plan."""
+    from services.forecast import provider
+    return ['gust_kmh'] if provider() == 'met-norway' else []
+
+
 class InvalidConditions(ValueError):
     pass
 

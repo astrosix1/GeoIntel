@@ -1,13 +1,11 @@
-"""Point forecast for Weather mode: current conditions, the next 48 hours and
-the next 7 days at any latitude/longitude, from Open-Meteo.
+"""Point forecast for Weather mode: current conditions, the next hours and the next days at any latitude/longitude.
 
-Open-Meteo's free API is for non-commercial use only (and CC BY 4.0, so the
-frontend shows the attribution). A paid product must use its commercial plan:
-set OPEN_METEO_API_KEY and the same calls go to the customer endpoint — no
-code change. Everything Open-Meteo-specific lives here, so swapping provider
-later means rewriting this one module.
+Two providers, one shape. MET Norway (services/forecast_met.py) is the default: its data is licensed for commercial use with
+attribution. Open-Meteo is used only when OPEN_METEO_API_KEY is set, because its free API is for non-commercial use only and
+this is a subscription product; the key switches to Open-Meteo's commercial endpoint with no other change, and brings back the
+fields MET Norway does not publish for a global point (wind gusts, chance of rain, visibility, a UV index beyond 2.7 days).
 
-Nothing is ever invented: any upstream failure raises ForecastUnavailable.
+Nothing is ever invented: any upstream failure raises ForecastUnavailable, and a field the provider lacks is None.
 """
 import logging
 import os
@@ -16,6 +14,8 @@ from datetime import datetime, timezone
 import requests
 
 from cache import cache_get, cache_set
+from services import forecast_met
+from services.forecast_errors import ForecastUnavailable, InvalidCoordinates  # noqa: F401  (re-exported for callers)
 
 logger = logging.getLogger(__name__)
 
@@ -45,16 +45,13 @@ DAILY_FIELDS = [
 ]
 
 
-class ForecastUnavailable(Exception):
-    """The provider could not be reached or returned something unusable."""
-
-
-class InvalidCoordinates(ValueError):
-    pass
-
-
 def _api_key():
     return os.getenv('OPEN_METEO_API_KEY', '').strip()
+
+
+def provider():
+    """'open-meteo' when a commercial key is configured, otherwise 'met-norway'."""
+    return 'open-meteo' if _api_key() else 'met-norway'
 
 
 def provider_url(kind='forecast'):
@@ -103,6 +100,11 @@ def get_forecast(lat, lon):
     if cached is not None:
         return cached
 
+    if provider() == 'met-norway':
+        result = forecast_met.build(lat, lon)
+        cache_set(cache_key, result, ttl=CACHE_TTL)
+        return result
+
     try:
         response = requests.get(
             f'{provider_url()}/v1/forecast',
@@ -148,6 +150,9 @@ def get_forecast(lat, lon):
             'daily': body.get('daily_units', {}),
         },
         'source': 'open-meteo.com',
+        'attribution': {'name': 'Open-Meteo', 'url': 'https://open-meteo.com/', 'license': 'CC BY 4.0',
+                        'license_url': 'https://creativecommons.org/licenses/by/4.0/'},
+        'capabilities': {'wind_gusts': True, 'precipitation_probability': True, 'visibility': True, 'uv_hours': 168},
         'generated_at': datetime.now(timezone.utc).isoformat(),
     }
     cache_set(cache_key, result, ttl=CACHE_TTL)

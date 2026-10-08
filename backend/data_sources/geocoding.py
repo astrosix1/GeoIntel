@@ -46,6 +46,44 @@ class NominatimGeocoder:
         return NominatimGeocoder.geocode_status(place_name)[0]
 
     @staticmethod
+    def search(query, limit=8):
+        """Up to `limit` places matching a typed name, best first: [{'name', 'country', 'admin1', 'lat', 'lon'}]. For the watchlist's
+        add-place form, which searches when the user submits (Nominatim's policy forbids search-as-you-type). Same one-request-a-second
+        limit and identifying User-Agent as geocode(). Raises RuntimeError when the service cannot be reached."""
+        import time
+        elapsed = time.monotonic() - NominatimGeocoder._last_request_at
+        if elapsed < 1.0:
+            time.sleep(1.0 - elapsed)
+        NominatimGeocoder._last_request_at = time.monotonic()
+        try:
+            response = requests.get(
+                NOMINATIM_BASE,
+                params={'q': query, 'format': 'jsonv2', 'addressdetails': 1, 'limit': limit, 'accept-language': 'en',
+                        'featuretype': 'settlement'},
+                headers={'User-Agent': 'GeoIntel/1.0 (geopolitical intelligence platform)'},
+                timeout=10,
+            )
+            response.raise_for_status()
+            raw = response.json()
+        except Exception as e:
+            logger.warning(f"Nominatim search failed for {query!r}: {e}")
+            raise RuntimeError(str(e))
+        results, seen = [], set()
+        for item in raw:
+            address = item.get('address') or {}
+            name = (item.get('name') or next((address[k] for k in ('city', 'town', 'village', 'municipality', 'county') if address.get(k)), None))
+            try:
+                lat, lon = float(item['lat']), float(item['lon'])
+            except (KeyError, TypeError, ValueError):
+                continue
+            admin1 = address.get('state') or address.get('region')
+            key = (name, admin1, address.get('country'))
+            if name and key not in seen:
+                seen.add(key)
+                results.append({'name': name, 'country': address.get('country'), 'admin1': admin1, 'lat': lat, 'lon': lon})
+        return results
+
+    @staticmethod
     def reverse(lat, lon):
         """The name of the place at a point (town or city, then region), or None. For labelling clusters of events; a failed
         lookup is not remembered, so a later try can succeed. Uses the same one-request-a-second limit as geocode()."""

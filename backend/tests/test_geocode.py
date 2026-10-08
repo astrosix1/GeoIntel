@@ -12,7 +12,7 @@ from services.geocode import InvalidQuery, search_places
 @pytest.fixture(autouse=True)
 def clean(monkeypatch):
     cache_clear_prefix('geocode:')
-    monkeypatch.delenv('OPEN_METEO_API_KEY', raising=False)
+    monkeypatch.setenv('OPEN_METEO_API_KEY', 'test-key')  # these tests cover the Open-Meteo path, used only with a commercial key
     yield
     cache_clear_prefix('geocode:')
 
@@ -34,7 +34,7 @@ def test_maps_results_and_drops_extra_fields():
     assert results == [{'name': 'Houston', 'country': 'United States', 'admin1': 'Texas', 'lat': 29.76, 'lon': -95.37}]
     params = get.call_args.kwargs['params']
     assert params['name'] == 'Houston' and params['count'] == 8
-    assert get.call_args.args[0] == 'https://geocoding-api.open-meteo.com/v1/search'
+    assert get.call_args.args[0] == 'https://customer-geocoding-api.open-meteo.com/v1/search'
 
 
 def test_no_matches_is_an_empty_list():

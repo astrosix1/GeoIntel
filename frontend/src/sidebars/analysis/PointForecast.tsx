@@ -42,7 +42,8 @@ function Current({ forecast, units }: { forecast: Forecast; units: UnitSystem })
         <div>
           <div className={forecastStyles.nowTemp}>{formatTemp(c.temperature_2m, units)}</div>
           <div className={forecastStyles.nowLabel}>
-            {now.label} &middot; feels like {formatTemp(c.apparent_temperature, units)}
+            {now.label}
+            {c.apparent_temperature != null && <> &middot; feels like {formatTemp(c.apparent_temperature, units)}</>}
           </div>
         </div>
       </div>
@@ -209,10 +210,13 @@ export default function PointForecast({ lat, lon, label }: { lat: number; lon: n
           <div className={styles.mediaCaption}>
             Forecast for the nearest model grid point, shown in {timeZone === 'utc' ? 'UTC' : "the place's local time"}. Updated{' '}
             {forecast ? timeAgo(forecast.generated_at) : ''}. Data:{' '}
-            <a className={styles.sourceLink} href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">
-              Open-Meteo
+            <a className={styles.sourceLink} href={forecast?.attribution?.url ?? 'https://api.met.no/'} target="_blank" rel="noopener noreferrer">
+              {forecast?.attribution?.name ?? 'MET Norway'}
             </a>{' '}
-            (CC BY 4.0).
+            (<a className={styles.sourceLink} href={forecast?.attribution?.license_url ?? 'https://api.met.no/doc/License'} target="_blank" rel="noopener noreferrer">
+              {forecast?.attribution?.license ?? 'CC BY 4.0 / NLOD 2.0'}
+            </a>).
+            {forecast?.capabilities && !forecast.capabilities.wind_gusts && ' This source does not publish wind gusts or the chance of rain.'}
           </div>
         </>
       )}

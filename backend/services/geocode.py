@@ -1,11 +1,13 @@
-"""Place-name search for the watchlist, from Open-Meteo's geocoding API (same
-provider, licence and commercial-key switch as services/forecast.py)."""
+"""Place-name search for the watchlist: OpenStreetMap's Nominatim by default (free for commercial use with the
+"(c) OpenStreetMap contributors" credit, one request a second, results cached), or Open-Meteo's geocoding when an Open-Meteo
+commercial key is set (same switch as services/forecast.py).
+"""
 import logging
 
 import requests
 
 from cache import cache_get, cache_set
-from services.forecast import ForecastUnavailable, provider_params, provider_url
+from services.forecast import ForecastUnavailable, provider, provider_params, provider_url
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +34,15 @@ def search_places(query):
     cached = cache_get(cache_key)
     if cached is not None:
         return cached
+
+    if provider() == 'met-norway':
+        from data_sources.geocoding import NominatimGeocoder
+        try:
+            results = NominatimGeocoder.search(q, MAX_RESULTS)
+        except RuntimeError as e:
+            raise ForecastUnavailable(str(e))
+        cache_set(cache_key, results, ttl=CACHE_TTL)
+        return results
 
     try:
         response = requests.get(
