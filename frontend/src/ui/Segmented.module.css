@@ -68,3 +68,37 @@
     padding: 0 var(--space-1);
   }
 }
+
+/* Rows of equal cells. The column count is set inline; the dividers are drawn between cells rather than around them. */
+.grid {
+  display: grid;
+}
+
+.grid .option {
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.grid .option:last-child {
+  border-right: 0;
+}
+
+.grid .option:nth-last-child(-n + 3) {
+  border-bottom: 0;
+}
+
+/* Rows of three equal cells (grid={3}); the dividers are drawn between cells rather than around them. */
+.grid {
+  display: grid;
+}
+
+.grid .option {
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.grid .option:nth-child(3n) {
+  border-right: 0;
+}
+
+.grid .option:nth-last-child(-n + 3) {
+  border-bottom: 0;
+}

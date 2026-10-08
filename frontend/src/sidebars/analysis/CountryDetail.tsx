@@ -2,19 +2,20 @@ import { useState } from 'react';
 import PremiumGate from '../../components/PremiumGate';
 import Segmented from '../../ui/Segmented';
 import { ScenariosError } from '../../api/client';
-import type { AgeBand, CountryDetail as Detail, Rate, ShareItem, Shares } from '../../api/types';
+import type { AgeBand, CountryDetail as Detail, CountryProfile, Rate, ShareItem, Shares } from '../../api/types';
 import { useCountryDetailQuery, useEntitlements } from '../../state/queries';
 import eventStyles from './EventAnalysis.module.css';
 import countryStyles from './CountryAnalysis.module.css';
 import styles from './CountryDetail.module.css';
 
-type Tab = 'government' | 'people' | 'migration' | 'economy' | 'security';
-const TABS: { value: Tab; label: string }[] = [
-  { value: 'government', label: 'Government' },
-  { value: 'people', label: 'People' },
-  { value: 'migration', label: 'Migration' },
-  { value: 'economy', label: 'Economy' },
-  { value: 'security', label: 'Security' },
+type Tab = 'government' | 'people' | 'migration' | 'economy' | 'security' | 'geography';
+const TABS: { value: Tab; label: string; premium: boolean }[] = [
+  { value: 'government', label: 'Government', premium: true },
+  { value: 'people', label: 'People', premium: true },
+  { value: 'migration', label: 'Migration', premium: true },
+  { value: 'economy', label: 'Economy', premium: false },
+  { value: 'security', label: 'Security', premium: true },
+  { value: 'geography', label: 'Geography', premium: false },
 ];
 
 const number = (value: number) => value.toLocaleString();
@@ -229,12 +230,85 @@ function ListBlock({ title, list, note }: { title: string; list: { items: string
   );
 }
 
-function Economy({ detail }: { detail: Detail }) {
-  const eco = detail.economy;
-  const infra = detail.infrastructure;
-  if (!eco && !infra) return <Unavailable>Economy and infrastructure facts are unavailable for this country.</Unavailable>;
+function Trade({ profile }: { profile: CountryProfile }) {
+  const { trade } = profile;
+  return (
+    <div className={styles.group}>
+      <div className={styles.groupTitle}>Trade and exports</div>
+      <div className={countryStyles.factsGrid}>
+        <span className={countryStyles.factLabel}>GDP</span>
+        <span className={countryStyles.factValue}>
+          {trade.gdp_usd_billions ? `$${trade.gdp_usd_billions.toLocaleString()}B (${trade.gdp_year})` : 'unavailable'}
+        </span>
+        <span className={countryStyles.factLabel}>Exports (% of GDP)</span>
+        <span className={countryStyles.factValue}>{trade.exports_percent_of_gdp ?? 'unavailable'}</span>
+        <span className={countryStyles.factLabel}>Imports (% of GDP)</span>
+        <span className={countryStyles.factValue}>{trade.imports_percent_of_gdp ?? 'unavailable'}</span>
+        <span className={countryStyles.factLabel}>Trade openness</span>
+        <span className={countryStyles.factValue}>
+          {trade.trade_openness_percent_of_gdp != null ? `${trade.trade_openness_percent_of_gdp}% of GDP` : 'unavailable'}
+        </span>
+      </div>
+      {trade.top_exports_by_commodity ? (
+        <ul className={eventStyles.bullets}>
+          {trade.top_exports_by_commodity.map((exp) => (
+            <li key={exp.hs4}>
+              HS {exp.hs4} - ${exp.trade_value_usd.toLocaleString()}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className={`${countryStyles.unavailable} ${eventStyles.gap}`}>
+          {trade.top_exports_unavailable_reason ?? 'Top exports by commodity are unavailable for this country.'}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Geography({ profile }: { profile: CountryProfile }) {
+  const { demographics, demographics_source, narrative } = profile;
+  const isAiGenerated = narrative.model !== 'static-facts-only';
   return (
     <>
+      <div className={styles.group}>
+        <div className={styles.groupTitle}>Land</div>
+        <div className={countryStyles.factsGrid}>
+          <span className={countryStyles.factLabel}>Area</span>
+          <span className={countryStyles.factValue}>
+            {demographics.area_km2 ? `${Math.round(demographics.area_km2).toLocaleString()} km²` : 'unavailable'}
+          </span>
+          {demographics.borders && demographics.borders.length > 0 && (
+            <>
+              <span className={countryStyles.factLabel}>Borders</span>
+              <span className={countryStyles.factValue}>{demographics.borders.join(', ')}</span>
+            </>
+          )}
+        </div>
+        <div className={styles.asOf}>Source: {demographics_source}</div>
+      </div>
+      <div className={styles.group}>
+        <div className={styles.groupTitle}>Geography and infrastructure</div>
+        <span className={`${countryStyles.narrativeBadge} ${isAiGenerated ? countryStyles.aiBadge : countryStyles.staticBadge}`}>
+          {isAiGenerated ? 'AI-generated' : 'Real facts, no narrative'}
+        </span>
+        {narrative.geography_infrastructure ? (
+          <div className={eventStyles.briefingText}>{narrative.geography_infrastructure}</div>
+        ) : (
+          <Unavailable>No AI key is configured in this environment, so no generated narrative is shown here.</Unavailable>
+        )}
+      </div>
+    </>
+  );
+}
+
+function Economy({ detail, profile }: { detail: Detail | undefined; profile: CountryProfile }) {
+  const eco = detail?.economy;
+  const infra = detail?.infrastructure;
+  if (!detail) return <Trade profile={profile} />;
+  return (
+    <>
+      <Trade profile={profile} />
       <ListBlock title="Main exports" list={eco?.exports} />
       <ListBlock title="Main imports" list={eco?.imports} />
       {eco?.export_partners && <ShareList title="Top export partners" shares={eco.export_partners} />}
@@ -320,36 +394,42 @@ function errorMessage(error: unknown): string {
 }
 
 // Premium country facts under the free profile. Locked viewers see what is inside and a lock; the server enforces it.
-export default function CountryDetail({ countryCode }: { countryCode: string }) {
+export default function CountryDetail({ countryCode, profile }: { countryCode: string; profile: CountryProfile }) {
   const { unlocked } = useEntitlements();
-  const [tab, setTab] = useState<Tab>('government');
+  const [picked, setPicked] = useState<Tab>('government');
   const { data, isLoading, error } = useCountryDetailQuery(countryCode, unlocked);
-
-  if (!unlocked) {
-    return (
-      <div className={eventStyles.section}>
-        <div className={eventStyles.sectionTitle}>Country Facts</div>
-        <PremiumGate feature="Detailed country facts" block>
-          <div className={styles.lockedBox}>Leaders and constitution, population breakdowns, immigration origins, trade, resources and infrastructure.</div>
-        </PremiumGate>
-      </div>
-    );
-  }
+  // Free viewers keep Economy (the trade figures) and Geography; the other tabs are premium and shown greyed with a lock note.
+  const tab = unlocked || !TABS.find((t) => t.value === picked)?.premium ? picked : 'economy';
+  const options = TABS.map((t) => ({
+    value: t.value,
+    label: t.label,
+    disabled: t.premium && !unlocked,
+    hint: t.premium && !unlocked ? 'Premium' : undefined,
+  }));
+  const needsDetail = tab !== 'geography';
 
   return (
     <div className={eventStyles.section}>
       <div className={eventStyles.sectionTitle}>Country Facts</div>
       <div className={styles.tabs}>
-        <Segmented options={TABS} value={tab} onChange={setTab} label="Country facts" size="sm" block />
+        <Segmented options={options} value={tab} onChange={setPicked} label="Country facts" size="sm" block grid={3} />
       </div>
-      {isLoading && <div className={eventStyles.loading}>Loading…</div>}
-      {error && <div className={eventStyles.error}>{errorMessage(error)}</div>}
+      {!unlocked && (
+        <div className={styles.group}>
+          <PremiumGate feature="Government, People, Migration, Security and the detailed economy facts" block>
+            <div className={styles.lockedBox}>Government, People, Migration and Security, and the detailed economy facts.</div>
+          </PremiumGate>
+        </div>
+      )}
+      {unlocked && needsDetail && isLoading && <div className={eventStyles.loading}>Loading…</div>}
+      {unlocked && error && <div className={eventStyles.error}>{errorMessage(error)}</div>}
+      {tab === 'geography' && <Geography profile={profile} />}
+      {tab === 'economy' && <Economy detail={unlocked ? data : undefined} profile={profile} />}
       {data && tab === 'government' && <Government detail={data} />}
       {data && tab === 'people' && <People detail={data} />}
       {data && tab === 'migration' && <Migration detail={data} />}
-      {data && tab === 'economy' && <Economy detail={data} />}
       {data && tab === 'security' && <Security detail={data} />}
-      {data && <div className={styles.asOf}>Sources: {data.sources.join(', ')}.</div>}
+      {unlocked && data && needsDetail && <div className={styles.asOf}>Sources: {data.sources.join(', ')}.</div>}
     </div>
   );
 }

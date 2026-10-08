@@ -16,6 +16,7 @@ export default function Segmented<T extends string>({
   label,
   size = 'md',
   block = false,
+  grid = 0,
 }: {
   options: SegmentedOption<T>[];
   value: T;
@@ -23,9 +24,11 @@ export default function Segmented<T extends string>({
   label: string;
   size?: 'md' | 'sm';
   block?: boolean;
+  // Lay the choices out in rows of this many (for example 3) instead of one line, when there are too many to fit.
+  grid?: number;
 }) {
   return (
-    <div className={[styles.group, size === 'sm' && styles.sm, block && styles.block].filter(Boolean).join(' ')} role="group" aria-label={label}>
+    <div className={[styles.group, size === 'sm' && styles.sm, block && styles.block, grid > 0 && styles.grid].filter(Boolean).join(' ')} style={grid > 0 ? { gridTemplateColumns: `repeat(${grid}, 1fr)` } : undefined} role="group" aria-label={label}>
       {options.map((option) => (
         <button
           key={option.value}
