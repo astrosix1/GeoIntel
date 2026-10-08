@@ -92,3 +92,13 @@ Classify at ingest with the real actor pair and place precision; add `crises.sco
 ## Stage 4 (next)
 
 A "Why Global/Local" line in the event panel from `scope_basis`, and rewording the Local-view note and the "Unreliable" severity badge, which assumed Local meant GDELT noise.
+
+## Stage 4 as built
+
+- The event detail now carries `scope_basis`; the Analysis panel shows a **Why Global / Why Local** section (one plain sentence for the rule and the terms that decided it, from `lib/scopeWhy.ts`), and a Global/Local badge next to the severity.
+- Removed the "unreliable severity" treatment of Local events (badge, list note, panel caveat): it came from raw GDELT scores for noise; severity is now the strict, reasoned score for every event, so Local events show it like any other.
+- Not done: NewsAPI and curated events carry no reason (the section simply does not appear); outlet-name signals ("| Local News |" is already a term, but regional outlet names are not); non-English term lists.
+
+## Status
+
+Stages 1-4 built. The remaining step is deploy (migration and the start-up judging run on their own) and watching the first real split on production.

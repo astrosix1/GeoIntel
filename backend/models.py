@@ -159,6 +159,7 @@ class Crisis(Base):
             'source_url': self.source_url,
             'is_verified': self.is_verified,
             'scope': self.scope or 'global',
+            'scope_basis': json.loads(self.scope_basis) if self.scope_basis else None,
         }
 
 

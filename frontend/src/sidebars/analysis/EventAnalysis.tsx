@@ -16,6 +16,7 @@ import { labelForSeverity, severityTone } from '../../globe/severity';
 import { hazardIconName } from '../../globe/hazards';
 import Icon from '../../ui/Icon';
 import { Badge, Section, Tabs } from '../../ui/Display';
+import { describeScope } from '../../lib/scopeWhy';
 import { hasReportTime, reportedLocalTime } from '../../lib/eventTime';
 import { zoneAt } from '../../lib/zoneLookup';
 import { cityName } from '../../lib/timezones';
@@ -54,11 +55,7 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
   // Prefer the real image extracted from the crisis's own source article
   // (og:image) over the generic Wikipedia illustrative image — it's the
   // more specific, more relevant real photo when both are present.
-  // GDELT's Goldstein-derived severity is known-unreliable for scope='local'
-  // content (routine local crime/accident/human-interest stories that reliably
-  // mis-score as severe, e.g. a "school fights student" story scoring 100) —
-  // don't present that number at face value; mute it and caveat it instead.
-  const isLocalScope = crisis.scope === 'local';
+  const scopeWhy = describeScope(crisis.scope, detail?.scope_basis);
 
   const imageSrc = briefing?.source_media?.image_url || briefing?.image?.src;
   const imageCaption = briefing?.source_media?.image_url ? null : briefing?.image?.caption;
@@ -98,15 +95,10 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
     <div>
       <h2 className={styles.title}>{crisis.title}</h2>
       <div className={styles.metaRow}>
-        {isLocalScope ? (
-          <span title="Local reports' severity scores are known-unreliable and not shown at face value.">
-            <Badge>Local report &middot; severity unreliable</Badge>
-          </span>
-        ) : (
-          <Badge tone={severityTone(crisis.severity)}>
-            {labelForSeverity(crisis.severity)} &middot; {crisis.severity}
-          </Badge>
-        )}
+        <Badge tone={severityTone(crisis.severity)}>
+          {labelForSeverity(crisis.severity)} &middot; {crisis.severity}
+        </Badge>
+        {crisis.scope && <Badge>{crisis.scope === 'local' ? 'Local' : 'Global'}</Badge>}
         <Badge>{crisis.country}</Badge>
         <Badge>{crisis.type}</Badge>
         <Badge>{new Date(crisis.date).toLocaleDateString()}</Badge>
@@ -209,13 +201,20 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
         </Section>
       )}
 
-      {detail?.severity_basis && !isLocalScope && (
+      {detail?.severity_basis && (
         <Section title={`Why this rating (${detail.severity_basis.name})`}>
           <ul className={styles.sourceList}>
             {detail.severity_basis.basis.map((reason) => (
               <li key={reason}>{reason}</li>
             ))}
           </ul>
+        </Section>
+      )}
+
+      {scopeWhy && (
+        <Section title={`Why ${crisis.scope === 'local' ? 'Local' : 'Global'}`}>
+          <div className={styles.briefingText}>{scopeWhy.summary}</div>
+          {scopeWhy.terms.length > 0 && <div className={styles.mediaCaption}>Matched: {scopeWhy.terms.join(', ')}</div>}
         </Section>
       )}
 

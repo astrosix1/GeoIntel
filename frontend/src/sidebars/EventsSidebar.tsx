@@ -190,8 +190,6 @@ function EventsList() {
         ))}
       </div>
 
-      {scope === 'local' && <p className={styles.note}>Local reports: severity scores are unreliable for this content and are not shown at face value.</p>}
-
       {isLoading && <StateMessage kind="loading" title="Loading events…" />}
       {isError && !crises && <StateMessage kind="error" title="Couldn't load events" hint="The server did not answer." actionLabel="Try again" onAction={() => refetch()} />}
       {!isLoading && crises && rows.length === 0 && (
@@ -202,7 +200,6 @@ function EventsList() {
         <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
           {virtualizer.getVirtualItems().map((row) => {
             const crisis = rows[row.index];
-            const isLocal = crisis.scope === 'local';
             return (
               <ListRow
                 key={crisis.id}
@@ -215,7 +212,7 @@ function EventsList() {
                 onClick={() => selectCrisis(crisis)}
                 detail={
                   <>
-                    {isLocal ? <Badge compact>Unreliable</Badge> : <Badge compact tone={severityTone(crisis.severity)}>{labelForSeverity(crisis.severity)}</Badge>}
+                    <Badge compact tone={severityTone(crisis.severity)}>{labelForSeverity(crisis.severity)}</Badge>
                     <span className={styles.metaText}>{crisis.country}</span>
                     <span className={styles.metaAge}>{shortAge(parseUtc(crisis.date))}</span>
                   </>

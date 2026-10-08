@@ -47,6 +47,8 @@ export interface Crisis {
   // callers must treat a missing value as unknown rather than assuming
   // 'global'.
   scope?: 'global' | 'local';
+  // Why it is Global or Local (rule and the terms that decided it); null for events not judged by topic.
+  scope_basis?: { rule: string; global: string[]; local: string[] } | null;
 }
 
 // The lean shape returned by GET /api/crises?view=map — everything the globe,

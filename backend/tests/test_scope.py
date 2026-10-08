@@ -144,3 +144,19 @@ def test_judge_missing_fills_in_only_unjudged_events_and_is_idempotent(app_modul
     assert scopes['Nothing to see'] == ('global', 'no match, default')
     assert db_session.get(Crisis, done.id).scope_basis == '{"rule":"kept"}'
     assert scope.judge_missing() == (0, 0)
+
+
+def test_the_event_detail_carries_the_reason(app_module, db_session):
+    import uuid
+    from datetime import datetime
+    from models import Crisis
+    cid = f'sc-{uuid.uuid4().hex[:8]}'
+    db_session.add(Crisis(id=cid, type='conflict', title='NATO leaders meet', country='Testland', latitude=1.0, longitude=1.0, scope='global',
+                          scope_basis=json.dumps({'rule': 'global terms', 'global': ['NATO'], 'local': []}), source='GDELT',
+                          date_start=datetime.utcnow()))
+    db_session.commit()
+    row = db_session.get(Crisis, cid).to_dict()
+    assert row['scope'] == 'global' and row['scope_basis']['global'] == ['NATO']
+    db_session.get(Crisis, cid).scope_basis = None
+    db_session.commit()
+    assert db_session.get(Crisis, cid).to_dict()['scope_basis'] is None
