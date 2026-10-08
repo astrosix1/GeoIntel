@@ -1,6 +1,6 @@
 {
- "version": 1,
- "about": "Terms that decide whether an event is Global or Local (services/scope.py). weight 3 = strong on its own, 2 = medium, 1 = weak (counts only with other signals). case 'sensitive' = acronyms that must be written exactly so (UN, EU, WHO). Edit freely; run scripts/scope_report.py to see the effect.",
+ "version": 2,
+ "about": "Terms that decide whether an event is Global or Local (services/scope.py). weight 3 = strong on its own, 2 = medium, 1 = weak (counts only with other signals). case 'sensitive' = acronyms that must be written exactly so (UN, EU, WHO). Edit freely; run scripts/scope_report.py to see the effect. A term starting with 're:' is a regular expression used as written (for patterns that plain words cannot say). Raise 'version' after editing so stored verdicts are judged again at the next start-up.",
  "groups": [
   {
    "name": "International institutions",
@@ -757,6 +757,15 @@
     "DAX",
     "IPO",
     "Nikkei"
+   ]
+  },
+  {
+   "name": "County abbreviation",
+   "side": "local",
+   "weight": 2,
+   "case": "sensitive",
+   "terms": [
+    "re:(?!(?:Motor|Oil|Gas|Mfg|Trading|Electric|Steel|Power|Coffee|Tea|Shipping|Telephone|Insurance|Mutual|Bay|Hudson|Ford|Mining|Brewing)\\b)[A-Z][a-z]+ Co\\."
    ]
   }
  ]

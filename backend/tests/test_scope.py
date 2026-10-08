@@ -128,10 +128,10 @@ def test_judge_missing_fills_in_only_unjudged_events_and_is_idempotent(app_modul
         db_session.add(Crisis(id=cid, type='conflict', title=title, country='Testland', latitude=1.0, longitude=1.0, scope=old_scope,
                               source='GDELT', date_start=datetime.utcnow(), location_confidence=55))
     done = Crisis(id=f'sc-{uuid.uuid4().hex[:8]}', type='conflict', title='Mayor opens library', country='Testland', latitude=1.0,
-                  longitude=1.0, scope='global', scope_basis='{"rule":"kept"}', source='GDELT', date_start=datetime.utcnow())
+                  longitude=1.0, scope='global', scope_basis='{"v":' + str(scope.terms_version()) + ',"rule":"kept"}', source='GDELT', date_start=datetime.utcnow())
     db_session.add(done)
     db_session.commit()
-    db_session.query(Crisis).filter(Crisis.scope_basis.is_(None), ~Crisis.id.in_(ids)).update({'scope_basis': '{}'}, synchronize_session=False)
+    db_session.query(Crisis).filter(~Crisis.id.in_(ids + [done.id])).update({'scope_basis': '{"v":' + str(scope.terms_version()) + ',"rule":"x"}'}, synchronize_session=False)
     db_session.commit()
 
     judged, moved = scope.judge_missing()
@@ -142,7 +142,7 @@ def test_judge_missing_fills_in_only_unjudged_events_and_is_idempotent(app_modul
     assert scopes['City council votes on zoning'][0] == 'local'
     assert scopes['NATO leaders meet'][0] == 'global'
     assert scopes['Nothing to see'] == ('global', 'no match, default')
-    assert db_session.get(Crisis, done.id).scope_basis == '{"rule":"kept"}'
+    assert json.loads(db_session.get(Crisis, done.id).scope_basis)['rule'] == 'kept'
     assert scope.judge_missing() == (0, 0)
 
 
@@ -160,3 +160,29 @@ def test_the_event_detail_carries_the_reason(app_module, db_session):
     db_session.get(Crisis, cid).scope_basis = None
     db_session.commit()
     assert db_session.get(Crisis, cid).to_dict()['scope_basis'] is None
+
+
+class TestCountyAbbreviation:
+    def test_a_county_written_co_is_local(self):
+        out = classify("Montgomery Co. considers requiring fire hoods in certain apartment buildings")
+        assert out['scope'] == 'local' and out['local'] == ['Montgomery Co.']
+
+    @pytest.mark.parametrize('text', ['Ford Motor Co. recalls trucks', 'Hudson Bay Co. posts loss', 'Standard Oil Co. history'])
+    def test_a_company_written_co_is_not(self, text):
+        assert classify(text)['local'] == []
+
+    def test_old_verdicts_are_judged_again_when_the_lists_change(self, app_module, db_session):
+        import uuid
+        from datetime import datetime
+        from models import Crisis
+        cid = f'sc-{uuid.uuid4().hex[:8]}'
+        db_session.add(Crisis(id=cid, type='conflict', title='Montgomery Co. considers fire hoods', country='Testland', latitude=1.0, longitude=1.0,
+                              scope='global', scope_basis=json.dumps({'v': 1, 'rule': 'no match, default', 'global': [], 'local': []}),
+                              source='GDELT', date_start=datetime.utcnow(), location_confidence=55))
+        db_session.commit()
+        db_session.query(Crisis).filter(Crisis.id != cid).update({'scope_basis': '{"v":' + str(scope.terms_version()) + ',"rule":"x"}'}, synchronize_session=False)
+        db_session.commit()
+        assert scope.judge_missing() == (1, 1)
+        db_session.expire_all()
+        row = db_session.get(Crisis, cid)
+        assert row.scope == 'local' and json.loads(row.scope_basis)['v'] == scope.terms_version()

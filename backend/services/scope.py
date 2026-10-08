@@ -33,7 +33,9 @@ def _compiled():
         flags = 0 if group.get('case') == 'sensitive' else re.IGNORECASE
         # Longest first so "city council meeting" is reported rather than "city council"; "s?" lets plurals match.
         terms = sorted({t.strip() for t in group['terms'] if t.strip()}, key=len, reverse=True)
-        pattern = re.compile(r'(?<![\w])(' + '|'.join(re.escape(t) for t in terms) + r')(?:s|es)?(?![\w])', flags)
+        # A term written 're:...' is a regular expression used as it is; every other term is plain words.
+        parts = [t[3:] if t.startswith('re:') else re.escape(t) for t in terms]
+        pattern = re.compile(r'(?<![\w])(' + '|'.join(parts) + r')(?:s|es)?(?![\w])', flags)
         groups.append({'name': group['name'], 'side': group['side'], 'weight': group['weight'], 'pattern': pattern, 'ignore': flags != 0})
     return groups
 
@@ -95,9 +97,14 @@ def classify(text, *, place_specific=False, actors_differ=None, noise=False):
 MAX_BASIS_TERMS = 6
 
 
+@lru_cache(maxsize=1)
+def terms_version():
+    return int(json.loads(TERMS_PATH.read_text(encoding='utf-8')).get('version', 1))
+
+
 def basis_json(verdict):
     """The stored reason: the rule and the first few terms that decided it, small enough to keep on every row."""
-    return json.dumps({'rule': verdict['rule'], 'global': verdict['global'][:MAX_BASIS_TERMS], 'local': verdict['local'][:MAX_BASIS_TERMS]},
+    return json.dumps({'v': terms_version(), 'rule': verdict['rule'], 'global': verdict['global'][:MAX_BASIS_TERMS], 'local': verdict['local'][:MAX_BASIS_TERMS]},
                       ensure_ascii=False, separators=(',', ':'))
 
 
@@ -109,21 +116,29 @@ def _summary(facts):
 
 
 def judge_missing(batch=500):
-    """Judge every event that has no scope_basis yet (events from before this feature) and store the verdict. The event's
-    present scope came from the old actor-noise rule, so Local counts as that signal. Safe to run any time: it only touches
-    events with no basis, so a second run does nothing. Returns (judged, moved)."""
+    """Judge every event whose stored verdict is missing or was made with older term lists (the 'v' in scope_basis), and store
+    the new one. The old actor-noise signal is read back from the stored rule; an event with no verdict yet has only its
+    scope to go on, and Local there came from that signal. Safe to run any time: once an event carries the current version
+    a second run leaves it alone. Returns (judged, moved)."""
+    from sqlalchemy import or_
     from models import Session, Crisis
     log = logging.getLogger(__name__)
+    current = '%"v":' + str(terms_version()) + ',%'
     judged = moved = 0
     session = Session()
     try:
         while True:
-            rows = session.query(Crisis).filter(Crisis.scope_basis.is_(None)).limit(batch).all()
+            rows = (session.query(Crisis).filter(or_(Crisis.scope_basis.is_(None), ~Crisis.scope_basis.like(current)))
+                    .limit(batch).all())
             if not rows:
                 break
             for row in rows:
+                try:
+                    noise = (json.loads(row.scope_basis).get('rule') == 'actor noise') if row.scope_basis else (row.scope == 'local')
+                except (ValueError, AttributeError):
+                    noise = row.scope == 'local'
                 verdict = classify(f'{row.title} {_summary(row.facts)}', place_specific=(row.location_confidence or 0) >= 85,
-                                   noise=(row.scope == 'local'))
+                                   noise=noise)
                 if row.scope != verdict['scope']:
                     row.scope = verdict['scope']
                     moved += 1

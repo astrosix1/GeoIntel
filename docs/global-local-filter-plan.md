@@ -102,3 +102,7 @@ A "Why Global/Local" line in the event panel from `scope_basis`, and rewording t
 ## Status
 
 Stages 1-4 built. The remaining step is deploy (migration and the start-up judging run on their own) and watching the first real split on production.
+
+## Follow-up: "Co." as a county
+
+"Montgomery Co." (a county written short) matched nothing. Added a regex term, `Capitalised-word Co.`, to the Local list, excluding common company words (Motor, Oil, Ford, Hudson Bay and similar) so "Ford Motor Co." is not Local. A term written `re:...` in `scope_terms.json` is used as a regular expression. Every stored verdict now carries the term-list `version`; raising it (done: 1 to 2) makes the next start-up judge those events again, and the old actor-noise signal is read back from the stored rule so re-judging does not turn term-based Local events into permanent Local. On a copy of the dev data, 29 "Co." events became Local.
