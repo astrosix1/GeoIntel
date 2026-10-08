@@ -14,7 +14,8 @@ except Exception:
 from models import Session, Crisis, News
 from cache import cache_get, cache_set
 from data_sources import fetch_real_page_metadata
-from services.story_facts import story_stamp, story_context_lines
+from services.story_facts import story_stamp, story_context_lines, stored_facts
+from services.briefing_structure import BRIEFING_TOOL, validate as validate_structured, as_text
 from services.ai_client import anthropic_client, AI_MODEL
 from services.reliability import calculate_source_reliability
 
@@ -177,6 +178,9 @@ Real article text/excerpts to draw the actual explanation from:
 {excerpts_block}
 """
 
+        facts = stored_facts(crisis)
+        parties = [p for p in (crisis.stakeholders or '').split(',') if p]
+
         # Fetch Wikipedia image (non-blocking, optional)
         image = fetch_wikipedia_image(crisis.country, crisis.title)
 
@@ -185,34 +189,41 @@ Real article text/excerpts to draw the actual explanation from:
             try:
                 message = anthropic_client.messages.create(
                     model=AI_MODEL,
-                    max_tokens=2800,
+                    max_tokens=1800,
+                    tools=[BRIEFING_TOOL],
+                    tool_choice={'type': 'tool', 'name': 'write_briefing'},
                     messages=[
                         {
                             "role": "user",
-                            "content": f"""Write a single, expansive, specific explanation of what is actually happening in this crisis, for a journalist or political commentator. Not a severity summary, not a generic category description — the real situation: who did what, to whom, when, where, and why it matters right now. Pull the real substance from the article excerpts and numbered sources below rather than speaking in generalities.
+                            "content": f"""Write a briefing on what is actually happening in this crisis, for a journalist or political commentator, by calling the write_briefing tool. Not a severity summary, not a generic category description: the real situation (who did what, to whom, when, where, and why it matters now), drawn from the article excerpts and numbered sources below.
 
 CITATION RULES (this will be published under this outlet's name, so sourcing discipline matters):
-- Whenever you state a specific fact, figure, quote, or claim that comes from the numbered source list or the article excerpts below, cite it inline immediately after the claim using its bracketed number, e.g. "...forces reportedly withdrew from the eastern district [3]."
-- A single sentence may carry multiple citations if it draws on more than one source, e.g. "[2][5]".
+- Whenever you state a specific fact, figure, quote, or claim that comes from the numbered source list or the article excerpts below, cite it in that key point's `sources` list, using the numbers from the source list
+- A key point may cite several sources.
 - Only cite numbers that appear in the provided source list. Never invent a source, a number, a quote, or a statistic that isn't backed by the list, the excerpts, or the structured Crisis Context data.
-- Analytical judgment that comes from your own reasoning rather than a listed source should NOT carry a citation — present it plainly as analysis.
-- If several sources report the same event and they differ on a fact (a figure, a cause, who is responsible), say so and cite each version.
+- Analytical judgment that comes from your own reasoning rather than a listed source has an empty `sources` list.
+- If several sources report the same event and they differ on a fact (a figure, a cause, who is responsible), say so, naming each version and citing each.
 - If the source list and excerpts are thin, say so explicitly rather than filling the gap with an uncited "fact" — a shorter, honest explanation is better than a padded one.
-
-Format your response as flowing prose — no section headers, no bullet points, just the explanation itself (do not add a "Sources" section yourself — one is appended automatically after your response).
 
 Crisis Context:
 {context}
 
-Be specific — name actors, places, and figures rather than speaking in generalities. Write 400-700 words, scaled to how much real material is actually available above rather than padded to a fixed length."""
+Be specific: name actors, places and figures. `unknowns` are things the sources leave out or disagree on (for example no casualty figure given, or sources differ on the location), never guesses. Scale the length to how much real material is available above."""
                         }
                     ]
                 )
 
-                briefing_text = message.content[0].text
-                briefing_text += _format_sources_section(numbered_sources)
+                block = next((b for b in message.content if getattr(b, 'type', None) == 'tool_use'), None)
+                structured = validate_structured(getattr(block, 'input', None), len(numbered_sources))
+                if structured is None:
+                    logger.warning(f"[Briefing] unusable structured output for {crisis_id}")
+                    return None
+                briefing_text = as_text(structured) + _format_sources_section(numbered_sources)
                 result = {
                     'briefing': briefing_text,
+                    'structured': structured,
+                    'facts': facts,
+                    'parties': parties,
                     'sources': numbered_sources,
                     'model': AI_MODEL,
                     'timestamp': datetime.utcnow().isoformat()
@@ -345,7 +356,9 @@ def _generate_static_briefing(crisis, reliability, numbered_sources, image, exce
         'briefing': briefing_text,
         'sources': numbered_sources,
         'model': 'static-rules',
-        'timestamp': datetime.utcnow().isoformat()
+        'timestamp': datetime.utcnow().isoformat(),
+        'facts': stored_facts(crisis),
+        'parties': [p for p in (crisis.stakeholders or '').split(',') if p],
     }
     if image:
         result['image'] = image

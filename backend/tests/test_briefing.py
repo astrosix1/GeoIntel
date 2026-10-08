@@ -122,3 +122,17 @@ def test_static_briefing_has_no_dangling_citation_marker(app_module, db_session)
     seed_crisis(db_session)
     result = _run('brief-1', fetch_real_page_metadata={'title': 'A real headline', 'description': 'desc'})
     assert '[1]' not in result['briefing']
+
+
+def test_ai_path_returns_structured_briefing_and_drops_bad_citations(app_module, db_session):
+    from types import SimpleNamespace
+    seed_crisis(db_session, stakeholders='USA,RUS')
+    block = SimpleNamespace(type='tool_use', input={'summary': 'Two sentences.', 'unknowns': ['No casualty figure given'],
+                                                    'key_points': [{'text': 'A thing happened', 'sources': [1, 7]}]})
+    client = SimpleNamespace(api_key='k', messages=SimpleNamespace(create=lambda **kw: SimpleNamespace(content=[block])))
+    with patch('services.briefing.anthropic_client', client):
+        result = _run('brief-1')
+    assert result['structured']['key_points'][0]['sources'] == [1]
+    assert result['structured']['unknowns'] == ['No casualty figure given']
+    assert result['parties'] == ['USA', 'RUS']
+    assert 'Two sentences.' in result['briefing']

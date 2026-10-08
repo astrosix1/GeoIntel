@@ -188,8 +188,27 @@ export interface SourceMedia {
   video_url: string | null;
 }
 
+export interface StructuredBriefing {
+  summary: string;
+  key_points: { text: string; sources: number[] }[];
+  unknowns: string[];
+}
+
+// What the story's article states (services/story_facts.py); null when nothing was extracted.
+export interface BriefingFacts {
+  place: string | null;
+  killed: number | null;
+  injured: number | null;
+  scale_cues: string[];
+  summary: string | null;
+}
+
 export interface Briefing {
   briefing: string;
+  structured?: StructuredBriefing;
+  facts?: BriefingFacts | null;
+  parties?: string[];
+
   model: string;
   sources: BriefingSource[];
   timestamp: string;

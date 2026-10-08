@@ -12,6 +12,7 @@ import {
 import { useUiStore } from '../../state/uiStore';
 import Scenarios from './Scenarios';
 import EventPattern from './EventPattern';
+import { BriefingBlocks } from './BriefingBlocks';
 import Comments from './Comments';
 import SaveButton from '../../components/SaveButton';
 import { labelForSeverity, severityTone } from '../../globe/severity';
@@ -246,11 +247,13 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
         </Section>
       )}
 
-      <Section title="Analysis">
-        {isLoading && <div className={styles.loading}>Loading analysis...</div>}
-        {isError && <div className={styles.error}>Failed to load analysis.</div>}
-        {briefing && <div className={styles.briefingText}>{briefing.briefing}</div>}
-      </Section>
+      {(isLoading || isError) && (
+        <Section title="Analysis">
+          {isLoading && <div className={styles.loading}>Loading analysis...</div>}
+          {isError && <div className={styles.error}>Failed to load analysis.</div>}
+        </Section>
+      )}
+      {briefing && <BriefingBlocks briefing={briefing} premium={premium} />}
 
       {patternData && <EventPattern data={patternData} />}
 
