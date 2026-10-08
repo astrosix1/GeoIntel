@@ -19,7 +19,7 @@ export default function CountryAnalysis({ countryCode }: { countryCode: string }
     return <div className={eventStyles.error}>Failed to load country profile.</div>;
   }
 
-  const { demographics, narrative } = profile;
+  const { demographics } = profile;
 
   return (
     <div>
@@ -47,17 +47,6 @@ export default function CountryAnalysis({ countryCode }: { countryCode: string }
       </div>
 
       <CountryDetail countryCode={countryCode} profile={profile} />
-
-      <div className={eventStyles.section}>
-        <div className={eventStyles.sectionTitle}>Contribution to the World</div>
-        {narrative.world_contribution ? (
-          <div className={eventStyles.briefingText}>{narrative.world_contribution}</div>
-        ) : (
-          <div className={styles.unavailable}>
-            No generated narrative available — see the real GDP/trade figures above.
-          </div>
-        )}
-      </div>
     </div>
   );
 }

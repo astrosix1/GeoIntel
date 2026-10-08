@@ -266,6 +266,20 @@ function Trade({ profile }: { profile: CountryProfile }) {
   );
 }
 
+function Contribution({ profile }: { profile: CountryProfile }) {
+  const text = profile.narrative.world_contribution;
+  return (
+    <div className={styles.group}>
+      <div className={styles.groupTitle}>Contribution to the world</div>
+      {text ? (
+        <div className={eventStyles.briefingText}>{text}</div>
+      ) : (
+        <Unavailable>No generated narrative is available. See the real GDP and trade figures above.</Unavailable>
+      )}
+    </div>
+  );
+}
+
 function Geography({ profile }: { profile: CountryProfile }) {
   const { demographics, demographics_source, narrative } = profile;
   const isAiGenerated = narrative.model !== 'static-facts-only';
@@ -305,10 +319,18 @@ function Geography({ profile }: { profile: CountryProfile }) {
 function Economy({ detail, profile }: { detail: Detail | undefined; profile: CountryProfile }) {
   const eco = detail?.economy;
   const infra = detail?.infrastructure;
-  if (!detail) return <Trade profile={profile} />;
+  if (!detail) {
+    return (
+      <>
+        <Trade profile={profile} />
+        <Contribution profile={profile} />
+      </>
+    );
+  }
   return (
     <>
       <Trade profile={profile} />
+      <Contribution profile={profile} />
       <ListBlock title="Main exports" list={eco?.exports} />
       <ListBlock title="Main imports" list={eco?.imports} />
       {eco?.export_partners && <ShareList title="Top export partners" shares={eco.export_partners} />}
