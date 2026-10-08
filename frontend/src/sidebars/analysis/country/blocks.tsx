@@ -1,4 +1,4 @@
-import type { AgeBand, CityItem, CountryEnergy, CountryHdi, CountryMineral, CountryStat } from '../../../api/types';
+import type { AgeBand, CityItem, CountryDemocracy, CountryDetail, CountryEnergy, CountryHdi, CountryMineral, CountryStat } from '../../../api/types';
 import { changeText, formatNumber } from './chart';
 import Sparkline from './Sparkline';
 import { Unavailable } from './shared';
@@ -157,5 +157,59 @@ export function MineralsBlock({ minerals }: { minerals: { items: CountryMineral[
       {render('Other minerals and materials', others)}
       <div className={styles.asOf}>Production and reserves as published by the {minerals.source}; estimates, in the units shown.</div>
     </>
+  );
+}
+
+const KIND_TITLE = { security: 'Security and arms control', political: 'Political', economic: 'Economic', other: 'Other' } as const;
+
+export function Memberships({ memberships }: { memberships: NonNullable<CountryDetail['memberships']> }) {
+  const kinds = (['security', 'political', 'economic', 'other'] as const).filter((k) => memberships.some((m) => m.kind === k));
+  return (
+    <div className={styles.group}>
+      <div className={styles.groupTitle}>Alliances and groupings</div>
+      {kinds.map((kind) => (
+        <div key={kind} className={styles.chipBlock}>
+          <div className={styles.asOf}>{KIND_TITLE[kind]}</div>
+          <div className={styles.chips}>
+            {memberships.filter((m) => m.kind === kind).map((m) => (
+              <span key={m.abbr} className={styles.chip} title={`${m.name}${m.note ? ` (${m.note})` : ''}`}>
+                {m.abbr}
+                {m.note ? ` (${m.note})` : ''}
+              </span>
+            ))}
+          </div>
+        </div>
+      ))}
+      <div className={styles.asOf}>As listed by the CIA World Factbook. Hover a badge for the full name; unlisted abbreviations are shown as written.</div>
+    </div>
+  );
+}
+
+
+// How democratic the country is (0 to 1), where it ranks, and which kind of regime it is, with the trend since 1950.
+export function DemocracyBlock({ democracy }: { democracy: CountryDemocracy | null | undefined }) {
+  if (!democracy) return null;
+  const change = changeText(democracy.series, '', 3);
+  return (
+    <div className={styles.group}>
+      <div className={styles.groupTitle}>How democratic</div>
+      <div className={statStyles.stat}>
+        <span className={statStyles.label}>Electoral democracy index</span>
+        <span className={statStyles.value}>
+          {formatNumber(democracy.value, 3)}
+          {democracy.regime?.label && <span className={statStyles.unit}>{democracy.regime.label}</span>}
+        </span>
+        <div className={statStyles.meta}>
+          <span>{democracy.year}</span>
+          <span className={statStyles.rank}>#{democracy.rank} of {democracy.of}</span>
+          {change && <span>{change}</span>}
+          <Sparkline points={democracy.series} label={`Electoral democracy index, ${democracy.series[0][0]} to ${democracy.year}`} />
+        </div>
+      </div>
+      <div className={styles.asOf}>
+        0 is no real electoral competition, 1 is fully free and fair elections.
+        {democracy.regime && ` Classed as a ${democracy.regime.label?.toLowerCase()} since ${democracy.regime.since}.`} Source: {democracy.source}.
+      </div>
+    </div>
   );
 }

@@ -2,6 +2,7 @@
 Builds the bundled country datasets in backend/data/country/ from public files, so the app needs no live call for them:
 
   hdi.json       Human Development Index by country and year       (UNDP, via Our World in Data, CC BY)
+  democracy.json Electoral democracy index and political regime    (V-Dem, via Our World in Data, CC BY)
   energy.json    electricity mix and energy use, latest year        (Our World in Data energy data, CC BY)
   minerals.json  production, capacity and reserves by country       (USGS Mineral Commodity Summaries 2025, public domain)
 
@@ -20,6 +21,8 @@ BACKEND = Path(__file__).resolve().parent.parent
 OUT = BACKEND / 'data' / 'country'
 CODES_URL = 'https://raw.githubusercontent.com/datasets/country-codes/master/data/country-codes.csv'
 HDI_URL = 'https://ourworldindata.org/grapher/human-development-index.csv?useColumnShortNames=true'
+DEMOCRACY_URL = 'https://ourworldindata.org/grapher/electoral-democracy-index.csv?useColumnShortNames=true'
+REGIME_URL = 'https://ourworldindata.org/grapher/political-regime.csv?useColumnShortNames=true'
 ENERGY_URL = 'https://raw.githubusercontent.com/owid/energy-data/master/owid-energy-data.csv'
 USGS_URL = ('https://www.sciencebase.gov/catalog/file/get/6798fd34d34ea8c18376e8ee?'
             'f=__disk__92%2Ff6%2F90%2F92f690853b1b1dc6a8000c1da24a7bbfd9f670d0')
@@ -80,6 +83,36 @@ def build_hdi(iso3):
     data = {'source': 'UNDP Human Development Report, via Our World in Data', 'license': 'CC BY', 'countries': out}
     (OUT / 'hdi.json').write_text(json.dumps(data, separators=(',', ':')), encoding='utf-8')
     print(f'hdi: {len(out)} countries')
+
+
+def build_democracy(iso3):
+    index, regime = {}, {}
+    for r in csv.DictReader(io.StringIO(fetch(DEMOCRACY_URL).decode('utf-8'))):
+        iso2 = iso3.get(r['code'])
+        value = r.get('electdem_vdem__estimate_best')
+        if iso2 and value and int(r['year']) >= 1950:
+            index.setdefault(iso2, []).append([int(r['year']), round(float(value), 3)])
+    for r in csv.DictReader(io.StringIO(fetch(REGIME_URL).decode('utf-8'))):
+        iso2 = iso3.get(r['code'])
+        if iso2 and r.get('regime_row_owid') not in (None, ''):
+            regime.setdefault(iso2, []).append([int(r['year']), int(float(r['regime_row_owid']))])
+    out = {}
+    for iso2, series in index.items():
+        series.sort()
+        entry = {'series': series}
+        rows = sorted(regime.get(iso2, []))
+        if rows:
+            year, code = rows[-1]
+            since = year
+            for y, c in reversed(rows):
+                if c != code:
+                    break
+                since = y
+            entry['regime'] = {'code': code, 'year': year, 'since': since}
+        out[iso2] = entry
+    data = {'source': 'V-Dem (Varieties of Democracy), via Our World in Data', 'license': 'CC BY', 'countries': out}
+    (OUT / 'democracy.json').write_text(json.dumps(data, separators=(',', ':')), encoding='utf-8')
+    print(f'democracy: {len(out)} countries')
 
 
 ENERGY_FIELDS = ['coal_share_elec', 'gas_share_elec', 'oil_share_elec', 'nuclear_share_elec', 'hydro_share_elec', 'solar_share_elec',
@@ -171,6 +204,7 @@ def main():
     OUT.mkdir(parents=True, exist_ok=True)
     iso3, names = iso_maps()
     build_hdi(iso3)
+    build_democracy(iso3)
     build_energy(iso3)
     build_minerals(names)
 

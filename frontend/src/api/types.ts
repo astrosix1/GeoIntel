@@ -372,6 +372,56 @@ export interface CityItem {
   capital: boolean;
 }
 
+export interface Chamber {
+  label: string;
+  name: string | null;
+  seats: string | null;
+  electoral_system: string | null;
+  scope: string | null;
+  term: string | null;
+  last_election: string | null;
+  next_election: string | null;
+  women_percent: string | null;
+  parties: string | null;
+}
+
+export interface CountryGovernment {
+  type: string | null;
+  capital: string | null;
+  chief_of_state: Leader | null;
+  head_of_government: Leader | null;
+  cabinet: string | null;
+  election_process: string | null;
+  last_election: string | null;
+  next_election: string | null;
+  constitution: { history: string | null; amendment: string | null };
+  legislature: { name: string | null; structure: string | null; chambers: Chamber[] } | null;
+  judiciary: { highest_courts: string | null; selection: string | null; subordinate_courts: string | null } | null;
+  parties: string[] | null;
+  legal_system: string | null;
+  suffrage: string | null;
+  administrative_divisions: string | null;
+  independence: string | null;
+  national_holiday: string | null;
+  citizenship: Record<string, string> | null;
+}
+
+export interface CountryDemocracy {
+  value: number;
+  year: number;
+  rank: number;
+  of: number;
+  series: [number, number][];
+  source: string;
+  regime?: { label: string | null; since: number; year: number };
+}
+
+export interface OfficeHolder {
+  name: string;
+  start: string | null;
+  end: string | null;
+}
+
 // GET /api/countries/<code>/detail (premium). Every group may be missing; the UI says so instead of filling it in.
 export interface CountryDetail {
   country_code: string;
@@ -379,6 +429,10 @@ export interface CountryDetail {
   tab?: string;
   stats?: CountryStat[];
   hdi?: CountryHdi | null;
+  democracy?: CountryDemocracy | null;
+  leaders?: { head_of_government?: OfficeHolder[]; head_of_state?: OfficeHolder[]; source: string } | null;
+  power?: { head_of_state: string | null; government: string | null; legislature: string | null; courts: string | null; constitution: string | null } | null;
+  intro?: { title: string; extract: string; url: string; license: string; license_url: string; source: string } | null;
   sectors?: CountryStat[];
   energy?: CountryEnergy | null;
   minerals?: { items: CountryMineral[]; source: string } | null;
@@ -399,20 +453,7 @@ export interface CountryDetail {
   sources: string[];
   population: number | null;
   population_year: number | null;
-  government?: {
-    type: string | null;
-    capital: string | null;
-    chief_of_state: Leader | null;
-    head_of_government: Leader | null;
-    cabinet: string | null;
-    election_process: string | null;
-    constitution: { history: string | null; amendment: string | null };
-    legislative: string | null;
-    judicial: string | null;
-    parties: string | null;
-    legal_system: string | null;
-    suffrage: string | null;
-  };
+  government?: CountryGovernment;
   people?: {
     religions: Shares | null;
     ethnic_groups: Shares | null;

@@ -3,13 +3,13 @@ import { formatNumber } from './chart';
 import { Unavailable, Fact } from './shared';
 import { number } from './format';
 import { StatList } from './Stat';
+import { Memberships } from './blocks';
 import eventStyles from '../EventAnalysis.module.css';
 import countryStyles from '../CountryAnalysis.module.css';
 import styles from '../CountryDetail.module.css';
 
 const TYPE_LABELS: Record<string, string> = { conflict: 'Conflict', military: 'Military', civil_unrest: 'Civil unrest', proxy: 'Proxy conflict' };
 const LEVEL_CLASS = ['advisoryNone', 'advisoryLow', 'advisoryHigh', 'advisoryMax'] as const;
-const KIND_TITLE = { security: 'Security and arms control', political: 'Political', economic: 'Economic', other: 'Other' } as const;
 
 // Reports per week, oldest on the left. The bars are scaled to the busiest week; each carries its date and count for a hover.
 function WeeklyBars({ weekly }: { weekly: [string, number][] }) {
@@ -41,29 +41,6 @@ function Advisory({ advisory }: { advisory: NonNullable<Detail['advisory']> }) {
         {advisory.updated ? `Reviewed ${advisory.updated}. ` : ''}One government&apos;s advice, not a measure of risk.{' '}
         <a href={advisory.url} target="_blank" rel="noopener noreferrer">Full advice</a>. Source: {advisory.source}.
       </div>
-    </div>
-  );
-}
-
-function Memberships({ memberships }: { memberships: NonNullable<Detail['memberships']> }) {
-  const kinds = (['security', 'political', 'economic', 'other'] as const).filter((k) => memberships.some((m) => m.kind === k));
-  return (
-    <div className={styles.group}>
-      <div className={styles.groupTitle}>Alliances and groupings</div>
-      {kinds.map((kind) => (
-        <div key={kind} className={styles.chipBlock}>
-          <div className={styles.asOf}>{KIND_TITLE[kind]}</div>
-          <div className={styles.chips}>
-            {memberships.filter((m) => m.kind === kind).map((m) => (
-              <span key={m.abbr} className={styles.chip} title={`${m.name}${m.note ? ` (${m.note})` : ''}`}>
-                {m.abbr}
-                {m.note ? ` (${m.note})` : ''}
-              </span>
-            ))}
-          </div>
-        </div>
-      ))}
-      <div className={styles.asOf}>As listed by the CIA World Factbook. Hover a badge for the full name; unlisted abbreviations are shown as written.</div>
     </div>
   );
 }

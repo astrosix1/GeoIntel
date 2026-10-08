@@ -64,3 +64,27 @@ def minerals(cc):
         return None
     ordered = sorted(rows, key=lambda r: (not r['critical'], -(r.get('world_share') or 0), -(r.get('reserves_share') or 0), r['commodity']))
     return {'items': ordered, 'source': _load('minerals').get('source')}
+
+
+REGIMES = {0: 'Closed autocracy', 1: 'Electoral autocracy', 2: 'Electoral democracy', 3: 'Liberal democracy'}
+
+
+@lru_cache(maxsize=1)
+def _democracy_latest():
+    return {cc: row['series'][-1] for cc, row in _load('democracy')['countries'].items() if row.get('series')}
+
+
+def democracy(cc):
+    """How democratic the country is (V-Dem's electoral democracy index, 0 to 1) with its trend, rank and political regime."""
+    row = _load('democracy')['countries'].get(cc)
+    if not row or not row.get('series'):
+        return None
+    year, value = row['series'][-1]
+    latest = _democracy_latest()
+    higher = sum(1 for _, v in latest.values() if v > value)
+    out = {'value': value, 'year': year, 'rank': higher + 1, 'of': len(latest), 'series': row['series'],
+           'source': _load('democracy').get('source')}
+    regime = row.get('regime')
+    if regime:
+        out['regime'] = {'label': REGIMES.get(regime['code']), 'since': regime['since'], 'year': regime['year']}
+    return out

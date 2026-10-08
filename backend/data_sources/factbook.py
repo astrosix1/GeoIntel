@@ -227,6 +227,69 @@ def parse_memberships(text):
     return items or None
 
 
+def _texts(node):
+    """{key: clean text} for a nested Factbook field (each value is {'text': ...} or a string); empty values left out."""
+    if not isinstance(node, dict):
+        return {}
+    return {key: text for key, value in node.items() if (text := clean(value))}
+
+
+def parse_party_list(node):
+    """The Factbook's parties field is a run of lines separated by <br>; returns them as a list (headings such as
+    'legal parties/alliances:' stay as lines of their own). None when empty."""
+    raw = node.get('text') if isinstance(node, dict) else node
+    if not isinstance(raw, str):
+        return None
+    text = re.sub(r'<br\s*/?>', '\n', raw)
+    text = html.unescape(re.sub(r'<[^>]+>', '', text)).replace(chr(0xfffd), '').replace(chr(0xa0), ' ')
+    lines = [re.sub(r'\s+', ' ', line).strip() for line in text.split('\n')]
+    lines = [line for line in lines if line]
+    return lines[:60] or None
+
+
+def parse_legislature(gov):
+    """The legislature as structured data: its name and structure, then each chamber with seats, electoral system, term,
+    last and next election, women's share and the parties and seats the Factbook lists. Chambers are the 'Legislative branch -
+    ...' entries (lower, upper or unicameral)."""
+    head = _texts(gov.get('Legislative branch'))
+    chambers = []
+    for key, node in gov.items():
+        if not key.startswith('Legislative branch - '):
+            continue
+        t = _texts(node)
+        chambers.append({
+            'label': key.split(' - ', 1)[1],
+            'name': t.get('chamber name'),
+            'seats': t.get('number of seats'),
+            'electoral_system': t.get('electoral system'),
+            'scope': t.get('scope of elections'),
+            'term': t.get('term in office'),
+            'last_election': t.get('most recent election date'),
+            'next_election': t.get('expected date of next election'),
+            'women_percent': t.get('percentage of women in chamber'),
+            'parties': t.get('parties elected and seats per party'),
+        })
+    if not chambers and head.get('number of seats'):
+        # A one-chamber legislature keeps its figures on the legislature itself.
+        chambers.append({
+            'label': head.get('legislative structure') or 'chamber', 'name': head.get('legislature name'), 'seats': head.get('number of seats'),
+            'electoral_system': head.get('electoral system'), 'scope': head.get('scope of elections'), 'term': head.get('term in office'),
+            'last_election': head.get('most recent election date'), 'next_election': head.get('expected date of next election'),
+            'women_percent': head.get('percentage of women in chamber'), 'parties': head.get('parties elected and seats per party'),
+        })
+    if not head and not chambers:
+        return None
+    return {'name': head.get('legislature name'), 'structure': head.get('legislative structure'), 'chambers': chambers}
+
+
+def parse_judiciary(gov):
+    t = _texts(gov.get('Judicial branch'))
+    if not t:
+        return None
+    return {'highest_courts': t.get('highest court(s)'), 'selection': t.get('judge selection and term of office'),
+            'subordinate_courts': t.get('subordinate courts')}
+
+
 def parse_profile(data):
     """The whole Factbook file -> only the fields the app shows. Missing pieces are simply absent."""
     if not isinstance(data, dict):
@@ -245,9 +308,15 @@ def parse_profile(data):
                 'history': _subfield(data, 'Government', 'Constitution', 'history'),
                 'amendment': _subfield(data, 'Government', 'Constitution', 'amendment process'),
             },
-            'legislative': _subfield(data, 'Government', 'Legislative branch', 'description'),
-            'judicial': _subfield(data, 'Government', 'Judicial branch', 'highest courts'),
-            'parties': _field(data, 'Government', 'Political parties and leaders'),
+            'last_election': _subfield(data, 'Government', 'Executive branch', 'most recent election date'),
+            'next_election': _subfield(data, 'Government', 'Executive branch', 'expected date of next election'),
+            'legislature': parse_legislature(gov),
+            'judiciary': parse_judiciary(gov),
+            'parties': parse_party_list(gov.get('Political parties')),
+            'administrative_divisions': _field(data, 'Government', 'Administrative divisions'),
+            'independence': _field(data, 'Government', 'Independence'),
+            'national_holiday': _field(data, 'Government', 'National holiday'),
+            'citizenship': _texts(gov.get('Citizenship')) or None,
             'legal_system': _field(data, 'Government', 'Legal system'),
             'memberships': parse_memberships(_field(data, 'Government', 'International organization participation')),
             'suffrage': _field(data, 'Government', 'Suffrage'),

@@ -72,12 +72,8 @@ def _base(cc, tab):
 
 
 def _government(cc):
-    out = _base(cc, 'government')
-    factbook = FactbookConnector.fetch_profile(cc)
-    if factbook:
-        out['government'] = factbook['government']
-        out['sources'].append(FACTBOOK)
-    return out if factbook else None
+    from services.country_government import build_tab
+    return build_tab(cc)
 
 
 def _people(cc):

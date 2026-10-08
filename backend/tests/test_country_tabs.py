@@ -70,12 +70,16 @@ class TestTabs:
         assert ct.get_country_tab('FR', 'nonsense') is None
         assert ct.get_country_tab('', 'people') is None
 
-    @patch('services.country_tabs.FactbookConnector')
-    def test_government_tab_carries_only_government(self, fb):
+    @patch('services.country_government.explain', return_value=None)
+    @patch('services.country_government.wikipedia')
+    @patch('services.country_government.wikidata')
+    @patch('services.country_government.FactbookConnector')
+    def test_government_tab_carries_only_government(self, fb, wd, wp, _explain):
         fb.fetch_profile.return_value = FR
+        wd.leaders.return_value = wp.politics_intro.return_value = None
         out = ct.get_country_tab('fr', 'government')
         assert out['tab'] == 'government' and out['government']['type'] == 'semi-presidential republic'
-        assert 'people' not in out and 'economy' not in out and out['sources'] == ['CIA World Factbook']
+        assert 'people' not in out and 'economy' not in out and 'CIA World Factbook' in out['sources']
 
     @patch('services.country_tabs.wb')
     @patch('services.country_tabs.FactbookConnector')
@@ -95,7 +99,8 @@ class TestTabs:
         fb.fetch_profile.return_value = None
         wbmod.stats.return_value = []
         bundled.energy.return_value = bundled.minerals.return_value = bundled.hdi.return_value = None
-        assert ct.get_country_tab('FR', 'government') is None
+        with patch('services.country_government.build_tab', return_value=None):
+            assert ct.get_country_tab('FR', 'government') is None
         assert ct.get_country_tab('FR', 'economy') is None
         with patch('services.country_security.build_tab', return_value=None):
             assert ct.get_country_tab('FR', 'security') is None
