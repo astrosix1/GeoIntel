@@ -328,6 +328,44 @@ export interface CountryMineral {
   reserves_share?: number | null;
 }
 
+// People moving in or out, from the UN DESA migrant stock (1990 to 2024).
+export interface MigrationFlow {
+  year: number;
+  source: string;
+  stock: number;
+  series: [number, number][];
+  share_of_population: number | null;
+  share_series?: [number, number][];
+  origins?: { country_code: string; count: number; percent: number | null }[];
+  destinations?: { country_code: string; count: number; percent: number | null }[];
+  other_count: number;
+}
+
+// UNHCR figures for one year; a field is absent when UNHCR reports none.
+export interface RefugeeRow {
+  year: number;
+  refugees?: number;
+  asylum_seekers?: number;
+  idps?: number;
+  stateless?: number;
+  returned_refugees?: number;
+  returned_idps?: number;
+  hst?: number;
+}
+
+export interface RefugeePartner {
+  country_code: string;
+  refugees?: number;
+  asylum_seekers?: number;
+  total: number;
+}
+
+export interface CountryRefugees {
+  source: string;
+  hosted?: { latest: RefugeeRow; series: RefugeeRow[]; by_origin: RefugeePartner[] | null };
+  from_here?: { latest: RefugeeRow; series: RefugeeRow[]; by_destination: RefugeePartner[] | null };
+}
+
 export interface CityItem {
   name: string;
   population: number;
@@ -345,6 +383,9 @@ export interface CountryDetail {
   energy?: CountryEnergy | null;
   minerals?: { items: CountryMineral[]; source: string } | null;
   net_migration_rate?: Rate | null;
+  immigrants?: MigrationFlow | null;
+  emigrants?: MigrationFlow | null;
+  refugees?: CountryRefugees | null;
   sources: string[];
   population: number | null;
   population_year: number | null;

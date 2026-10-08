@@ -40,30 +40,65 @@ def write_names(rows):
     target.write_text(json.dumps(names, ensure_ascii=False, separators=(',', ':'), sort_keys=True), encoding='utf-8')
 
 
+YEARS = [1990, 1995, 2000, 2005, 2010, 2015, 2020, 2024]  # the table's years, in column order (both sexes block starts at column 7)
+WORLD = 900  # the table's own code for "all origins" / "all destinations"
+
+
 def main(path):
     raw = urllib.request.urlopen(CODES_URL).read().decode('utf-8')
-    write_names(list(csv.DictReader(io.StringIO(raw))))
+    rows = list(csv.DictReader(io.StringIO(raw)))
+    write_names(rows)
     m49_to_iso = {}
-    for row in csv.DictReader(io.StringIO(raw)):
+    iso2_to_iso3 = {}
+    for row in rows:
         if row['M49'] and row['ISO3166-1-Alpha-2']:
             m49_to_iso[int(row['M49'])] = row['ISO3166-1-Alpha-2']
+        if row['ISO3166-1-Alpha-2'] and row['ISO3166-1-Alpha-3']:
+            iso2_to_iso3[row['ISO3166-1-Alpha-2']] = row['ISO3166-1-Alpha-3']
+    (Path(__file__).resolve().parent.parent / 'data_sources' / 'country_iso3.json').write_text(
+        json.dumps(iso2_to_iso3, separators=(',', ':'), sort_keys=True), encoding='utf-8')
 
     ws = openpyxl.load_workbook(path, read_only=True)['Table 1']
     out = {}
+
+    def entry(code):
+        return out.setdefault(code, {'total': 0, 'origins': [], 'series': [], 'emigrants': {'total': 0, 'destinations': [], 'series': []}})
+
     for r in ws.iter_rows(min_row=12, values_only=True):
-        dest, origin, value = m49_to_iso.get(r[4]), m49_to_iso.get(r[6]), r[YEAR_COL]
-        if not dest or not origin or not isinstance(value, (int, float)) or value <= 0:
+        values = list(r[7:7 + len(YEAR_LABELS_COUNT)])
+        dest = m49_to_iso.get(r[4]) if r[4] != WORLD else WORLD
+        origin = m49_to_iso.get(r[6]) if r[6] != WORLD else WORLD
+        if dest is None or origin is None or (dest == WORLD and origin == WORLD):
             continue
-        entry = out.setdefault(dest, {'total': 0, 'origins': []})
-        entry['total'] += int(value)
-        entry['origins'].append([origin, int(value)])
-    for entry in out.values():
-        entry['origins'].sort(key=lambda o: -o[1])
-        entry['origins'] = entry['origins'][:TOP]
+        if not isinstance(values[-1], (int, float)) and not any(isinstance(v, (int, float)) for v in values):
+            continue
+        series = [[y, int(v)] for y, v in zip(YEARS, values) if isinstance(v, (int, float))]
+        latest = values[-1] if isinstance(values[-1], (int, float)) else 0
+        if origin == WORLD:      # everyone living in `dest` who was born elsewhere
+            entry(dest)['series'] = series
+            continue
+        if dest == WORLD:        # everyone born in `origin` who lives elsewhere
+            entry(origin)['emigrants']['series'] = series
+            continue
+        if latest and latest > 0:
+            e = entry(dest)
+            e['total'] += int(latest)
+            e['origins'].append([origin, int(latest)])
+            em = entry(origin)['emigrants']
+            em['total'] += int(latest)
+            em['destinations'].append([dest, int(latest)])
+    for e in out.values():
+        e['origins'].sort(key=lambda o: -o[1])
+        e['origins'] = e['origins'][:TOP]
+        e['emigrants']['destinations'].sort(key=lambda o: -o[1])
+        e['emigrants']['destinations'] = e['emigrants']['destinations'][:TOP]
     target = Path(__file__).resolve().parent.parent / 'data_sources' / 'migration_origins.json'
-    target.write_text(json.dumps({'year': 2024, 'source': 'UN DESA International Migrant Stock 2024', 'countries': out},
+    target.write_text(json.dumps({'year': 2024, 'years': YEARS, 'source': 'UN DESA International Migrant Stock 2024', 'countries': out},
                                  separators=(',', ':'), sort_keys=True), encoding='utf-8')
-    print(f'{len(out)} destination countries -> {target}')
+    print(f'{len(out)} countries -> {target}')
+
+
+YEAR_LABELS_COUNT = YEARS
 
 
 if __name__ == '__main__':

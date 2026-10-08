@@ -14,7 +14,7 @@ from cache import cache_get, cache_set
 from data_sources.factbook import FactbookConnector
 from services import country_data as bundled
 from services import country_indicators as wb
-from services.country_detail import _with_counts, build_conflicts, build_migration
+from services.country_detail import _with_counts, build_conflicts
 
 logger = logging.getLogger(__name__)
 
@@ -101,17 +101,13 @@ def _people(cc):
 
 
 def _migration(cc):
-    out = _base(cc, 'migration')
-    population, _ = _population(cc)
-    migration = build_migration(cc, population)
+    from services.country_migration import build_tab
     factbook = FactbookConnector.fetch_profile(cc)
-    if migration:
-        out['migration'] = migration
-        out['sources'].append(migration['source'])
-    if factbook and factbook['people'].get('net_migration_rate'):
+    out = build_tab(cc)
+    if out and factbook and factbook['people'].get('net_migration_rate'):
         out['net_migration_rate'] = factbook['people']['net_migration_rate']
         out['sources'].append(FACTBOOK)
-    return out if migration else None
+    return out
 
 
 def _economy(cc):

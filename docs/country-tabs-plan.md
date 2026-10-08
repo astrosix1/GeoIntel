@@ -102,3 +102,11 @@ All five recommendations accepted: bundle larger datasets; an AI analyst read on
 - **Trend wording:** percentages and rates move in "points", other figures in percent, and a series that touches zero only says where it started (a percentage change there would mislead).
 - **Rank tables** for all 21 indicators are fetched in the background at start-up, so the first visitor's tab is quick.
 - Not covered in this stage: government debt and some other World Bank series can be old (the year is always shown); minerals are USGS estimates in the units shown.
+
+## Stage 2 as built (Migration)
+
+- **UN DESA table rebuilt with every year** (1990, 1995, 2000, 2005, 2010, 2015, 2020, 2024): for each country the immigrant trend, the top 15 origins, and the same table read from the other side, the emigrant trend and top 15 destinations (`data_sources/migration_origins.json`, 148 KB, rebuilt by `scripts/build_migration_data.py`). The headline immigrant total is the table's own "all origins" figure (France 9.19M), not the sum of the listed origins.
+- **UNHCR** (`data_sources/unhcr.py`, keyless): refugees, asylum seekers, stateless and displaced people living in the country and from the country, by year since 2015, plus where hosted refugees come from and where a country's refugees now live. UNHCR's own country codes are translated from ISO through its countries endpoint (Algeria is ALG, Germany is GFR). The latest year can be a mid-year count.
+- **`services/country_migration.py`** builds the tab: share of the population over time (UN counts against the World Bank population), diaspora share, remittances received and sent (World Bank, with rank and trend), net migration, and the Factbook net migration rate.
+- **Frontend:** Immigrants, Emigrants, net movement, refugees hosted, people who have fled or are displaced, and money sent home, each with year, trend and source; origin and destination bars from the UN table and UNHCR.
+- **Checked on:** France (immigrant share up from 10.1% in 1990 to 13.4%; Algeria, Morocco, Portugal lead), Syria (8.9M emigrants, 36% of its population; 4.9M refugees abroad, mostly Turkey, Germany, Lebanon; 5.5M displaced at home).

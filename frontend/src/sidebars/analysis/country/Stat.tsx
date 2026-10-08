@@ -27,10 +27,14 @@ export default function Stat({ stat }: { stat: CountryStat }) {
 
 export function StatList({ stats, source }: { stats: CountryStat[] | undefined; source?: string }) {
   if (!stats || stats.length === 0) return null;
+  const ranked = stats.find((stat) => stat.rank != null && stat.of != null);
   return (
     <div>
       {stats.map((stat) => <Stat key={stat.code} stat={stat} />)}
-      <div className={styles.meta}>Source: {source ?? stats[0].source}. Rank: 1 is the highest value among {stats[0].of ?? 'all'} economies.</div>
+      <div className={styles.meta}>
+        Source: {source ?? stats[0].source}.
+        {ranked && ` Rank: 1 is the highest value among ${ranked.of} economies.`}
+      </div>
     </div>
   );
 }
