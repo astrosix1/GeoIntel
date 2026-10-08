@@ -29,6 +29,11 @@ class TestTimes:
     def test_a_list_is_kept_sorted_and_without_repeats(self):
         assert dwd.parse_times('2026-10-07T10:00:00Z,2026-10-07T06:00:00Z,2026-10-07T06:00:00Z') == ['2026-10-07T06:00:00Z', '2026-10-07T10:00:00Z']
 
+    def test_minute_steps_and_a_range_of_days_keep_the_newest_times(self):
+        times = dwd.parse_times('2026-10-05T00:00:00.000Z/2026-10-08T22:30:00.000Z/PT5M')
+        assert len(times) == dwd.MAX_TIMES and times[-1] == '2026-10-08T22:30:00Z'
+        assert times[-2] == '2026-10-08T22:25:00Z'
+
     def test_nonsense_is_empty(self):
         assert dwd.parse_times('') == dwd.parse_times(None) == dwd.parse_times('soon') == dwd.parse_times('a/b/PT1H') == []
         assert dwd.parse_times('2026-10-07T06:00:00Z/2026-10-07T09:00:00Z/P1D') == []
@@ -76,6 +81,19 @@ class TestNoPast:
             assert dwd.current_layers(datetime(2026, 10, 8, 20, 25, tzinfo=timezone.utc)) is None
         with patch('data_sources.dwd.layers', return_value=None):
             assert dwd.current_layers() is None
+
+
+class TestRadarNowcast:
+    def test_the_radar_is_cut_at_the_five_minutes_we_are_in(self):
+        from datetime import datetime, timezone
+        times = ['2026-10-08T20:00:00Z', '2026-10-08T20:05:00Z', '2026-10-08T20:10:00Z', '2026-10-08T20:15:00Z', '2026-10-08T21:30:00Z']
+        full = {'layers': {'radar': {'times': times}}, 'attribution': {}}
+        with patch('data_sources.dwd.layers', return_value=full):
+            out = dwd.current_layers(datetime(2026, 10, 8, 20, 12, tzinfo=timezone.utc))
+        assert out['layers']['radar']['times'] == ['2026-10-08T20:10:00Z', '2026-10-08T20:15:00Z', '2026-10-08T21:30:00Z']
+
+    def test_the_radar_forecast_is_a_known_layer(self):
+        assert dwd.LAYERS['radar'][0] == 'Radar_rv_product_1x1km_ger'
 
 
 class TestEndpoint:

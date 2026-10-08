@@ -34,6 +34,9 @@ LAYERS = {
     'pressure': ('Icon_reg025_fd_sl_PMSL', 'Sea-level pressure'),
     'rain': ('Icon_reg025_fd_sl_TOTPREC06H', 'Rain in the 6 hours before'),
     'wind': ('Icon_reg025_fd_sl_UV10M', 'Wind speed (10 m)'),
+    # Germany's radar composite with its own forecast (nowcast) a couple of hours ahead, every five minutes. Covers Germany and its
+    # surroundings only.
+    'radar': ('Radar_rv_product_1x1km_ger', 'Radar forecast, Germany only (next hours)'),
 }
 
 
@@ -42,8 +45,8 @@ def _parse_iso(text):
 
 
 def parse_times(value):
-    """The ISO times of a WMS time dimension, which is either 'start/end/PT3H' (one or more ranges, comma separated) or a plain
-    comma list. Returns [] for anything unreadable."""
+    """The ISO times of a WMS time dimension, which is either 'start/end/PT3H' (hours or minutes; one or more ranges, comma separated)
+    or a plain comma list. A long range keeps its newest MAX_TIMES steps. Returns [] for anything unreadable."""
     out = []
     for part in (value or '').split(','):
         part = part.strip()
@@ -53,14 +56,13 @@ def parse_times(value):
         try:
             if len(pieces) == 3:
                 start, end = _parse_iso(pieces[0]), _parse_iso(pieces[1])
-                match = re.fullmatch(r'PT(\d+)H', pieces[2].strip())
-                step = timedelta(hours=int(match.group(1))) if match else None
-                if not step:
+                match = re.fullmatch(r'PT(\d+)([HM])', pieces[2].strip())
+                if not match or int(match.group(1)) <= 0:
                     continue
-                t = start
-                while t <= end and len(out) < MAX_TIMES * 2:
-                    out.append(t)
-                    t += step
+                step = timedelta(hours=int(match.group(1))) if match.group(2) == 'H' else timedelta(minutes=int(match.group(1)))
+                steps = int((end - start) / step)
+                first = max(0, steps - (MAX_TIMES - 1))   # a range of days at 5 minutes: only the newest steps matter
+                out.extend(start + step * i for i in range(first, steps + 1))
             else:
                 out.append(_parse_iso(pieces[0]))
         except (ValueError, TypeError):
@@ -113,10 +115,15 @@ def current_layers(now=None):
     if not result:
         return None
     now = now or datetime.now(timezone.utc)
-    cutoff = now.replace(minute=0, second=0, microsecond=0).strftime('%Y-%m-%dT%H:%M:%SZ')
     out = copy.deepcopy(result)
     for key in list(out['layers']):
-        out['layers'][key]['times'] = [t for t in out['layers'][key]['times'] if t >= cutoff]
+        times = out['layers'][key]['times']
+        # Cut at the slot we are in: the hour for hourly layers, the five minutes for the radar.
+        steps = [(_parse_iso(b) - _parse_iso(a)).total_seconds() / 60 for a, b in zip(times, times[1:])]
+        slot = int(min(min(steps) if steps else 60, 60))
+        floored = now.replace(minute=(now.minute // slot) * slot if slot < 60 else 0, second=0, microsecond=0)
+        cutoff = floored.strftime('%Y-%m-%dT%H:%M:%SZ')
+        out['layers'][key]['times'] = [t for t in times if t >= cutoff]
         if not out['layers'][key]['times']:
             del out['layers'][key]
     return out if out['layers'] else None

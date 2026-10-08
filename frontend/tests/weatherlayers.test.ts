@@ -52,6 +52,9 @@ describe('dates and labels', () => {
     const now = Date.parse('2026-10-08T20:25:00Z');
     assert.deepEqual(futureTimes(['2026-10-07T06:00:00Z', '2026-10-08T19:00:00Z', '2026-10-08T20:00:00Z', '2026-10-09T01:00:00Z'], now), ['2026-10-08T20:00:00Z', '2026-10-09T01:00:00Z']);
     assert.deepEqual(futureTimes(undefined, now), []);
+    // the radar steps every five minutes, so its cut is at the five minutes we are in
+    const radar = ['2026-10-08T20:15:00Z', '2026-10-08T20:20:00Z', '2026-10-08T20:25:00Z', '2026-10-08T20:30:00Z'];
+    assert.deepEqual(futureTimes(radar, Date.parse('2026-10-08T20:22:00Z')), ['2026-10-08T20:20:00Z', '2026-10-08T20:25:00Z', '2026-10-08T20:30:00Z']);
   });
 
   it("today's date in UTC is the fire layer's day", () => {
@@ -63,6 +66,9 @@ describe('dates and labels', () => {
     const now = Date.parse('2026-10-09T21:00:00Z');
     assert.equal(relativeHours('2026-10-10T15:00:00Z', now), 'in 18 h');
     assert.equal(relativeHours('2026-10-09T15:00:00Z', now), '6 h ago');
-    assert.equal(relativeHours('2026-10-09T21:10:00Z', now), 'now');
+    assert.equal(relativeHours('2026-10-09T21:02:00Z', now), 'now');
+    assert.equal(relativeHours('2026-10-09T21:10:00Z', now), 'in 10 min');
+    assert.equal(relativeHours('2026-10-09T21:25:00Z', now), 'in 25 min');
+    assert.equal(relativeHours('2026-10-09T20:40:00Z', now), '20 min ago');
   });
 });

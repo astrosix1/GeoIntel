@@ -120,11 +120,11 @@ interface UiState {
   // frame currently showing (null when radar isn't drawn).
   radarOn: boolean;
   // Forecast map layers (DWD ICON, one at a time), the forecast moment they show (unix ms; null = now), and the NASA satellite overlays.
-  weatherField: 'temperature' | 'pressure' | 'rain' | 'wind' | null;
+  weatherField: 'temperature' | 'pressure' | 'rain' | 'wind' | 'radar' | null;
   forecastTime: number | null;
   cloudsOn: boolean;
   firesOn: boolean;
-  setWeatherField: (field: 'temperature' | 'pressure' | 'rain' | 'wind' | null) => void;
+  setWeatherField: (field: 'temperature' | 'pressure' | 'rain' | 'wind' | 'radar' | null) => void;
   setForecastTime: (time: number | null) => void;
   setCloudsOn: (on: boolean) => void;
   setFiresOn: (on: boolean) => void;

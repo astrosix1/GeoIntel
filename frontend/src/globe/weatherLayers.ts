@@ -11,13 +11,14 @@ import type * as maplibregl from 'maplibre-gl';
 // Everything is deliberately thin: the map tiles are fetched by the browser straight from the provider, and every layer carries
 // the attribution its licence asks for in the source (the map's attribution control shows it).
 
-export type WeatherField = 'temperature' | 'pressure' | 'rain' | 'wind';
+export type WeatherField = 'temperature' | 'pressure' | 'rain' | 'wind' | 'radar';
 
 export const WEATHER_FIELDS: { key: WeatherField; label: string; note: string }[] = [
   { key: 'temperature', label: 'Temperature (2 m)', note: 'forecast' },
   { key: 'pressure', label: 'Sea-level pressure', note: 'forecast' },
-  { key: 'rain', label: 'Rain, 6 hours to the time shown', note: 'forecast' },
+  { key: 'rain', label: 'Rain forecast: 6-hour totals, next days', note: 'forecast' },
   { key: 'wind', label: 'Wind speed (10 m)', note: 'forecast' },
+  { key: 'radar', label: 'Radar forecast: Germany only, next hours', note: 'forecast' },
 ];
 
 export interface WeatherWant {
@@ -35,6 +36,7 @@ const HOUR = 3600 * 1000;
 const WMS = 'https://maps.dwd.de/geoserver/dwd/wms';
 const GIBS = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best';
 
+let lastField: WeatherField | null = null;
 const FIELD_SOURCE = 'wx-field-src';
 const FIELD_LAYER = 'wx-field-layer';
 const CLOUD_LAYER_PREFIX = 'wx-clouds-layer-';
@@ -46,7 +48,10 @@ const FIRE_SOURCE = 'wx-fires-src';
 const FIRE_LAYER = 'wx-fires-layer';
 const FIRE_LAYER_NAME = 'VIIRS_SNPP_Thermal_Anomalies_375m_All';
 
-const FIELD_OPACITY: Record<WeatherField, number> = { temperature: 0.6, pressure: 0.85, rain: 0.7, wind: 0.9 };
+const FIELD_OPACITY: Record<WeatherField, number> = { temperature: 0.6, pressure: 0.85, rain: 0.7, wind: 0.9, radar: 0.85 };
+
+// The radar forecast exists for Germany and its surroundings only; the source is limited to that box so the rest of the globe is untouched.
+export const RADAR_BOUNDS: [number, number, number, number] = [2.5, 45.5, 17.5, 56];
 
 const DWD_ATTRIBUTION =
   'Forecast: <a href="https://www.dwd.de/" target="_blank" rel="noopener noreferrer">Quelle: Deutscher Wetterdienst</a> (ICON, ' +
@@ -76,10 +81,13 @@ export function cloudBucket(now = Date.now()): number {
   return Math.floor(now / (10 * 60 * 1000));
 }
 
-// The forecast hours from the live hour onward; an earlier hour is never offered (the server cuts the list too).
+// The forecast times from the slot we are in onward (the hour, or the five minutes for the radar); an earlier time is never offered.
 export function futureTimes(times: string[] | undefined, now: number): string[] {
-  const cutoff = Math.floor(now / HOUR) * HOUR;
-  return (times ?? []).filter((t) => Date.parse(t) >= cutoff);
+  const list = times ?? [];
+  const gap = list.length > 1 ? Date.parse(list[1]) - Date.parse(list[0]) : HOUR;
+  const slot = Math.min(Math.max(gap, 60000), HOUR);
+  const cutoff = Math.floor(now / slot) * slot;
+  return list.filter((t) => Date.parse(t) >= cutoff);
 }
 
 // Fire detections are published as vector data; GIBS's WMS draws them as transparent dots, so they are used as ordinary raster tiles.
@@ -129,6 +137,8 @@ export function syncWeatherLayers(map: maplibregl.Map, want: WeatherWant | null)
     removeIfPresent(map, FIELD_LAYER, FIELD_SOURCE);
   } else {
     const url = fieldTileUrl(field.wmsLayer as string, field.time as string);
+    if (map.getSource(FIELD_SOURCE) && lastField !== field.field) removeIfPresent(map, FIELD_LAYER, FIELD_SOURCE);
+    lastField = field.field;
     const source = map.getSource(FIELD_SOURCE) as (maplibregl.RasterTileSource & { setTiles?: (t: string[]) => void }) | undefined;
     if (source && typeof source.setTiles === 'function') {
       source.setTiles([url]);
@@ -136,7 +146,10 @@ export function syncWeatherLayers(map: maplibregl.Map, want: WeatherWant | null)
       removeIfPresent(map, FIELD_LAYER, FIELD_SOURCE);
     }
     if (!map.getSource(FIELD_SOURCE)) {
-      map.addSource(FIELD_SOURCE, { type: 'raster', tiles: [url], tileSize: 256, maxzoom: 6, attribution: DWD_ATTRIBUTION });
+      map.addSource(FIELD_SOURCE, {
+        type: 'raster', tiles: [url], tileSize: 256, maxzoom: field.field === 'radar' ? 9 : 6, attribution: DWD_ATTRIBUTION,
+        ...(field.field === 'radar' ? { bounds: RADAR_BOUNDS } : {}),
+      });
     }
     if (!map.getLayer(FIELD_LAYER)) {
       map.addLayer({ id: FIELD_LAYER, type: 'raster', source: FIELD_SOURCE, paint: { 'raster-opacity': 0.6, 'raster-fade-duration': 0 } }, anchorId(map));
@@ -190,9 +203,15 @@ export function formatForecastTime(iso: string): string {
   return `${new Date(iso).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })} UTC`;
 }
 
-// "in 18 h", "6 h ago" or "now", for the gap between a forecast hour and a moment.
+// "in 18 h", "in 25 min", "6 h ago" or "now", for the gap between a forecast time and a moment (minutes within the first two hours,
+// which is what the five-minute radar needs).
 export function relativeHours(iso: string, now: number): string {
-  const hours = Math.round((Date.parse(iso) - now) / HOUR);
-  if (hours === 0) return 'now';
+  const diff = Date.parse(iso) - now;
+  if (Math.abs(diff) < 2 * HOUR) {
+    const minutes = Math.round(diff / 60000 / 5) * 5;
+    if (minutes === 0) return 'now';
+    return minutes > 0 ? `in ${minutes} min` : `${-minutes} min ago`;
+  }
+  const hours = Math.round(diff / HOUR);
   return hours > 0 ? `in ${hours} h` : `${-hours} h ago`;
 }
