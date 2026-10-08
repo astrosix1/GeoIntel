@@ -1,0 +1,39 @@
+/* The forecast bar sits above the radar bar when both are showing. */
+.lifted {
+  bottom: calc(var(--space-3) + 64px);
+}
+
+.legend {
+  position: absolute;
+  left: var(--space-3);
+  top: var(--space-3);
+  z-index: 14;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  box-sizing: border-box;
+  max-height: 60%;
+  max-width: 190px;
+  padding: var(--space-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-2);
+  background: var(--panel-overlay);
+  color: var(--text);
+  font-size: var(--font-1);
+  overflow: auto;
+}
+
+.legendTitle {
+  font-weight: 600;
+}
+
+.legendNote {
+  color: var(--text-3);
+}
+
+.legendImage {
+  display: block;
+  max-width: 96px;
+  height: auto;
+  border-radius: var(--radius-1);
+}

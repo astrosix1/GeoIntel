@@ -119,6 +119,15 @@ interface UiState {
   // Weather mode's radar overlay: on/off, playback, and the unix time of the
   // frame currently showing (null when radar isn't drawn).
   radarOn: boolean;
+  // Forecast map layers (DWD ICON, one at a time), the forecast moment they show (unix ms; null = now), and the NASA satellite overlays.
+  weatherField: 'temperature' | 'pressure' | 'rain' | 'wind' | null;
+  forecastTime: number | null;
+  cloudsOn: boolean;
+  firesOn: boolean;
+  setWeatherField: (field: 'temperature' | 'pressure' | 'rain' | 'wind' | null) => void;
+  setForecastTime: (time: number | null) => void;
+  setCloudsOn: (on: boolean) => void;
+  setFiresOn: (on: boolean) => void;
   radarPlaying: boolean;
   radarTime: number | null;
   // Which radar frame is showing (an index into the frames in use; a number past the end means the newest) and the
@@ -241,6 +250,14 @@ export const useUiStore = create<UiState>((set) => ({
   setWeatherNotice: (notice) => set({ weatherNotice: notice }),
 
   radarOn: true,
+  weatherField: null,
+  forecastTime: null,
+  cloudsOn: false,
+  firesOn: false,
+  setWeatherField: (field) => set({ weatherField: field, forecastTime: null }),
+  setForecastTime: (time) => set({ forecastTime: time }),
+  setCloudsOn: (on) => set({ cloudsOn: on }),
+  setFiresOn: (on) => set({ firesOn: on }),
   radarPlaying: true,
   radarTime: null,
   radarCursor: Number.MAX_SAFE_INTEGER,

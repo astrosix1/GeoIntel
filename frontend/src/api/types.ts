@@ -780,3 +780,10 @@ export interface GeoResult {
 export type RefineLocationResult =
   | { status: 'refined'; location: { lat: number; lon: number; name: string; country: string } }
   | { status: 'none' };
+
+// GET /api/weather/layers: the forecast map layers DWD can draw and the times each has (ISO, sorted).
+export interface WeatherLayersResponse {
+  layers: Partial<Record<'temperature' | 'pressure' | 'rain' | 'wind', { wms_layer: string; label: string; times: string[] }>>;
+  attribution: { text: string; url: string; license: string; license_url: string };
+  fetched_at: string;
+}

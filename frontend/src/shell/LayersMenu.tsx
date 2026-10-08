@@ -1,4 +1,5 @@
 import PremiumGate from '../components/PremiumGate';
+import { WEATHER_FIELDS } from '../globe/weatherLayers';
 import { useUiStore } from '../state/uiStore';
 import { Popover } from '../ui/Overlay';
 import styles from './Menus.module.css';
@@ -23,6 +24,12 @@ export default function LayersMenu() {
   const setRelief = useUiStore((s) => s.setRelief);
   const radarOn = useUiStore((s) => s.radarOn);
   const setRadarOn = useUiStore((s) => s.setRadarOn);
+  const field = useUiStore((s) => s.weatherField);
+  const setField = useUiStore((s) => s.setWeatherField);
+  const cloudsOn = useUiStore((s) => s.cloudsOn);
+  const setCloudsOn = useUiStore((s) => s.setCloudsOn);
+  const firesOn = useUiStore((s) => s.firesOn);
+  const setFiresOn = useUiStore((s) => s.setFiresOn);
   const nightOn = useUiStore((s) => s.nightOn);
   const setNightOn = useUiStore((s) => s.setNightOn);
   const labelsOn = useUiStore((s) => s.zoneLabelsOn);
@@ -44,6 +51,23 @@ export default function LayersMenu() {
           <div>
             <span className={styles.groupTitle}>Weather</span>
             <SwitchRow label="Radar (past 2 hours)" checked={radarOn} onChange={setRadarOn} />
+            <SwitchRow label="Cloud cover (satellite, yesterday, has gaps)" checked={cloudsOn} onChange={setCloudsOn} />
+            <SwitchRow label="Fires (satellite detections today)" checked={firesOn} onChange={setFiresOn} />
+          </div>
+        )}
+        {mode === 'weather' && (
+          <div role="radiogroup" aria-label="Forecast map">
+            <span className={styles.groupTitle}>Forecast map (model, not observed)</span>
+            <label className={styles.switch}>
+              <input type="radio" name="forecast-field" checked={field === null} onChange={() => setField(null)} />
+              <span>None</span>
+            </label>
+            {WEATHER_FIELDS.map((f) => (
+              <label key={f.key} className={styles.switch}>
+                <input type="radio" name="forecast-field" checked={field === f.key} onChange={() => setField(f.key)} />
+                <span>{f.label}</span>
+              </label>
+            ))}
           </div>
         )}
         {mode === 'timezone' && (

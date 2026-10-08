@@ -86,3 +86,19 @@ def get_hazard_events(event_type, event_id):
     if result == 'unavailable':
         return jsonify({'error': 'hazards_unavailable'}), 503
     return jsonify(result)
+
+
+@weather_bp.route('/layers', methods=['GET'])
+@limiter.limit("60 per minute")
+def get_layer_times():
+    """The forecast map layers (DWD ICON) and the times each can draw, read from the service's capabilities and remembered for
+    30 minutes. 503 when DWD cannot be reached, so the app offers no layer it cannot draw."""
+    from data_sources import dwd
+    try:
+        result = dwd.layers()
+        if result is None:
+            return jsonify({'error': 'layers_unavailable'}), 503
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Error reading forecast layers: {e}")
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500

@@ -30,6 +30,7 @@ import {
   fetchCrisisBriefing,
   fetchCrisisDetail,
   fetchCountryTab,
+  fetchWeatherLayers,
   fetchCountryTabRead,
   fetchCountryProfile,
   fetchCrisisScenarios,
@@ -269,6 +270,19 @@ export function useCountryReadQuery(countryCode: string | undefined, tab: string
     staleTime: 7 * 24 * 60 * 60 * 1000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
+  });
+}
+
+// The forecast map layers and the times each can draw. Only asked for once a forecast layer is switched on; the server keeps
+// the answer for half an hour.
+export function useWeatherLayersQuery(enabled: boolean) {
+  return useQuery({
+    queryKey: ['weather-layers'],
+    queryFn: fetchWeatherLayers,
+    enabled,
+    retry: false,
+    staleTime: 20 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 }
 

@@ -4,7 +4,9 @@ import DrawFab from '../globe/draw/DrawFab';
 import DrawToolbar from '../globe/draw/DrawToolbar';
 import PresentExit from '../globe/draw/PresentExit';
 import { handleFullscreenChange, stopPresenting } from '../globe/draw/present';
+import ForecastBar from '../globe/ForecastBar';
 import RadarBar from '../globe/RadarBar';
+import WeatherFieldLegend from '../globe/WeatherFieldLegend';
 import TimeBar from '../globe/TimeBar';
 import AnalysisSidebar from '../sidebars/AnalysisSidebar';
 import EdgeTab from '../sidebars/EdgeTab';
@@ -79,7 +81,9 @@ export default function Shell() {
               <Globe />
             </div>
             <TimeBar />
+            <ForecastBar />
             <RadarBar />
+            <WeatherFieldLegend />
             <DrawToolbar />
             <DrawFab />
             <PresentExit />

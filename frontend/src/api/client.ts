@@ -6,6 +6,7 @@ import type {
   CommentsPage,
   Forecast,
   CountryDetail,
+  WeatherLayersResponse,
   CountryProfile,
   EventComment,
   Me,
@@ -283,6 +284,14 @@ export async function fetchCountryTabRead(countryCode: string, tab: string): Pro
   if (res.status === 403) throw new ScenariosError('premium_required');
   if (res.status === 503 || res.status === 404) throw new ScenariosError('unavailable');
   if (!res.ok) throw new ScenariosError('error');
+  return res.json();
+}
+
+export async function fetchWeatherLayers(): Promise<WeatherLayersResponse> {
+  const res = await fetch(`${API_BASE_URL}/api/weather/layers`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch weather layers: ${res.status} ${res.statusText}`);
+  }
   return res.json();
 }
 
