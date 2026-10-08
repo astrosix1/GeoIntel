@@ -83,19 +83,6 @@ class TestNoPast:
             assert dwd.current_layers() is None
 
 
-class TestRadarNowcast:
-    def test_the_radar_is_cut_at_the_five_minutes_we_are_in(self):
-        from datetime import datetime, timezone
-        times = ['2026-10-08T20:00:00Z', '2026-10-08T20:05:00Z', '2026-10-08T20:10:00Z', '2026-10-08T20:15:00Z', '2026-10-08T21:30:00Z']
-        full = {'layers': {'radar': {'times': times}}, 'attribution': {}}
-        with patch('data_sources.dwd.layers', return_value=full):
-            out = dwd.current_layers(datetime(2026, 10, 8, 20, 12, tzinfo=timezone.utc))
-        assert out['layers']['radar']['times'] == ['2026-10-08T20:10:00Z', '2026-10-08T20:15:00Z', '2026-10-08T21:30:00Z']
-
-    def test_the_radar_forecast_is_a_known_layer(self):
-        assert dwd.LAYERS['radar'][0] == 'Radar_rv_product_1x1km_ger'
-
-
 class TestEndpoint:
     def test_returns_the_layers_or_503(self, client):
         with patch('data_sources.dwd.current_layers', return_value={'layers': {'temperature': {'times': []}}, 'attribution': {}}):

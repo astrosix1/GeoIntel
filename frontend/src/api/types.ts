@@ -783,7 +783,7 @@ export type RefineLocationResult =
 
 // GET /api/weather/layers: the forecast map layers DWD can draw and the times each has (ISO, sorted).
 export interface WeatherLayersResponse {
-  layers: Partial<Record<'temperature' | 'pressure' | 'rain' | 'wind' | 'radar', { wms_layer: string; label: string; times: string[] }>>;
+  layers: Partial<Record<'temperature' | 'pressure' | 'rain' | 'wind', { wms_layer: string; label: string; times: string[] }>>;
   attribution: { text: string; url: string; license: string; license_url: string };
   fetched_at: string;
 }

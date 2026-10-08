@@ -17,8 +17,7 @@ export default function WeatherFieldLegend() {
   return (
     <div className={styles.legend} data-ui-hover-surface>
       <span className={styles.legendTitle}>{layer.label}</span>
-      <span className={styles.legendNote}>{field === 'radar' ? 'Forecast (DWD radar nowcast)' : 'Forecast (DWD ICON model)'}</span>
-      {field === 'radar' && <span className={styles.legendNote}>Germany and its surroundings only; elsewhere the map is untouched. Grey shading is outside the radars&apos; range.</span>}
+      <span className={styles.legendNote}>Forecast (DWD ICON model)</span>
       {field === 'wind' || failed === layer.wms_layer ? (
         <span className={styles.legendNote}>
           {field === 'wind'

@@ -58,7 +58,7 @@ export default function LayersMenu() {
         {mode === 'weather' && (
           <div role="radiogroup" aria-label="Forecast map">
             <span className={styles.groupTitle}>Forecast map (model, not observed)</span>
-            <span className={styles.hint}>The live radar has no forecast outside Germany. For rain ahead elsewhere use the rain forecast.</span>
+            <span className={styles.hint}>The live radar looks back, not ahead. For rain ahead, use the rain forecast.</span>
             <label className={styles.switch}>
               <input type="radio" name="forecast-field" checked={field === null} onChange={() => setField(null)} />
               <span>None</span>

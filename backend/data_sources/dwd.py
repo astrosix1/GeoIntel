@@ -34,9 +34,6 @@ LAYERS = {
     'pressure': ('Icon_reg025_fd_sl_PMSL', 'Sea-level pressure'),
     'rain': ('Icon_reg025_fd_sl_TOTPREC06H', 'Rain in the 6 hours before'),
     'wind': ('Icon_reg025_fd_sl_UV10M', 'Wind speed (10 m)'),
-    # Germany's radar composite with its own forecast (nowcast) a couple of hours ahead, every five minutes. Covers Germany and its
-    # surroundings only.
-    'radar': ('Radar_rv_product_1x1km_ger', 'Radar forecast, Germany only (next hours)'),
 }
 
 
@@ -118,7 +115,7 @@ def current_layers(now=None):
     out = copy.deepcopy(result)
     for key in list(out['layers']):
         times = out['layers'][key]['times']
-        # Cut at the slot we are in: the hour for hourly layers, the five minutes for the radar.
+        # Cut at the slot we are in: the hour for hourly layers, or the layer's own step if it is shorter.
         steps = [(_parse_iso(b) - _parse_iso(a)).total_seconds() / 60 for a, b in zip(times, times[1:])]
         slot = int(min(min(steps) if steps else 60, 60))
         floored = now.replace(minute=(now.minute // slot) * slot if slot < 60 else 0, second=0, microsecond=0)
