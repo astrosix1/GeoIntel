@@ -191,3 +191,27 @@
   color: var(--text-2);
   cursor: default;
 }
+
+.readButton {
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--edge-control);
+  border-radius: var(--radius-1);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-2);
+  cursor: pointer;
+}
+
+.readButton:hover {
+  background: var(--raised);
+}
+
+.group {
+  overflow-wrap: anywhere;
+}
+
+@media (pointer: coarse) {
+  .readButton {
+    min-height: 44px;
+  }
+}

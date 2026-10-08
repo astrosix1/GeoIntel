@@ -140,3 +140,15 @@ All five recommendations accepted: bundle larger datasets; an AI analyst read on
 - **Wikipedia "Geography of X" background** with title, link and CC BY-SA 4.0 shown (same attribution machinery as Government).
 - **Free profile fix:** a single stalled World Bank call used to leave the free "Area" showing "unavailable" for six hours; it now retries through the indicator helper.
 - **Process finding:** the frontend's `npx tsc --noEmit` at the project root checks nothing (the root tsconfig only has references); the real check is `npx tsc -b` or `npx tsc -p tsconfig.app.json --noEmit`. Re-run on everything built so far: two type errors in `Security.tsx` (fixed), nothing else.
+
+## Stage 6 as built (analyst reads and polish)
+
+- **Analyst read** (`services/country_analyst.py`, `GET /api/countries/<cc>/tab/<tab>/read`, premium, 10 a minute): a 3 to 5 sentence paragraph at the foot of each tab on what stands out, how it compares (ranks), what has changed (trends) and what the figures leave out. The model is given a plain fact sheet built from that tab's own data (each figure with year, rank and trend, plus the Factbook's key texts) and told to use nothing else and add no numbers. It runs only when the viewer clicks "Write an analyst read of this tab", is remembered for a week per country, tab and fact sheet, and answers 503 "unavailable" without a model rather than inventing text. A tab with no data gets no read.
+- **Polish:** the tab content is a labelled region that reports when it is busy; loading and failure messages are announced (status and alert roles); a failed tab or read has a Try again button (the Economy tab no longer hides its errors); long words wrap instead of widening the panel; touch targets are 44 px on touch screens.
+- **Checked at phone width (375 px):** all six tabs for Syria fit the panel with nothing overflowing.
+- **Not exercised against the live model** (it needs an API key, so it is unavailable locally): the prompt, the fact sheets for all six tabs, caching and the unavailable cases are tested with a fake model, and the button, loading and result display were checked in the browser with a stubbed reply.
+- **Known cost:** a cold Security tab can take about 20 seconds the first time (reverse lookups of the busiest places at one request a second, plus the other sources); it is remembered afterwards.
+
+## Status
+
+Stages 0 to 6 built. Remaining decision: push (the live site is nine commits behind).

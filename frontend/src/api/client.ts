@@ -271,6 +271,21 @@ export async function fetchCountryTab(countryCode: string, tab: string): Promise
   return res.json();
 }
 
+export interface CountryRead {
+  text: string;
+  model: string;
+}
+
+// The AI-written read of one country tab (premium, asked for on demand). 503 means no model is available right now.
+export async function fetchCountryTabRead(countryCode: string, tab: string): Promise<CountryRead> {
+  const res = await authedFetch(`/api/countries/${encodeURIComponent(countryCode)}/tab/${encodeURIComponent(tab)}/read`);
+  if (res.status === 401) throw new ScenariosError('sign_in_required');
+  if (res.status === 403) throw new ScenariosError('premium_required');
+  if (res.status === 503 || res.status === 404) throw new ScenariosError('unavailable');
+  if (!res.ok) throw new ScenariosError('error');
+  return res.json();
+}
+
 export async function fetchHazardDetail(eventType: string, id: number): Promise<HazardDetail> {
   const res = await fetch(`${API_BASE_URL}/api/weather/storms/${encodeURIComponent(eventType)}/${id}`);
   if (!res.ok) {

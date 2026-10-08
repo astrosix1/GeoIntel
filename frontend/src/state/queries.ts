@@ -30,6 +30,7 @@ import {
   fetchCrisisBriefing,
   fetchCrisisDetail,
   fetchCountryTab,
+  fetchCountryTabRead,
   fetchCountryProfile,
   fetchCrisisScenarios,
   fetchMe,
@@ -254,6 +255,20 @@ export function useCountryTabQuery(countryCode: string | undefined, tab: string,
     retry: false,
     staleTime: 24 * 60 * 60 * 1000,
     refetchOnWindowFocus: false,
+  });
+}
+
+// The analyst read costs a paid AI call, so it runs only when asked (`enabled`), is kept as long as the server keeps it (a week),
+// and is never refetched behind the viewer's back.
+export function useCountryReadQuery(countryCode: string | undefined, tab: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['country-read', countryCode, tab],
+    queryFn: () => fetchCountryTabRead(countryCode as string, tab),
+    enabled: !!countryCode && enabled,
+    retry: false,
+    staleTime: 7 * 24 * 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 }
 
