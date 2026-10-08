@@ -40,14 +40,13 @@ export default function CountryDetail({ countryCode, profile }: { countryCode: s
   // Free viewers keep Economy (the trade figures) and Geography; the other tabs are premium and shown greyed with a lock note.
   const tab = unlocked || !TABS.find((t) => t.value === picked)?.premium ? picked : 'economy';
   // Only the open tab's data is fetched, and only for viewers who are unlocked (Geography is the free profile, Economy shows it too).
-  const { data, isLoading, error } = useCountryTabQuery(countryCode, tab, unlocked && tab !== 'geography');
+  const { data, isLoading, error } = useCountryTabQuery(countryCode, tab, unlocked);
   const options = TABS.map((t) => ({
     value: t.value,
     label: t.label,
     disabled: t.premium && !unlocked,
     hint: t.premium && !unlocked ? 'Premium' : undefined,
   }));
-  const needsDetail = tab !== 'geography';
 
   return (
     <div className={eventStyles.section}>
@@ -62,15 +61,15 @@ export default function CountryDetail({ countryCode, profile }: { countryCode: s
           </PremiumGate>
         </div>
       )}
-      {unlocked && needsDetail && isLoading && <div className={eventStyles.loading}>Loading…</div>}
-      {unlocked && needsDetail && error && <div className={eventStyles.error}>{errorMessage(error)}</div>}
-      {tab === 'geography' && <Geography profile={profile} />}
+      {unlocked && isLoading && <div className={eventStyles.loading}>Loading…</div>}
+      {unlocked && error && <div className={eventStyles.error}>{errorMessage(error)}</div>}
+      {tab === 'geography' && <Geography profile={profile} detail={unlocked ? data : undefined} />}
       {tab === 'economy' && <Economy detail={unlocked ? data : undefined} profile={profile} />}
       {data && tab === 'government' && <Government detail={data} />}
       {data && tab === 'people' && <People detail={data} />}
       {data && tab === 'migration' && <Migration detail={data} />}
       {data && tab === 'security' && <Security detail={data} />}
-      {unlocked && data && needsDetail && <div className={styles.asOf}>Sources: {data.sources.join(', ')}.</div>}
+      {unlocked && data && <div className={styles.asOf}>Sources: {data.sources.join(', ')}.</div>}
     </div>
   );
 }

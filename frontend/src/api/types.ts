@@ -406,6 +406,30 @@ export interface CountryGovernment {
   citizenship: Record<string, string> | null;
 }
 
+export interface CountryGeography {
+  location: string | null;
+  coordinates: string | null;
+  area: { total: string | null; land: string | null; water: string | null; comparative: string | null };
+  borders: { total: string | null; countries: { name: string; km: number }[] | null };
+  coastline: string | null;
+  maritime_claims: Record<string, string> | null;
+  climate: string | null;
+  terrain: string | null;
+  elevation: { highest: string | null; lowest: string | null; mean: string | null };
+  land_use: { items: { label: string; percent: number; sub: boolean }[]; as_of: number | null } | null;
+  irrigated_land: string | null;
+  rivers: string | null;
+  lakes: string | null;
+  natural_hazards: string | null;
+  population_distribution: string | null;
+  note: string | null;
+  environmental_issues: string | null;
+  renewable_water: string | null;
+  water_withdrawal: Record<string, string> | null;
+  co2_total: string | null;
+  waste_recycled: string | null;
+}
+
 export interface CountryDemocracy {
   value: number;
   year: number;
@@ -429,6 +453,8 @@ export interface CountryDetail {
   tab?: string;
   stats?: CountryStat[];
   hdi?: CountryHdi | null;
+  geography?: CountryGeography | null;
+  hazards?: { items: { name: string | null; hazard: string | null; alert_level: string | null; description: string | null; report_url: string | null; from_date: string | null }[]; source: string } | null;
   democracy?: CountryDemocracy | null;
   leaders?: { head_of_government?: OfficeHolder[]; head_of_state?: OfficeHolder[]; source: string } | null;
   power?: { head_of_state: string | null; government: string | null; legislature: string | null; courts: string | null; constitution: string | null } | null;

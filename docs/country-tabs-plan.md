@@ -130,3 +130,13 @@ All five recommendations accepted: bundle larger datasets; an AI analyst read on
 - **Wikipedia background** (`data_sources/wikipedia.py`): the "Politics of X" intro, with title, link and CC BY-SA 4.0 shown.
 - **Dropped:** the IPU Parline parliament data (licensed non-commercial, and this is a paid product); the Factbook's own legislature figures replace it. Key agencies as a Wikidata list (the query timed out and coverage is uneven); the courts, legislature and security services stand in.
 - **Licences checked for everything on these tabs:** Factbook (public domain), World Bank, UNHCR, V-Dem and Our World in Data (CC BY), UN DESA and UNDP (CC BY 3.0 IGO), USGS (public domain), GOV.UK (Open Government Licence), Wikidata (CC0), Wikipedia (CC BY-SA, attributed).
+
+## Stage 5 as built (Geography)
+
+- **Free part unchanged** (area, borders from the free profile, the AI narrative). The premium facts follow when the viewer is unlocked.
+- **Factbook geography and environment, read out** (`parse_geography`): location and coordinates, area (total, land, water, comparison), land borders with lengths (largest first), coastline and maritime claims, climate, terrain, elevation (highest, lowest, mean), land-use shares (agricultural land and its parts, forest, other), irrigated land, rivers and lakes, natural hazards, population spread, environmental issues, renewable water and water use, carbon dioxide, waste recycled. Shown in the Factbook's own words; only borders and land use are turned into numbers.
+- **Figures with rank and trend** (World Bank): land area, population density, forest cover, arable land, renewable fresh water, air pollution (PM2.5), carbon dioxide per person, renewable energy share. (Protected-area share was not available.)
+- **Hazards active now:** GDACS events (cyclones, floods, wildfires, droughts) the Weather mode already reads, matched to the country by name, most serious alert first, each with its report link. An empty list is shown as no active hazards; an unreachable feed leaves the group out.
+- **Wikipedia "Geography of X" background** with title, link and CC BY-SA 4.0 shown (same attribution machinery as Government).
+- **Free profile fix:** a single stalled World Bank call used to leave the free "Area" showing "unavailable" for six hours; it now retries through the indicator helper.
+- **Process finding:** the frontend's `npx tsc --noEmit` at the project root checks nothing (the root tsconfig only has references); the real check is `npx tsc -b` or `npx tsc -p tsconfig.app.json --noEmit`. Re-run on everything built so far: two type errors in `Security.tsx` (fixed), nothing else.

@@ -19,6 +19,7 @@ from datetime import datetime
 from cache import cache_get, cache_set
 from data_sources import RestCountriesConnector, OECConnector, WorldBankConnector
 from services.ai_client import anthropic_client, AI_MODEL
+from services import country_indicators
 from services.briefing import fetch_wikipedia_image
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,13 @@ def _build_demographics(country_code):
     meta = WorldBankConnector.fetch_country_meta(country_code) or {}
     population, pop_year = WorldBankConnector.fetch_latest_indicator(country_code, _POPULATION_INDICATOR)
     area, area_year = WorldBankConnector.fetch_latest_indicator(country_code, _AREA_INDICATOR)
+    # The World Bank sometimes stalls on a single call; the indicator helper retries once and remembers what it fetched.
+    if area is None:
+        points = country_indicators.series(country_code, _AREA_INDICATOR)
+        area, area_year = (points[-1][1], points[-1][0]) if points else (None, None)
+    if population is None:
+        points = country_indicators.series(country_code, _POPULATION_INDICATOR)
+        population, pop_year = (points[-1][1], points[-1][0]) if points else (None, None)
     return {
         'name': meta.get('name'),
         'official_name': None,

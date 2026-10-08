@@ -136,3 +136,16 @@ def test_narrative_static_fallback_has_no_generated_text_without_api_key(mock_rc
 def test_get_country_profile_empty_code_returns_none():
     assert cp.get_country_profile('') is None
     assert cp.get_country_profile(None) is None
+
+
+@patch('services.country_profile.country_indicators')
+@patch('services.country_profile.WorldBankConnector')
+@patch('services.country_profile.RestCountriesConnector')
+def test_a_stalled_worldbank_call_is_retried_through_the_indicator_helper(mock_rc, mock_wb, mock_ci):
+    mock_rc.fetch_country.return_value = None
+    mock_wb.fetch_country_meta.return_value = {'name': 'Testland', 'capital': 'T', 'region': 'R'}
+    mock_wb.fetch_latest_indicator.return_value = (None, None)
+    mock_ci.series.side_effect = lambda cc, code: [[2022, 100.0], [2023, 120.0]]
+    demographics, source = cp._build_demographics('TT')
+    assert demographics['area_km2'] == 120.0 and demographics['area_year'] == 2023
+    assert demographics['population'] == 120 and 'worldbank' in source

@@ -231,7 +231,7 @@ def _texts(node):
     """{key: clean text} for a nested Factbook field (each value is {'text': ...} or a string); empty values left out."""
     if not isinstance(node, dict):
         return {}
-    return {key: text for key, value in node.items() if (text := clean(value))}
+    return {key.strip(): text for key, value in node.items() if (text := clean(value))}
 
 
 def parse_party_list(node):
@@ -288,6 +288,72 @@ def parse_judiciary(gov):
         return None
     return {'highest_courts': t.get('highest court(s)'), 'selection': t.get('judge selection and term of office'),
             'subordinate_courts': t.get('subordinate courts')}
+
+
+def parse_borders(text):
+    """'Andorra 55 km; Belgium 556 km; Spain 646 km' -> [{'name': 'Andorra', 'km': 55}, ...] (largest first). None when no pair."""
+    if not text:
+        return None
+    items = []
+    for part in re.split(r';', text):
+        match = re.match(r'\s*(.+?)\s+([\d,]+(?:\.\d+)?)\s*km\b', part)
+        if match:
+            items.append({'name': re.sub(r'\s*\(.*?\)\s*', ' ', match.group(1)).strip(), 'km': float(match.group(2).replace(',', ''))})
+    items.sort(key=lambda b: -b['km'])
+    return items or None
+
+
+def parse_land_use(node):
+    """The Factbook's land-use field -> {'items': [{'label', 'percent'}], 'as_of'} for the shares it gives (agricultural land and its
+    parts, forest, other)."""
+    texts = _texts(node)
+    items, as_of = [], None
+    labels = {'agricultural land': 'Agricultural land', 'agricultural land: arable land': 'Arable land',
+              'agricultural land: permanent crops': 'Permanent crops', 'agricultural land: permanent pasture': 'Permanent pasture',
+              'forest': 'Forest', 'other': 'Other'}
+    for key, label in labels.items():
+        match = re.search(r'(\d+(?:\.\d+)?)\s*%', texts.get(key, ''))
+        if match:
+            items.append({'label': label, 'percent': float(match.group(1)), 'sub': ':' in key})
+            as_of = as_of or _as_of(texts[key])
+    return {'items': items, 'as_of': as_of} if items else None
+
+
+def parse_geography(data):
+    """Geography and environment facts as the Factbook words them (shown as text, never re-estimated), with the numeric parts
+    that can be read cleanly (borders with lengths, land-use shares) read out. Missing pieces are absent."""
+    geo = data.get('Geography') or {}
+    env = data.get('Environment') or {}
+    area = _texts(geo.get('Area'))
+    boundaries = _texts(geo.get('Land boundaries'))
+    elevation = _texts(geo.get('Elevation'))
+    water = _texts(env.get('Total water withdrawal'))
+    waste = _texts(env.get('Waste and recycling'))
+    co2 = _texts(env.get('Carbon dioxide emissions'))
+    out = {
+        'location': clean(geo.get('Location')),
+        'coordinates': clean(geo.get('Geographic coordinates')),
+        'area': {'total': area.get('total'), 'land': area.get('land'), 'water': area.get('water'), 'comparative': clean(geo.get('Area - comparative'))},
+        'borders': {'total': boundaries.get('total'), 'countries': parse_borders(boundaries.get('border countries'))},
+        'coastline': clean(geo.get('Coastline')),
+        'maritime_claims': _texts(geo.get('Maritime claims')) or None,
+        'climate': clean(geo.get('Climate')) or clean((env.get('Climate') or {})),
+        'terrain': clean(geo.get('Terrain')),
+        'elevation': {'highest': elevation.get('highest point'), 'lowest': elevation.get('lowest point'), 'mean': elevation.get('mean elevation')},
+        'land_use': parse_land_use(geo.get('Land use')),
+        'irrigated_land': clean(geo.get('Irrigated land')),
+        'rivers': clean(geo.get('Major rivers (by length in km)')),
+        'lakes': ' '.join(_texts(geo.get('Major lakes (area sq km)')).values()) or None,
+        'natural_hazards': clean(geo.get('Natural hazards')),
+        'population_distribution': clean(geo.get('Population distribution')),
+        'note': clean(geo.get('Geography - note')),
+        'environmental_issues': clean(env.get('Environmental issues')),
+        'renewable_water': clean(env.get('Total renewable water resources')),
+        'water_withdrawal': water or None,
+        'co2_total': co2.get('total emissions'),
+        'waste_recycled': waste.get('percent of municipal solid waste recycled'),
+    }
+    return out
 
 
 def parse_profile(data):
@@ -349,6 +415,7 @@ def parse_profile(data):
             'roadways': _subfield(data, 'Transportation', 'Roadways', 'total'),
             'electricity_access': _subfield(data, 'Energy', 'Electricity access', 'electrification - total population'),
         },
+        'geography': parse_geography(data),
         'security': {
             'terrorist_groups': _field(data, 'Terrorism', 'Terrorist group(s)'),
             'refugees': _subfield(data, 'Transnational Issues', 'Refugees and internally displaced persons', 'refugees'),

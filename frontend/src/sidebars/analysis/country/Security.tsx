@@ -50,7 +50,7 @@ export function Security({ detail }: { detail: Detail }) {
   const security = detail.security;
   const displaced = detail.displacement?.series ?? [];
   const displacedStats: CountryStat[] = (['refugees', 'idps'] as const)
-    .map((field) => {
+    .map((field): CountryStat | null => {
       const series = displaced.filter((r) => typeof r[field] === 'number').map((r) => [r.year, r[field] as number] as [number, number]);
       if (series.length === 0) return null;
       const [year, value] = series[series.length - 1];

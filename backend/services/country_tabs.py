@@ -52,7 +52,7 @@ SECTOR_STATS = [
 ]
 
 # What the first visitor should not wait for: the all-country tables behind the ranks.
-WARM_INDICATORS = [spec[0] for spec in PEOPLE_STATS + ECONOMY_STATS]
+WARM_INDICATORS = [spec[0] for spec in PEOPLE_STATS + ECONOMY_STATS] + ['AG.LND.TOTL.K2', 'EN.POP.DNST', 'AG.LND.FRST.ZS', 'AG.LND.ARBL.ZS']
 
 TABS = ('government', 'people', 'migration', 'economy', 'security', 'geography')
 CACHE_SECONDS = 24 * 3600
@@ -134,7 +134,8 @@ def _security(cc):
 
 
 def _geography(cc):
-    return _base(cc, 'geography')
+    from services.country_geography import build_tab
+    return build_tab(cc)
 
 
 _BUILDERS = {'government': _government, 'people': _people, 'migration': _migration, 'economy': _economy,

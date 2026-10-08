@@ -59,22 +59,32 @@ def _summary(title):
     return page
 
 
-def politics_intro(iso2):
-    """{'title', 'extract', 'url', 'license', 'license_url', 'source'} or None."""
-    key = f'wikipedia:politics:{iso2}'
+def _intro(iso2, prefixes, cache_name):
+    key = f'wikipedia:{cache_name}:{iso2}'
     cached = cache_get(key)
     if cached is not None:
         return cached or None
     for name in _names(iso2):
-        for title in (f'Politics of {name}', f'Politics of the {name}'):
-            page = _summary(title)
-            if page:
-                result = {
-                    'title': page.get('title') or title, 'extract': _cut(re.sub(r'\s+', ' ', page['extract']).strip()),
-                    'url': ((page.get('content_urls') or {}).get('desktop') or {}).get('page') or f'https://en.wikipedia.org/wiki/{urllib.parse.quote(title.replace(" ", "_"))}',
-                    'license': LICENSE, 'license_url': LICENSE_URL, 'source': 'Wikipedia',
-                }
-                cache_set(key, result, ttl=7 * 24 * 3600)
-                return result
+        for prefix in prefixes:
+            for title in (f'{prefix} {name}', f'{prefix} the {name}'):
+                page = _summary(title)
+                if page:
+                    result = {
+                        'title': page.get('title') or title, 'extract': _cut(re.sub(r'\s+', ' ', page['extract']).strip()),
+                        'url': ((page.get('content_urls') or {}).get('desktop') or {}).get('page') or f'https://en.wikipedia.org/wiki/{urllib.parse.quote(title.replace(" ", "_"))}',
+                        'license': LICENSE, 'license_url': LICENSE_URL, 'source': 'Wikipedia',
+                    }
+                    cache_set(key, result, ttl=7 * 24 * 3600)
+                    return result
     cache_set(key, {}, ttl=24 * 3600)  # remembered as "none" for a day so it is not looked up on every visit
     return None
+
+
+def politics_intro(iso2):
+    """{'title', 'extract', 'url', 'license', 'license_url', 'source'} for "Politics of X", or None."""
+    return _intro(iso2, ('Politics of',), 'politics')
+
+
+def geography_intro(iso2):
+    """The same for "Geography of X"."""
+    return _intro(iso2, ('Geography of',), 'geography')
