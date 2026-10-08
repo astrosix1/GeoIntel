@@ -29,7 +29,7 @@ import {
   fetchCrises,
   fetchCrisisBriefing,
   fetchCrisisDetail,
-  fetchCountryDetail,
+  fetchCountryTab,
   fetchCountryProfile,
   fetchCrisisScenarios,
   fetchMe,
@@ -244,11 +244,12 @@ export function useCountryProfileQuery(countryCode: string | undefined) {
   });
 }
 
-// Premium government / people / migration facts. Only fetched once the viewer is unlocked; the server enforces premium.
-export function useCountryDetailQuery(countryCode: string | undefined, enabled: boolean) {
+// Premium country facts, one tab at a time (so a tab only loads its own data). Fetched once the viewer is unlocked and the tab is
+// opened; the server enforces premium and caches each tab.
+export function useCountryTabQuery(countryCode: string | undefined, tab: string, enabled: boolean) {
   return useQuery({
-    queryKey: ['country-detail', countryCode],
-    queryFn: () => fetchCountryDetail(countryCode as string),
+    queryKey: ['country-tab', countryCode, tab],
+    queryFn: () => fetchCountryTab(countryCode as string, tab),
     enabled: !!countryCode && enabled,
     retry: false,
     staleTime: 24 * 60 * 60 * 1000,

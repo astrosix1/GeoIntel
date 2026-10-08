@@ -262,6 +262,15 @@ export async function fetchCountryDetail(countryCode: string): Promise<CountryDe
   return res.json();
 }
 
+export async function fetchCountryTab(countryCode: string, tab: string): Promise<CountryDetail> {
+  const res = await authedFetch(`/api/countries/${encodeURIComponent(countryCode)}/tab/${encodeURIComponent(tab)}`);
+  if (res.status === 401) throw new ScenariosError('sign_in_required');
+  if (res.status === 403) throw new ScenariosError('premium_required');
+  if (res.status === 404) throw new ScenariosError('unavailable');
+  if (!res.ok) throw new ScenariosError('error');
+  return res.json();
+}
+
 export async function fetchHazardDetail(eventType: string, id: number): Promise<HazardDetail> {
   const res = await fetch(`${API_BASE_URL}/api/weather/storms/${encodeURIComponent(eventType)}/${id}`);
   if (!res.ok) {

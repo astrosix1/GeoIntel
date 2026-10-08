@@ -11,6 +11,7 @@ from flask import Blueprint, jsonify
 
 from services.country_detail import get_country_detail
 from services.country_profile import get_country_profile
+from services.country_tabs import TABS, get_country_tab
 from services.gating import require_premium_feature
 
 logger = logging.getLogger(__name__)
@@ -48,4 +49,22 @@ def get_country_more(country_code):
         return jsonify(detail)
     except Exception as e:
         logger.error(f"Error fetching country detail for {country_code}: {e}")
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
+
+
+@countries_bp.route('/<country_code>/tab/<tab>', methods=['GET'])
+@require_premium_feature
+def get_country_tab_data(country_code, tab):
+    """Premium: the data for one country tab (government, people, migration, economy, security, geography)."""
+    try:
+        if not country_code or len(country_code) > 3:
+            return jsonify({'error': 'country_code must be a short ISO country code'}), 400
+        if tab not in TABS:
+            return jsonify({'error': 'unknown tab'}), 404
+        data = get_country_tab(country_code, tab)
+        if not data:
+            return jsonify({'error': 'No data is available for this country and tab'}), 404
+        return jsonify(data)
+    except Exception as e:
+        logger.error(f"Error fetching country tab {tab} for {country_code}: {e}")
         return jsonify({'error': 'An internal error occurred. Please try again.'}), 500

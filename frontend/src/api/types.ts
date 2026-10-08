@@ -276,9 +276,27 @@ export interface MigrationOrigin {
   percent_of_migrants: number | null;
 }
 
+// One World Bank figure for a country: latest value and year, the series for a trend line, and the rank among countries.
+export interface CountryStat {
+  code: string;
+  label: string;
+  unit: string;
+  decimals: number;
+  value: number;
+  year: number;
+  series: [number, number][];
+  source: string;
+  rank: number | null;
+  of: number | null;
+}
+
 // GET /api/countries/<code>/detail (premium). Every group may be missing; the UI says so instead of filling it in.
 export interface CountryDetail {
   country_code: string;
+  // Set by the per-tab endpoint (/api/countries/<code>/tab/<tab>).
+  tab?: string;
+  stats?: CountryStat[];
+  net_migration_rate?: Rate | null;
   sources: string[];
   population: number | null;
   population_year: number | null;
