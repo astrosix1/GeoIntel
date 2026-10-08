@@ -63,7 +63,7 @@ export default function CountryDetail({ countryCode, profile }: { countryCode: s
         </div>
       )}
       {unlocked && needsDetail && isLoading && <div className={eventStyles.loading}>Loading…</div>}
-      {unlocked && needsDetail && error && tab !== 'economy' && <div className={eventStyles.error}>{errorMessage(error)}</div>}
+      {unlocked && needsDetail && error && <div className={eventStyles.error}>{errorMessage(error)}</div>}
       {tab === 'geography' && <Geography profile={profile} />}
       {tab === 'economy' && <Economy detail={unlocked ? data : undefined} profile={profile} />}
       {data && tab === 'government' && <Government detail={data} />}

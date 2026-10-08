@@ -56,6 +56,8 @@ WARM_INDICATORS = [spec[0] for spec in PEOPLE_STATS + ECONOMY_STATS]
 
 TABS = ('government', 'people', 'migration', 'economy', 'security', 'geography')
 CACHE_SECONDS = 24 * 3600
+# Raise when a tab's data changes shape, so tabs cached by an older version (Redis keeps them across deploys) are not served.
+TAB_VERSION = 2
 FACTBOOK = 'CIA World Factbook'
 
 
@@ -152,7 +154,7 @@ def get_country_tab(country_code, tab):
     cc = (country_code or '').upper()
     if not cc or tab not in _BUILDERS:
         return None
-    key = f'country_tab:{cc}:{tab}'
+    key = f'country_tab:v{TAB_VERSION}:{cc}:{tab}'
     data = cache_get(key)
     if data is None:
         data = _BUILDERS[tab](cc)
