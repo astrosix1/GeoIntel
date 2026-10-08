@@ -100,7 +100,7 @@ def rank_of(country_code, indicator):
     return higher + 1, len(table)
 
 
-def stat(country_code, indicator, label, unit='', decimals=1, with_rank=True):
+def stat(country_code, indicator, label, unit='', decimals=1, with_rank=True, compact=False):
     """One displayable figure: latest value and year, the series for a trend line, and the rank among countries. None if the
     World Bank has no value for this country."""
     points = series(country_code, indicator)
@@ -109,7 +109,7 @@ def stat(country_code, indicator, label, unit='', decimals=1, with_rank=True):
     year, value = points[-1]
     out = {
         'code': indicator, 'label': label, 'unit': unit, 'decimals': decimals, 'value': value, 'year': year,
-        'series': points[-SERIES_YEARS:], 'source': SOURCE, 'rank': None, 'of': None,
+        'series': points[-SERIES_YEARS:], 'source': SOURCE, 'rank': None, 'of': None, 'compact': compact,
     }
     if with_rank:
         ranked = rank_of(country_code, indicator)
@@ -119,11 +119,24 @@ def stat(country_code, indicator, label, unit='', decimals=1, with_rank=True):
 
 
 def stats(country_code, specs):
-    """Several stats at once: specs is a list of (indicator, label, unit, decimals). Missing ones are left out, order kept."""
+    """Several stats at once: specs is a list of (indicator, label, unit, decimals[, with_rank[, compact]]). Missing ones are left out, order kept."""
     def one(spec):
         indicator, label, *rest = spec
         return stat(country_code, indicator, label, *rest)
 
-    with ThreadPoolExecutor(max_workers=6) as pool:
+    with ThreadPoolExecutor(max_workers=8) as pool:
         results = list(pool.map(one, specs))
     return [r for r in results if r]
+
+
+def warm(indicators):
+    """Fetch the all-country table of each indicator so the first visitor's ranks are not slow. Safe to call in a background
+    thread at start-up; failures are ignored (the table is fetched on demand then)."""
+    def one(code):
+        try:
+            latest_all(code)
+        except Exception as e:
+            logger.info('[WorldBank] warm %s failed: %s', code, e)
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        list(pool.map(one, indicators))

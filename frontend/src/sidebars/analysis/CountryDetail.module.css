@@ -72,3 +72,55 @@
   font-size: var(--font-3);
   color: var(--text-2);
 }
+
+.pyramidRow {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 0 var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.pyramidSide {
+  display: flex;
+  height: 10px;
+}
+
+.pyramidSide:first-child {
+  justify-content: flex-end;
+}
+
+.pyramidBarLeft,
+.pyramidBarRight {
+  height: 100%;
+  background: var(--accent);
+}
+
+.pyramidBarLeft {
+  border-radius: var(--radius-pill) 0 0 var(--radius-pill);
+}
+
+.pyramidBarRight {
+  border-radius: 0 var(--radius-pill) var(--radius-pill) 0;
+  opacity: 0.6;
+}
+
+.pyramidLabel {
+  font-size: var(--font-2);
+  color: var(--text-2);
+  text-align: center;
+}
+
+.pyramidCount {
+  font-size: var(--font-1);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.pyramidCountLeft {
+  text-align: right;
+}
+
+.mineral {
+  margin-bottom: var(--space-2);
+}

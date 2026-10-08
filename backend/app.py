@@ -16,6 +16,7 @@ realtime) — see that plan's Step 1 for the reasoning behind the split.
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 import logging
+import threading
 import os
 from dotenv import load_dotenv
 
@@ -349,6 +350,17 @@ def init_scheduler():
     )
 
     scheduler.start()
+
+    # Rank tables for the country tabs are one World Bank call per indicator; fetching them now keeps the first visitor's tab quick.
+    def _warm_country_ranks():
+        try:
+            from services.country_tabs import WARM_INDICATORS
+            from services.country_indicators import warm
+            warm(WARM_INDICATORS)
+        except Exception as e:  # never matters for start-up
+            logger.info('Country rank warm-up skipped: %s', e)
+
+    threading.Thread(target=_warm_country_ranks, daemon=True).start()
     logger.info("Background scheduler started")
 
 

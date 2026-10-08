@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from data_sources.factbook import FactbookConnector, parse_age_structure, parse_list, parse_profile, parse_rate, parse_shares
+from data_sources.factbook import FactbookConnector, parse_age_structure, parse_cities, parse_list, parse_profile, parse_rate, parse_shares
 
 FIX = Path(__file__).parent / 'fixtures' / 'factbook'
 
@@ -68,3 +68,25 @@ def test_fetch_profile(mock_requests):
         assert FactbookConnector.fetch_profile('ZZ') is None
         mock_requests.get.return_value = MagicMock(status_code=404)
         assert FactbookConnector.fetch_profile('DE') is None
+
+
+def test_cities_read_population_names_and_the_capital():
+    out = parse_cities('11.208 million PARIS (capital), 1.761 million Lyon, 996,000 Hamah (2023)')
+    assert out['as_of'] == 2023
+    assert out['items'] == [{'name': 'Paris', 'population': 11208000, 'capital': True},
+                            {'name': 'Lyon', 'population': 1761000, 'capital': False},
+                            {'name': 'Hamah', 'population': 996000, 'capital': False}]
+    assert parse_cities(None) is None and parse_cities('no numbers here') is None
+
+
+def test_language_shares_keep_the_first_entry_when_it_has_a_bracketed_note():
+    out = parse_shares('English only (official) 78.2%, Spanish 13.4%, other 7.3% (2017 est.)')
+    assert [(i['name'], i['percent']) for i in out['items']] == [('English only', 78.2), ('Spanish', 13.4), ('other', 7.3)]
+
+
+def test_real_files_give_languages_and_cities():
+    us = _profile('us')['people']
+    assert us['language_shares']['items'][0]['name'] == 'English only'
+    fr = _profile('fr')['people']
+    assert fr['languages'].startswith('French') and fr['language_shares'] is not None
+    assert fr['major_cities']['items'][0]['name'] == 'Paris' and fr['major_cities']['items'][0]['capital']

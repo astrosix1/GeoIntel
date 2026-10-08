@@ -288,6 +288,50 @@ export interface CountryStat {
   source: string;
   rank: number | null;
   of: number | null;
+  // Shown as 3.4 trillion rather than 3,366,300,000,000.
+  compact?: boolean;
+}
+
+export interface CountryHdi {
+  value: number;
+  year: number;
+  tier: string;
+  rank: number;
+  of: number;
+  series: [number, number][];
+  source: string;
+}
+
+export interface CountryEnergy {
+  year: number;
+  mix: { name: string; percent: number }[];
+  fossil_share?: number;
+  low_carbon_share?: number;
+  carbon_intensity?: number;
+  generation_twh?: number;
+  energy_per_capita_kwh?: number;
+  source: string;
+}
+
+export interface CountryMineral {
+  commodity: string;
+  critical: boolean;
+  unit: string;
+  type: string;
+  production?: number;
+  year?: number;
+  rank?: number;
+  producers?: number;
+  world_share?: number | null;
+  capacity?: number;
+  reserves?: number;
+  reserves_share?: number | null;
+}
+
+export interface CityItem {
+  name: string;
+  population: number;
+  capital: boolean;
 }
 
 // GET /api/countries/<code>/detail (premium). Every group may be missing; the UI says so instead of filling it in.
@@ -296,6 +340,10 @@ export interface CountryDetail {
   // Set by the per-tab endpoint (/api/countries/<code>/tab/<tab>).
   tab?: string;
   stats?: CountryStat[];
+  hdi?: CountryHdi | null;
+  sectors?: CountryStat[];
+  energy?: CountryEnergy | null;
+  minerals?: { items: CountryMineral[]; source: string } | null;
   net_migration_rate?: Rate | null;
   sources: string[];
   population: number | null;
@@ -324,6 +372,8 @@ export interface CountryDetail {
     net_migration_rate: Rate | null;
     median_age: string | null;
     languages: string | null;
+    language_shares?: Shares | null;
+    major_cities?: { items: CityItem[]; as_of: number | null } | null;
   };
   economy?: {
     exports: ItemList | null;

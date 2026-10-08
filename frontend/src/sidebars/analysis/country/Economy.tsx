@@ -1,5 +1,7 @@
 import type { CountryDetail as Detail, CountryProfile } from '../../../api/types';
 import { Unavailable, Fact, ShareList } from './shared';
+import { StatList } from './Stat';
+import { EnergyBlock, MineralsBlock, SectorsBlock } from './blocks';
 import eventStyles from '../EventAnalysis.module.css';
 import countryStyles from '../CountryAnalysis.module.css';
 import styles from '../CountryDetail.module.css';
@@ -83,13 +85,21 @@ export function Economy({ detail, profile }: { detail: Detail | undefined; profi
   }
   return (
     <>
+      {detail.stats && detail.stats.length > 0 && (
+        <div className={styles.group}>
+          <div className={styles.groupTitle}>Key figures</div>
+          <StatList stats={detail.stats} />
+        </div>
+      )}
       <Trade profile={profile} />
-      <Contribution profile={profile} />
+      <SectorsBlock sectors={detail.sectors} />
+      <EnergyBlock energy={detail.energy} />
       <ListBlock title="Main exports" list={eco?.exports} />
       <ListBlock title="Main imports" list={eco?.imports} />
       {eco?.export_partners && <ShareList title="Top export partners" shares={eco.export_partners} />}
       {eco?.import_partners && <ShareList title="Top import partners" shares={eco.import_partners} />}
-      <ListBlock title="Natural resources and minerals" list={eco?.natural_resources} note="Lists what is found there, not how much is produced." />
+      <MineralsBlock minerals={detail.minerals} />
+      <ListBlock title="Natural resources (Factbook)" list={eco?.natural_resources} note="Lists what is found there, not how much is produced." />
       <div className={styles.group}>
         <div className={styles.groupTitle}>Vital infrastructure</div>
         {infra && Object.values(infra).some(Boolean) ? (
@@ -104,6 +114,7 @@ export function Economy({ detail, profile }: { detail: Detail | undefined; profi
           <Unavailable>Infrastructure figures are unavailable for this country.</Unavailable>
         )}
       </div>
+      <Contribution profile={profile} />
     </>
   );
 }

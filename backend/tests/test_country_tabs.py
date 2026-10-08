@@ -88,9 +88,13 @@ class TestTabs:
         assert out['people']['religions']['items'][0]['estimated_count'] == round(68000000 * 0.47)
 
     @patch('services.country_tabs.build_conflicts', return_value=None)
+    @patch('services.country_tabs.bundled')
+    @patch('services.country_tabs.wb')
     @patch('services.country_tabs.FactbookConnector')
-    def test_nothing_real_is_none(self, fb, _conflicts):
+    def test_nothing_real_is_none(self, fb, wbmod, bundled, _conflicts):
         fb.fetch_profile.return_value = None
+        wbmod.stats.return_value = []
+        bundled.energy.return_value = bundled.minerals.return_value = bundled.hdi.return_value = None
         assert ct.get_country_tab('FR', 'government') is None
         assert ct.get_country_tab('FR', 'economy') is None
         assert ct.get_country_tab('FR', 'security') is None
@@ -112,3 +116,27 @@ def test_endpoint_is_premium_only():
     app.register_blueprint(countries_bp)
     with app.test_client() as c:
         assert c.get('/api/countries/FR/tab/people').status_code == 401
+
+
+class TestNewFigures:
+    @patch('services.country_tabs.FactbookConnector')
+    @patch('services.country_tabs.wb')
+    def test_people_tab_carries_hdi_and_more_figures(self, wbmod, fb):
+        fb.fetch_profile.return_value = FR
+        wbmod.stats.return_value = [{'code': 'SP.POP.TOTL', 'label': 'Population', 'value': 68000000, 'year': 2024}]
+        wbmod.SOURCE = 'World Bank'
+        out = ct.get_country_tab('FR', 'people')
+        assert out['hdi']['value'] > 0.9 and out['hdi']['tier'] == 'Very high'
+        assert any('UNDP' in s for s in out['sources'])
+        assert wbmod.stats.call_args[0][1] is ct.PEOPLE_STATS
+
+    @patch('services.country_tabs.FactbookConnector')
+    @patch('services.country_tabs.wb')
+    def test_economy_tab_carries_energy_minerals_and_sectors(self, wbmod, fb):
+        fb.fetch_profile.return_value = FR
+        wbmod.stats.return_value = []
+        wbmod.SOURCE = 'World Bank'
+        out = ct.get_country_tab('FR', 'economy')
+        assert out['energy']['mix'][0]['name'] == 'Nuclear'
+        assert out['minerals']['items'] and out['sectors'] == []
+        assert out['economy']['exports']['items'][0] == 'aircraft'

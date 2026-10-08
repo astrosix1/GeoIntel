@@ -1,18 +1,19 @@
 import type { CountryStat } from '../../../api/types';
-import { changeText, formatNumber } from './chart';
+import { changeText, formatCompact, formatNumber } from './chart';
 import Sparkline from './Sparkline';
 import styles from './Stat.module.css';
 
 // One figure with its year, its rank among countries, how it has moved, and a trend line. Everything comes from the server's
 // stat: nothing here is computed from a guess, and a missing figure is simply not rendered.
 export default function Stat({ stat }: { stat: CountryStat }) {
-  const change = changeText(stat.series);
+  const change = changeText(stat.series, stat.unit, stat.decimals);
   return (
     <div className={styles.stat}>
       <span className={styles.label}>{stat.label}</span>
       <span className={styles.value}>
-        {formatNumber(stat.value, stat.decimals)}
-        {stat.unit && <span className={styles.unit}>{stat.unit}</span>}
+        {stat.unit === 'US$' && '$'}
+        {stat.compact ? formatCompact(stat.value) : formatNumber(stat.value, stat.decimals)}
+        {stat.unit && stat.unit !== 'US$' && <span className={styles.unit}>{stat.unit}</span>}
       </span>
       <div className={styles.meta}>
         <span>{stat.year}</span>

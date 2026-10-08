@@ -93,3 +93,12 @@ All five recommendations accepted: bundle larger datasets; an AI analyst read on
 - **People tab** already uses the kit: population and birth rate with rank and trend (Japan: population #12 of 217, birth rate #211 of 217, down 43% since 1990).
 - **Note:** a cold country takes several seconds on its first People load (the ranking tables are fetched once, then cached for everyone).
 - **Fixed on the way:** if the population series hiccuped while the figures loaded, head counts for religions vanished; the tab now takes population from the same fetch as the figures.
+
+## Stage 1 as built (Economy and People)
+
+- **Bundled data** (`backend/data/country/`, rebuilt by `python scripts/build_country_data.py`, 330 KB): `hdi.json` (UNDP via Our World in Data, 193 countries, 1990 to 2023), `energy.json` (electricity mix, latest year, 214 countries), `minerals.json` (USGS Mineral Commodity Summaries 2025: 116 countries, 76 commodities, with rank among listed producers, share of world output and reserves; critical minerals flagged from USGS's own list). Loaded by `services/country_data.py`.
+- **People tab:** 11 World Bank figures with rank and trend (population, life expectancy, birth and fertility rates, growth, urban share, dependency ratio, infant mortality, literacy, secondary enrolment, doctors), the Human Development Index with tier and rank, males and females by age, **language shares** and **largest cities** (new Factbook parsers), religions and ethnic groups as before.
+- **Economy tab:** 10 key figures (GDP, GDP per person, growth, inflation, unemployment, government debt, current account, foreign investment, inequality, electricity access) with 35-year series where the World Bank has them, sector shares, **electricity mix**, trade as before, and **critical and strategic minerals** (production, rank among producers, world share, reserves) ahead of other minerals.
+- **Trend wording:** percentages and rates move in "points", other figures in percent, and a series that touches zero only says where it started (a percentage change there would mislead).
+- **Rank tables** for all 21 indicators are fetched in the background at start-up, so the first visitor's tab is quick.
+- Not covered in this stage: government debt and some other World Bank series can be old (the year is always shown); minerals are USGS estimates in the units shown.

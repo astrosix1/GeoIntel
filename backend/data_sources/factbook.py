@@ -85,7 +85,7 @@ def _read_shares(body, depth=0):
         elif level == 0:
             top += char
     items = []
-    pattern = r'(?:^|[,;])\s*([^,;%\x00]*?[A-Za-z][^,;%\x00]*?)\s+(<\s*|~\s*)?(\d+(?:\.\d+)?)\s*%\s*(?:\x00(\d+)\x00)?'
+    pattern = r'(?:^|[,;])\s*([^,;%\x00]*?[A-Za-z][^,;%\x00]*?)\s+(?:\x00\d+\x00\s+)?(<\s*|~\s*)?(\d+(?:\.\d+)?)\s*%\s*(?:\x00(\d+)\x00)?'
     for match in re.finditer(pattern, top):
         name = match.group(1).strip(' :')
         if depth:
@@ -172,6 +172,39 @@ def _names(text):
     return {'text': text, 'since': since.group(1) if since else None, 'summary': base}
 
 
+def _languages_text(data):
+    """The Factbook nests the language list one level down ({'Languages': {'Languages': {'text': ...}}}) for some countries."""
+    node = (data.get('People and Society') or {}).get('Languages')
+    if isinstance(node, dict) and isinstance(node.get('Languages'), (dict, str)):
+        return clean(node['Languages'])
+    return clean(node)
+
+
+def parse_cities(text):
+    """'11.208 million PARIS (capital), 1.761 million Lyon, 996,000 Hamah (2023)' ->
+    {'items': [{'name', 'population', 'capital'}], 'as_of': 2023}. Names the Factbook writes in capitals are the capital."""
+    if not text:
+        return None
+    as_of = _as_of(text)
+    body = re.sub(r'\s*\((?:FY)?\d{4}(?: est\.)?\)\s*$', '', text)
+    items = []
+    for part in re.split(r',\s+(?=\d)', body):
+        match = re.match(r'\s*(\d+(?:,\d{3})*(?:\.\d+)?)\s*(million|thousand)?\s+(.+?)\s*$', part)
+        if not match:
+            continue
+        number = float(match.group(1).replace(',', ''))
+        number *= {'million': 1_000_000, 'thousand': 1_000}.get(match.group(2), 1)
+        name = match.group(3)
+        capital = '(capital)' in name
+        name = re.sub(r'\s*\(capital\)', '', name).strip()
+        if capital and name.isupper():
+            name = name.title()
+        if name:
+            items.append({'name': name, 'population': round(number), 'capital': capital})
+    return {'items': items, 'as_of': as_of} if items else None
+
+
+
 def parse_profile(data):
     """The whole Factbook file -> only the fields the app shows. Missing pieces are simply absent."""
     if not isinstance(data, dict):
@@ -205,7 +238,9 @@ def parse_profile(data):
             'death_rate': parse_rate(_field(data, 'People and Society', 'Death rate')),
             'net_migration_rate': parse_rate(_field(data, 'People and Society', 'Net migration rate')),
             'median_age': _subfield(data, 'People and Society', 'Median age', 'total'),
-            'languages': _field(data, 'People and Society', 'Languages'),
+            'languages': _languages_text(data),
+            'language_shares': parse_shares(_languages_text(data)),
+            'major_cities': parse_cities(_field(data, 'People and Society', 'Major urban areas - population')),
         },
         'economy': {
             'exports': parse_list(_field(data, 'Economy', 'Exports - commodities')),

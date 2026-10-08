@@ -12,10 +12,47 @@ import logging
 
 from cache import cache_get, cache_set
 from data_sources.factbook import FactbookConnector
+from services import country_data as bundled
 from services import country_indicators as wb
 from services.country_detail import _with_counts, build_conflicts, build_migration
 
 logger = logging.getLogger(__name__)
+
+PEOPLE_STATS = [
+    ('SP.POP.TOTL', 'Population', '', 0),
+    ('SP.DYN.LE00.IN', 'Life expectancy', 'years', 1),
+    ('SP.DYN.CBRT.IN', 'Birth rate', 'per 1,000 people', 1),
+    ('SP.DYN.TFRT.IN', 'Fertility rate', 'births per woman', 2),
+    ('SP.POP.GROW', 'Population growth', '% a year', 2),
+    ('SP.URB.TOTL.IN.ZS', 'Urban population', '% of total', 1),
+    ('SP.POP.DPND', 'Dependency ratio', 'per 100 of working age', 1),
+    ('SP.DYN.IMRT.IN', 'Infant mortality', 'per 1,000 births', 1),
+    ('SE.ADT.LITR.ZS', 'Adult literacy', '% of adults', 1),
+    ('SE.SEC.ENRR', 'Secondary school enrolment', '% gross', 1),
+    ('SH.MED.PHYS.ZS', 'Doctors', 'per 1,000 people', 2),
+]
+
+ECONOMY_STATS = [
+    ('NY.GDP.MKTP.CD', 'GDP', 'US$', 0, True, True),
+    ('NY.GDP.PCAP.CD', 'GDP per person', 'US$', 0),
+    ('NY.GDP.MKTP.KD.ZG', 'GDP growth', '% a year', 1),
+    ('FP.CPI.TOTL.ZG', 'Inflation', '% a year', 1),
+    ('SL.UEM.TOTL.ZS', 'Unemployment', '% of labour force', 1),
+    ('GC.DOD.TOTL.GD.ZS', 'Government debt', '% of GDP', 1),
+    ('BN.CAB.XOKA.GD.ZS', 'Current account balance', '% of GDP', 1),
+    ('BX.KLT.DINV.WD.GD.ZS', 'Foreign investment in', '% of GDP', 1),
+    ('SI.POV.GINI', 'Income inequality (Gini)', 'index, 0 to 100', 1),
+    ('EG.ELC.ACCS.ZS', 'Access to electricity', '% of people', 1),
+]
+
+SECTOR_STATS = [
+    ('NV.AGR.TOTL.ZS', 'Agriculture', '% of GDP', 1, False),
+    ('NV.IND.TOTL.ZS', 'Industry', '% of GDP', 1, False),
+    ('NV.SRV.TOTL.ZS', 'Services', '% of GDP', 1, False),
+]
+
+# What the first visitor should not wait for: the all-country tables behind the ranks.
+WARM_INDICATORS = [spec[0] for spec in PEOPLE_STATS + ECONOMY_STATS]
 
 TABS = ('government', 'people', 'migration', 'economy', 'security', 'geography')
 CACHE_SECONDS = 24 * 3600
@@ -44,20 +81,23 @@ def _government(cc):
 def _people(cc):
     out = _base(cc, 'people')
     factbook = FactbookConnector.fetch_profile(cc)
-    out['stats'] = wb.stats(cc, [('SP.POP.TOTL', 'Population', '', 0), ('SP.DYN.CBRT.IN', 'Birth rate', 'per 1,000 people', 1)])
+    out['stats'] = wb.stats(cc, PEOPLE_STATS)
     # The population comes from the same fetch as the figures above, so a hiccup cannot show one and lose the other.
     pop_stat = next((s for s in out['stats'] if s['code'] == 'SP.POP.TOTL'), None)
     population, year = (pop_stat['value'], pop_stat['year']) if pop_stat else _population(cc)
     out['population'], out['population_year'] = population, year
     if out['stats']:
         out['sources'].append(wb.SOURCE)
+    out['hdi'] = bundled.hdi(cc)
+    if out['hdi']:
+        out['sources'].append(out['hdi']['source'])
     if factbook:
         people = dict(factbook['people'])
         people['religions'] = _with_counts(people.get('religions'), population)
         people['ethnic_groups'] = _with_counts(people.get('ethnic_groups'), population)
         out['people'] = people
         out['sources'].append(FACTBOOK)
-    return out if (factbook or out['stats']) else None
+    return out if (factbook or out['stats'] or out['hdi']) else None
 
 
 def _migration(cc):
@@ -77,11 +117,21 @@ def _migration(cc):
 def _economy(cc):
     out = _base(cc, 'economy')
     factbook = FactbookConnector.fetch_profile(cc)
+    out['stats'] = wb.stats(cc, ECONOMY_STATS)
+    out['sectors'] = wb.stats(cc, SECTOR_STATS)
+    if out['stats'] or out['sectors']:
+        out['sources'].append(wb.SOURCE)
+    out['energy'] = bundled.energy(cc)
+    if out['energy']:
+        out['sources'].append(out['energy']['source'])
+    out['minerals'] = bundled.minerals(cc)
+    if out['minerals']:
+        out['sources'].append(out['minerals']['source'])
     if factbook:
         out['economy'] = factbook['economy']
         out['infrastructure'] = factbook['infrastructure']
         out['sources'].append(FACTBOOK)
-    return out if factbook else None
+    return out if (factbook or out['stats'] or out['energy'] or out['minerals']) else None
 
 
 def _security(cc):

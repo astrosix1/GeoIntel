@@ -2,6 +2,7 @@ import type { CountryDetail as Detail } from '../../../api/types';
 import { Unavailable, Fact, ShareList, Ages } from './shared';
 import { rate } from './format';
 import { StatList } from './Stat';
+import { CitiesBlock, HdiBlock, Pyramid } from './blocks';
 import countryStyles from '../CountryAnalysis.module.css';
 import styles from '../CountryDetail.module.css';
 
@@ -17,10 +18,13 @@ export function People({ detail }: { detail: Detail }) {
           <Fact label="Death rate">{rate(people.death_rate, 'deaths per 1,000')}</Fact>
           <Fact label="Net migration">{rate(people.net_migration_rate, 'per 1,000')}</Fact>
           <Fact label="Median age">{people.median_age}</Fact>
-          <Fact label="Languages">{people.languages}</Fact>
+          {!people.language_shares && <Fact label="Languages">{people.languages}</Fact>}
         </div>
       </div>
+      <HdiBlock hdi={detail.hdi} />
       <Ages bands={people.age_structure} />
+      <Pyramid bands={people.age_structure} />
+      {people.language_shares && <ShareList title="Languages" shares={people.language_shares} />}
       <ShareList title="Religions" shares={people.religions} />
       {people.ethnic_groups ? (
         <ShareList title="Ethnic groups" shares={people.ethnic_groups} />
@@ -37,6 +41,7 @@ export function People({ detail }: { detail: Detail }) {
           )}
         </div>
       )}
+      <CitiesBlock cities={people.major_cities} />
     </>
   );
 }
