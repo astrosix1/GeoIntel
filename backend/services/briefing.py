@@ -16,8 +16,6 @@ from cache import cache_get, cache_set
 from data_sources import fetch_real_page_metadata
 from services.story_facts import story_stamp, story_context_lines
 from services.ai_client import anthropic_client, AI_MODEL
-from services.escalation import analyze_escalation
-from services.economic import get_economic_impact
 from services.reliability import calculate_source_reliability
 
 logger = logging.getLogger(__name__)
@@ -99,8 +97,6 @@ def generate_ai_briefing(crisis_id):
                 .filter(News.crisis_id == crisis_id)
                 .order_by(News.published_at.desc())
                 .limit(20).all())
-        escalation = analyze_escalation(crisis_id)
-        economic = get_economic_impact(crisis_id)
         reliability = calculate_source_reliability(crisis_id)
 
         numbered_sources = []
@@ -174,11 +170,6 @@ Source Reliability: {reliability['reliability']} ({reliability['source_count']} 
 Analysis: {crisis.analysis}
 {chr(10).join(story_context_lines(crisis))}
 
-Escalation Trend: {escalation['trend']}{f" (velocity: {escalation['velocity']} points/day)" if escalation.get('velocity') is not None else ""}
-Economic Impact: {economic['impact_severity']}
-Affected Sectors: {', '.join(economic['sectors_typically_exposed'])}
-{f"Trade Openness: {economic['economic_profile']['trade_openness_percent_of_gdp']}% of GDP" if economic.get('economic_profile') else ""}
-
 Numbered Source List (cite these by number — see instructions):
 {sources_block}
 
@@ -242,7 +233,7 @@ Be specific — name actors, places, and figures rather than speaking in general
                 return None
         else:
             logger.info("ANTHROPIC_API_KEY not set — generating static briefing")
-            result = _generate_static_briefing(crisis, escalation, economic, reliability, numbered_sources, image, excerpt_parts, source_media)
+            result = _generate_static_briefing(crisis, reliability, numbered_sources, image, excerpt_parts, source_media)
             if result:
                 result['story_stamp'] = stamp
                 cache_set(cache_key, result, ttl=3600)
@@ -265,7 +256,7 @@ def _format_sources_section(numbered_sources):
     return "\n\n## Sources\n" + '\n'.join(lines)
 
 
-def _generate_static_briefing(crisis, escalation, economic, reliability, numbered_sources, image, excerpt_parts=None, source_media=None):
+def _generate_static_briefing(crisis, reliability, numbered_sources, image, excerpt_parts=None, source_media=None):
     """Generate a rule-based, single-explanation briefing when no API key
     is available — built from real material (crisis.analysis, real article
     excerpts) rather than a severity-only template. Honest when that real
@@ -286,24 +277,7 @@ def _generate_static_briefing(crisis, escalation, economic, reliability, numbere
     filler now that severity has its own badge."""
     excerpt_parts = excerpt_parts or []
     sev = crisis.severity
-    trend = escalation.get('trend') if escalation else None
-    velocity = escalation.get('velocity') if escalation else None
     has_real_material = bool(crisis.analysis) or bool(excerpt_parts)
-
-    # Escalation trend IS real (computed from actual CrisisSnapshot history
-    # — see services/escalation.py) when enough snapshots exist, unlike the
-    # economic/reliability figures above. But most crises are single-
-    # snapshot/newly-ingested, so 'insufficient_data' is the overwhelmingly
-    # common case — showing "too new to establish a trend" on nearly every
-    # briefing is itself the kind of constant filler this fix is removing,
-    # so it's included only when there's an actual real trend to report.
-    trend_sentence = ''
-    if trend == 'escalating':
-        trend_sentence = f" This event is rapidly escalating (velocity +{abs(velocity):.1f} pts/day)."
-    elif trend == 'de-escalating':
-        trend_sentence = f" This event is de-escalating (velocity −{abs(velocity):.1f} pts/day)."
-    elif trend == 'volatile':
-        trend_sentence = " This event's severity has been volatile with unpredictable swings."
 
     # Lead with the real explanation when there's real material to draw
     # from (crisis.analysis, real article excerpts) — this is what makes
@@ -357,7 +331,7 @@ def _generate_static_briefing(crisis, escalation, economic, reliability, numbere
     # into the real analytical content instead.
     briefing_text = f"""Global Severity: {sev}/100
 
-{real_explanation}{trend_sentence}"""
+{real_explanation}"""
 
     # No appended '## Sources' block here — for this static-fallback path,
     # crisis.source_url is the only real citable source GDELT crises ever

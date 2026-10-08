@@ -5,11 +5,13 @@ import {
   useCrisisDetailQuery,
   useEntitlements,
   useEventHazardsQuery,
+  useEventAnalysisQuery,
   useRefineLocationMutation,
   useStormsQuery,
 } from '../../state/queries';
 import { useUiStore } from '../../state/uiStore';
 import Scenarios from './Scenarios';
+import EventPattern from './EventPattern';
 import Comments from './Comments';
 import SaveButton from '../../components/SaveButton';
 import { labelForSeverity, severityTone } from '../../globe/severity';
@@ -40,6 +42,7 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
   const { unlocked: premium } = useEntitlements();
   const { data: detail } = useCrisisDetailQuery(crisis.id);
   const { data: hazardLinks } = useEventHazardsQuery(crisis.id);
+  const { data: patternData } = useEventAnalysisQuery(crisis.id);
   // When the first report appeared, as a clock time at the event's own pin (news-feed events only).
   const zoneIndex = useZoneIndex(hasReportTime(crisis.id));
   const reportZone = zoneIndex ? zoneAt(zoneIndex, crisis.lat, crisis.lon) : null;
@@ -133,6 +136,48 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
               </div>
             </Section>
           )}
+      {detail?.severity_basis && (
+        <Section title={`Why this rating (${detail.severity_basis.name})`}>
+          <ul className={styles.sourceList}>
+            {detail.severity_basis.basis.map((reason) => (
+              <li key={reason}>{reason}</li>
+            ))}
+          </ul>
+        </Section>
+      )}
+
+      {scopeWhy && (
+        <Section title={`Why ${crisis.scope === 'local' ? 'Local' : 'Global'}`}>
+          <div className={styles.briefingText}>{scopeWhy.summary}</div>
+          {scopeWhy.terms.length > 0 && <div className={styles.mediaCaption}>Matched: {scopeWhy.terms.join(', ')}</div>}
+        </Section>
+      )}
+
+      {detail && detail.news.length > 1 ? (
+        <Section title={`Sources (${detail.source_count} outlet${detail.source_count === 1 ? '' : 's'})`}>
+          <ul className={styles.sourceList}>
+            {detail.news.map((item) => (
+              <li key={item.url}>
+                <a className={styles.sourceLink} href={item.url} target="_blank" rel="noopener noreferrer">
+                  {item.title || item.url}
+                </a>
+                <span className={styles.sourceOutlet}>{item.source}</span>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      ) : crisis.source_url && (
+        <Section title="Source">
+          <a
+            className={styles.sourceLink}
+            href={crisis.source_url}
+            target="_blank"
+            rel="noreferrer"
+          >
+            {crisis.source_url}
+          </a>
+        </Section>
+      )}
         </>
       )}
 
@@ -201,54 +246,13 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
         </Section>
       )}
 
-      {detail?.severity_basis && (
-        <Section title={`Why this rating (${detail.severity_basis.name})`}>
-          <ul className={styles.sourceList}>
-            {detail.severity_basis.basis.map((reason) => (
-              <li key={reason}>{reason}</li>
-            ))}
-          </ul>
-        </Section>
-      )}
-
-      {scopeWhy && (
-        <Section title={`Why ${crisis.scope === 'local' ? 'Local' : 'Global'}`}>
-          <div className={styles.briefingText}>{scopeWhy.summary}</div>
-          {scopeWhy.terms.length > 0 && <div className={styles.mediaCaption}>Matched: {scopeWhy.terms.join(', ')}</div>}
-        </Section>
-      )}
-
-      {detail && detail.news.length > 1 ? (
-        <Section title={`Sources (${detail.source_count} outlet${detail.source_count === 1 ? '' : 's'})`}>
-          <ul className={styles.sourceList}>
-            {detail.news.map((item) => (
-              <li key={item.url}>
-                <a className={styles.sourceLink} href={item.url} target="_blank" rel="noopener noreferrer">
-                  {item.title || item.url}
-                </a>
-                <span className={styles.sourceOutlet}>{item.source}</span>
-              </li>
-            ))}
-          </ul>
-        </Section>
-      ) : crisis.source_url && (
-        <Section title="Source">
-          <a
-            className={styles.sourceLink}
-            href={crisis.source_url}
-            target="_blank"
-            rel="noreferrer"
-          >
-            {crisis.source_url}
-          </a>
-        </Section>
-      )}
-
       <Section title="Analysis">
         {isLoading && <div className={styles.loading}>Loading analysis...</div>}
         {isError && <div className={styles.error}>Failed to load analysis.</div>}
         {briefing && <div className={styles.briefingText}>{briefing.briefing}</div>}
       </Section>
+
+      {patternData && <EventPattern data={patternData} />}
 
       <Scenarios key={crisis.id} crisisId={crisis.id} />
         </>

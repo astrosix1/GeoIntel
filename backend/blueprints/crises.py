@@ -21,6 +21,7 @@ from services.history import generate_deep_history
 from services.scenarios import generate_scenarios, ScenariosUnavailable
 from services.location_refine import refine_crisis_location
 from services.stories import canonical_id
+from services.event_analysis import get_event_analysis
 from services.hazard_links import hazards_for_event
 from services.gating import require_premium, require_premium_feature
 from services.realtime import broadcast_new_crisis
@@ -515,6 +516,19 @@ def get_crisis_economic_impact(crisis_id):
             return jsonify({'error': 'Crisis not found'}), 404
     except Exception as e:
         logger.error(f"Error analyzing economic impact: {e}")
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
+
+
+@crises_bp.route('/<crisis_id>/analysis', methods=['GET'])
+def get_crisis_analysis(crisis_id):
+    """Pattern and related events for the Analysis tab."""
+    try:
+        result = get_event_analysis(canonical_id(crisis_id))
+        if result is None:
+            return jsonify({'error': 'Crisis not found'}), 404
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Error building event analysis: {e}")
         return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
 
 

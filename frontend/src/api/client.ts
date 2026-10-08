@@ -17,6 +17,7 @@ import type {
   StormsResponse,
   HazardDetail,
   EventHazardLinks,
+  EventAnalysisData,
   HazardEvents,
   UserPrefs,
   AlertSettings,
@@ -485,4 +486,12 @@ export async function updateDrawing(id: string, change: { name?: string; data?: 
 
 export async function deleteDrawing(id: string): Promise<void> {
   await drawingRequest<void>(`/api/me/drawings/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+export async function fetchEventAnalysis(crisisId: string): Promise<EventAnalysisData> {
+  const res = await fetch(`${API_BASE_URL}/api/crises/${encodeURIComponent(crisisId)}/analysis`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch analysis for event ${crisisId}: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
 }

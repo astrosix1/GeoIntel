@@ -47,12 +47,10 @@ def seed_crisis(db_session, **overrides):
 
 
 def _patched(**kwargs):
-    """Patch the escalation/economic/reliability/media calls
+    """Patch the reliability/media calls
     generate_ai_briefing makes, so tests don't depend on real network
     calls or other real data rows existing."""
     base = dict(
-        escalation={'trend': 'stable', 'velocity': None},
-        economic={'impact_severity': 'moderate', 'sectors_typically_exposed': ['General Economy']},
         reliability={'reliability': 'moderate', 'source_count': 1},
         fetch_real_page_metadata=None,
         fetch_wikipedia_image=None,
@@ -63,9 +61,7 @@ def _patched(**kwargs):
 
 def _run(crisis_id, **overrides):
     p = _patched(**overrides)
-    with patch('services.briefing.analyze_escalation', return_value=p['escalation']), \
-         patch('services.briefing.get_economic_impact', return_value=p['economic']), \
-         patch('services.briefing.calculate_source_reliability', return_value=p['reliability']), \
+    with patch('services.briefing.calculate_source_reliability', return_value=p['reliability']), \
          patch('services.briefing.fetch_real_page_metadata', return_value=p['fetch_real_page_metadata']), \
          patch('services.briefing.fetch_wikipedia_image', return_value=p['fetch_wikipedia_image']):
         return generate_ai_briefing(crisis_id)

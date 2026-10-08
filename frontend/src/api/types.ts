@@ -787,3 +787,29 @@ export interface WeatherLayersResponse {
   attribution: { text: string; url: string; license: string; license_url: string };
   fetched_at: string;
 }
+
+// GET /api/crises/<id>/analysis: counted from this app's own events.
+export interface EventPattern {
+  country: string;
+  last_7_days: number;
+  previous_7_days: number;
+  direction: 'rising' | 'falling' | 'steady' | 'too_few';
+  weekly: [string, number][];
+  counted: string;
+  source: string;
+}
+export interface RelatedEvent {
+  id: string;
+  title: string;
+  type: string;
+  country: string;
+  severity: number;
+  severity_level: number | null;
+  date: string;
+  sources: number;
+}
+export interface EventAnalysisData {
+  crisis_id: string;
+  pattern: EventPattern | null;
+  related: RelatedEvent[];
+}
