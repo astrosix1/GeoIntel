@@ -5,7 +5,7 @@ import { useUiStore } from '../state/uiStore';
 import Button from '../ui/Button';
 import radarStyles from './TimeBar.module.css';
 import styles from './WeatherLayers.module.css';
-import { formatForecastTime, nearestTime, relativeHours } from './weatherLayers';
+import { formatForecastTime, futureTimes, nearestTime, relativeHours } from './weatherLayers';
 
 // The forecast timeline for the forecast map layer: drag to any hour the model has, or press Now. It says plainly that this is a
 // model forecast, not an observation. Sits above the radar timeline when both are showing.
@@ -28,10 +28,10 @@ export default function ForecastBar() {
       </div>
     );
   }
-  const times = data?.layers[field]?.times;
-  if (isLoading || !times || times.length === 0) return null;
+  const times = futureTimes(data?.layers[field]?.times, now);
+  if (isLoading || times.length === 0) return null;
 
-  const current = nearestTime(times, forecastTime ?? now) as string;
+  const current = nearestTime(times, Math.max(forecastTime ?? now, now)) as string;
   const index = Math.max(0, times.indexOf(current));
   const isNow = forecastTime === null;
 

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
-  cloudTileUrl, fieldLegendUrl, fieldTileUrl, fireTileUrl, formatForecastTime, nearestTime, relativeHours, todayUtc, yesterdayUtc,
+  cloudBucket, cloudTileUrl, fieldLegendUrl, futureTimes, fieldTileUrl, fireTileUrl, formatForecastTime, nearestTime, relativeHours, todayUtc,
 } from '../src/globe/weatherLayers.ts';
 
 const TIMES = ['2026-10-08T06:00:00Z', '2026-10-08T07:00:00Z', '2026-10-08T08:00:00Z', '2026-10-09T08:00:00Z'];
@@ -34,7 +34,7 @@ describe('tile addresses', () => {
 
   it('points at the legend picture and the NASA tiles', () => {
     assert.ok(fieldLegendUrl('X').includes('request=GetLegendGraphic') && fieldLegendUrl('X').includes('layer=dwd:X'));
-    assert.ok(cloudTileUrl('2026-10-07').includes('MODIS_Terra_Cloud_Fraction_Day/default/2026-10-07/GoogleMapsCompatible_Level6/{z}/{y}/{x}.png'));
+    assert.ok(cloudTileUrl('GOES-East_ABI_Band13_Clean_Infrared', 7).includes('GOES-East_ABI_Band13_Clean_Infrared/default/default/GoogleMapsCompatible_Level6/{z}/{y}/{x}.png?t=7'));
     const fires = fireTileUrl('2026-10-08');
     assert.ok(fires.includes('/wms/epsg3857/best/wms.cgi') && fires.includes('LAYERS=VIIRS_SNPP_Thermal_Anomalies_375m_All'));
     assert.ok(fires.includes('BBOX={bbox-epsg-3857}') && fires.endsWith('TIME=2026-10-08'));
@@ -42,9 +42,16 @@ describe('tile addresses', () => {
 });
 
 describe('dates and labels', () => {
-  it("yesterday in UTC is the newest complete daily composite", () => {
-    assert.equal(yesterdayUtc(Date.parse('2026-10-08T00:30:00Z')), '2026-10-07');
-    assert.equal(yesterdayUtc(Date.parse('2026-03-01T23:59:00Z')), '2026-02-28');
+  it('changes the cloud tile address every ten minutes so new images are fetched', () => {
+    const at = Date.parse('2026-10-08T20:00:00Z');
+    assert.equal(cloudBucket(at), cloudBucket(at + 9 * 60 * 1000));
+    assert.notEqual(cloudBucket(at), cloudBucket(at + 10 * 60 * 1000));
+  });
+
+  it('never offers an hour before the live one', () => {
+    const now = Date.parse('2026-10-08T20:25:00Z');
+    assert.deepEqual(futureTimes(['2026-10-07T06:00:00Z', '2026-10-08T19:00:00Z', '2026-10-08T20:00:00Z', '2026-10-09T01:00:00Z'], now), ['2026-10-08T20:00:00Z', '2026-10-09T01:00:00Z']);
+    assert.deepEqual(futureTimes(undefined, now), []);
   });
 
   it("today's date in UTC is the fire layer's day", () => {

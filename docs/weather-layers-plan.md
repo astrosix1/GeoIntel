@@ -93,3 +93,10 @@ A ground-level air-quality index (PM2.5, ozone, nitrogen dioxide, US or EU AQI) 
 - **Care taken:** a forecast hour is only ever one the chosen layer has (each layer has its own hours; DWD answers a wrong hour with an error, not a picture), dragging the bar is smoothed so each pause draws one set of tiles, layers are put back after a base-map change, and the layers sit under the radar and above the land.
 - **Not built:** air-quality map columns (NASA nitrogen dioxide and aerosol layers) were left out of this first set, and air-quality alerts stay out (decision 1).
 - **Checked in the browser:** each of the four forecast fields and both satellite overlays, the time slider, switching between layers, and the legends.
+
+## Change: live and ahead only (owner, 2026-10-08)
+
+- **Forecast hours:** the layer list now starts at the hour we are in. The server cuts every layer's hours on each request (`current_layers`, so the cut moves with the clock; the full list stays cached), and the forecast bar and map also refuse any earlier hour. A layer that has only past hours left is not offered.
+- **Clouds:** the yesterday-composite cloud-fraction layer is gone. It is replaced by **live infrared** from NASA GIBS: the newest 10-minute images from GOES-East, GOES-West and Himawari (about 30 to 45 minutes behind), refetched every ten minutes. They cover the Americas, the Atlantic, the Pacific, East Asia and Australia; **Europe, Africa, the Middle East and the Indian Ocean are not covered** (GIBS does not carry Meteosat), and the menu says so. A global live cloud picture would need another source.
+- **Fires** stay as today's detections so far.
+- **Not changed:** the radar loop (the past two hours of observed radar) is the earlier feature you asked for and is untouched.

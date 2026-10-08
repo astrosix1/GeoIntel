@@ -59,9 +59,28 @@ class TestLayers:
             assert dwd.layers() is None
 
 
+class TestNoPast:
+    def test_only_the_live_hour_and_the_forecast_ahead_are_offered(self):
+        from datetime import datetime, timezone
+        full = {'layers': {'temperature': {'times': ['2026-10-07T06:00:00Z', '2026-10-08T19:00:00Z', '2026-10-08T20:00:00Z', '2026-10-09T20:00:00Z']},
+                           'wind': {'times': ['2026-10-07T06:00:00Z']}}, 'attribution': {}}
+        with patch('data_sources.dwd.layers', return_value=full):
+            out = dwd.current_layers(datetime(2026, 10, 8, 20, 25, tzinfo=timezone.utc))
+        assert out['layers']['temperature']['times'] == ['2026-10-08T20:00:00Z', '2026-10-09T20:00:00Z']   # the hour we are in is live
+        assert 'wind' not in out['layers']                                                                 # nothing but the past: not offered
+        assert len(full['layers']['temperature']['times']) == 4                                            # the cached copy is untouched
+
+    def test_nothing_left_or_no_service_is_none(self):
+        from datetime import datetime, timezone
+        with patch('data_sources.dwd.layers', return_value={'layers': {'temperature': {'times': ['2026-10-07T06:00:00Z']}}, 'attribution': {}}):
+            assert dwd.current_layers(datetime(2026, 10, 8, 20, 25, tzinfo=timezone.utc)) is None
+        with patch('data_sources.dwd.layers', return_value=None):
+            assert dwd.current_layers() is None
+
+
 class TestEndpoint:
     def test_returns_the_layers_or_503(self, client):
-        with patch('data_sources.dwd.layers', return_value={'layers': {'temperature': {'times': []}}, 'attribution': {}}):
+        with patch('data_sources.dwd.current_layers', return_value={'layers': {'temperature': {'times': []}}, 'attribution': {}}):
             assert client.get('/api/weather/layers').get_json()['layers']
-        with patch('data_sources.dwd.layers', return_value=None):
+        with patch('data_sources.dwd.current_layers', return_value=None):
             assert client.get('/api/weather/layers').status_code == 503

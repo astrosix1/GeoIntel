@@ -1,11 +1,12 @@
 import type * as maplibregl from 'maplibre-gl';
 
-// Forecast and satellite weather layers for Weather mode.
+// Forecast and satellite weather layers for Weather mode: live and ahead only, nothing from the past.
 //
 //  - Forecast fields (temperature, pressure, rain, wind) come from DWD's global ICON model over its WMS, one raster layer at a time,
 //    drawn for a chosen forecast hour. These are FORECASTS, not observations.
-//  - Cloud cover and fires come from NASA GIBS and are SATELLITE OBSERVATIONS: cloud cover is the previous day's daily composite,
-//    fires are VIIRS detections (a few hours old).
+//  - Clouds and fires come from NASA GIBS and are LIVE SATELLITE OBSERVATIONS: clouds are the newest 10-minute infrared images from the
+//    two GOES satellites and Himawari (about 30 to 45 minutes behind; they do not cover Europe, Africa or the Middle East),
+//    fires are today's VIIRS detections (a few hours behind).
 //
 // Everything is deliberately thin: the map tiles are fetched by the browser straight from the provider, and every layer carries
 // the attribution its licence asks for in the source (the map's attribution control shows it).
@@ -24,19 +25,23 @@ export interface WeatherWant {
   wmsLayer: string | null; // DWD's layer name for the field
   time: string | null; // ISO time with a Z, one of the times the service can draw
   clouds: boolean;
-  cloudsDate: string; // YYYY-MM-DD of the daily composite
+  cloudsBucket: number; // the ten-minute slot, so the tiles are fetched again as new images arrive
   fires: boolean;
   firesDate: string; // YYYY-MM-DD of the detections
   darkBase: boolean; // the map underneath is dark (satellite imagery), so black wind barbs are drawn white
 }
 
+const HOUR = 3600 * 1000;
 const WMS = 'https://maps.dwd.de/geoserver/dwd/wms';
 const GIBS = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best';
 
 const FIELD_SOURCE = 'wx-field-src';
 const FIELD_LAYER = 'wx-field-layer';
-const CLOUD_SOURCE = 'wx-clouds-src';
-const CLOUD_LAYER = 'wx-clouds-layer';
+const CLOUD_LAYER_PREFIX = 'wx-clouds-layer-';
+const CLOUD_SOURCE_PREFIX = 'wx-clouds-src-';
+// Live infrared (Band 13, colourised cold cloud tops), newest image. Together they cover the Americas, the Atlantic, the Pacific, East
+// Asia and Australia.
+export const CLOUD_SATELLITES = ['GOES-East_ABI_Band13_Clean_Infrared', 'GOES-West_ABI_Band13_Clean_Infrared', 'Himawari_AHI_Band13_Clean_Infrared'];
 const FIRE_SOURCE = 'wx-fires-src';
 const FIRE_LAYER = 'wx-fires-layer';
 const FIRE_LAYER_NAME = 'VIIRS_SNPP_Thermal_Anomalies_375m_All';
@@ -62,8 +67,19 @@ export function fieldLegendUrl(layer: string): string {
   return `${WMS}?service=WMS&version=1.3.0&request=GetLegendGraphic&format=image/png&layer=dwd:${layer}`;
 }
 
-export function cloudTileUrl(date: string): string {
-  return `${GIBS}/MODIS_Terra_Cloud_Fraction_Day/default/${date}/GoogleMapsCompatible_Level6/{z}/{y}/{x}.png`;
+// The newest image of one satellite. `bucket` changes every ten minutes, so the browser asks again instead of reusing old tiles.
+export function cloudTileUrl(layer: string, bucket: number): string {
+  return `${GIBS}/${layer}/default/default/GoogleMapsCompatible_Level6/{z}/{y}/{x}.png?t=${bucket}`;
+}
+
+export function cloudBucket(now = Date.now()): number {
+  return Math.floor(now / (10 * 60 * 1000));
+}
+
+// The forecast hours from the live hour onward; an earlier hour is never offered (the server cuts the list too).
+export function futureTimes(times: string[] | undefined, now: number): string[] {
+  const cutoff = Math.floor(now / HOUR) * HOUR;
+  return (times ?? []).filter((t) => Date.parse(t) >= cutoff);
 }
 
 // Fire detections are published as vector data; GIBS's WMS draws them as transparent dots, so they are used as ordinary raster tiles.
@@ -92,11 +108,6 @@ export function nearestTime(times: string[] | undefined, at: number): string | n
     }
   }
   return best;
-}
-
-// Yesterday's date in UTC, the newest daily composite that is complete.
-export function yesterdayUtc(now = Date.now()): string {
-  return new Date(now - 24 * 3600 * 1000).toISOString().slice(0, 10);
 }
 
 // Draws the field and the satellite layers under the radar (when it is on), above the land and below borders and labels.
@@ -135,20 +146,24 @@ export function syncWeatherLayers(map: maplibregl.Map, want: WeatherWant | null)
     map.setPaintProperty(FIELD_LAYER, 'raster-brightness-min', field.field === 'wind' && want?.darkBase ? 1 : 0);
   }
 
-  if (!want || !want.clouds) {
-    removeIfPresent(map, CLOUD_LAYER, CLOUD_SOURCE);
-  } else {
-    const url = cloudTileUrl(want.cloudsDate);
-    const source = map.getSource(CLOUD_SOURCE) as (maplibregl.RasterTileSource & { setTiles?: (t: string[]) => void }) | undefined;
+  CLOUD_SATELLITES.forEach((satellite) => {
+    const sourceId = CLOUD_SOURCE_PREFIX + satellite;
+    const layerId = CLOUD_LAYER_PREFIX + satellite;
+    if (!want || !want.clouds) {
+      removeIfPresent(map, layerId, sourceId);
+      return;
+    }
+    const url = cloudTileUrl(satellite, want.cloudsBucket);
+    const source = map.getSource(sourceId) as (maplibregl.RasterTileSource & { setTiles?: (t: string[]) => void }) | undefined;
     if (source && typeof source.setTiles === 'function') source.setTiles([url]);
-    else removeIfPresent(map, CLOUD_LAYER, CLOUD_SOURCE);
-    if (!map.getSource(CLOUD_SOURCE)) {
-      map.addSource(CLOUD_SOURCE, { type: 'raster', tiles: [url], tileSize: 256, maxzoom: 6, attribution: NASA_ATTRIBUTION });
+    else removeIfPresent(map, layerId, sourceId);
+    if (!map.getSource(sourceId)) {
+      map.addSource(sourceId, { type: 'raster', tiles: [url], tileSize: 256, maxzoom: 6, attribution: NASA_ATTRIBUTION });
     }
-    if (!map.getLayer(CLOUD_LAYER)) {
-      map.addLayer({ id: CLOUD_LAYER, type: 'raster', source: CLOUD_SOURCE, paint: { 'raster-opacity': 0.55, 'raster-fade-duration': 0 } }, anchorId(map));
+    if (!map.getLayer(layerId)) {
+      map.addLayer({ id: layerId, type: 'raster', source: sourceId, paint: { 'raster-opacity': 0.6, 'raster-fade-duration': 0 } }, anchorId(map));
     }
-  }
+  });
 
   if (!want || !want.fires) {
     removeIfPresent(map, FIRE_LAYER, FIRE_SOURCE);
@@ -169,8 +184,6 @@ export function syncWeatherLayers(map: maplibregl.Map, want: WeatherWant | null)
 export function removeWeatherLayers(map: maplibregl.Map): void {
   syncWeatherLayers(map, null);
 }
-
-const HOUR = 3600 * 1000;
 
 // "Sat 10 Oct, 15:00 UTC": the forecast hour, in UTC so it means the same everywhere.
 export function formatForecastTime(iso: string): string {

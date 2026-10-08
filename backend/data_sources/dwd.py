@@ -9,6 +9,7 @@ line. Source line used on screen: "Quelle: Deutscher Wetterdienst".
 """
 import logging
 import re
+import copy
 from datetime import datetime, timedelta, timezone
 
 try:
@@ -102,3 +103,20 @@ def layers():
     result = {'layers': found, 'attribution': ATTRIBUTION, 'fetched_at': datetime.now(timezone.utc).isoformat()}
     cache_set('dwd:layers', result, ttl=CACHE_SECONDS)
     return result
+
+
+def current_layers(now=None):
+    """layers(), with every forecast time before the hour we are in removed: the map shows the live hour and the forecast ahead, never
+    the past. The full list stays cached; the cut is made on every call so it moves with the clock. None when DWD cannot be reached
+    or nothing is left."""
+    result = layers()
+    if not result:
+        return None
+    now = now or datetime.now(timezone.utc)
+    cutoff = now.replace(minute=0, second=0, microsecond=0).strftime('%Y-%m-%dT%H:%M:%SZ')
+    out = copy.deepcopy(result)
+    for key in list(out['layers']):
+        out['layers'][key]['times'] = [t for t in out['layers'][key]['times'] if t >= cutoff]
+        if not out['layers'][key]['times']:
+            del out['layers'][key]
+    return out if out['layers'] else None

@@ -51,7 +51,7 @@ export default function LayersMenu() {
           <div>
             <span className={styles.groupTitle}>Weather</span>
             <SwitchRow label="Radar (past 2 hours)" checked={radarOn} onChange={setRadarOn} />
-            <SwitchRow label="Cloud cover (satellite, yesterday, has gaps)" checked={cloudsOn} onChange={setCloudsOn} />
+            <SwitchRow label="Clouds (live infrared; Americas, Pacific, East Asia, Australia)" checked={cloudsOn} onChange={setCloudsOn} />
             <SwitchRow label="Fires (satellite detections today)" checked={firesOn} onChange={setFiresOn} />
           </div>
         )}
