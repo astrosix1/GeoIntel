@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from ._shared import logger
 from .newsapi import NewsBasedCrisisDetector
 from .utils import fetch_real_page_metadata
+from services.scope import classify, basis_json
 
 # GDELT's Event Database — real, free, no key/registration required
 # (confirmed live: https://www.gdeltproject.org/data.html states "100% free
@@ -535,6 +536,11 @@ class GDELTConnector:
             'is_verified': False,
             'stakeholders': ','.join(stakeholders),
             'scope': scope,
+            # Not stored: inputs for GDELTConnector._assign_scope, removed by it before the row is saved.
+            '_noise': scope == 'local',
+            '_actors_differ': (bool(actor1_name_raw) and bool(actor2_name_raw)
+                               and GDELTConnector._normalize_actor_for_selfref(actor1_name_raw)
+                               != GDELTConnector._normalize_actor_for_selfref(actor2_name_raw)),
         }
 
     _CAMEO_CODE_RE = re.compile(r'CAMEO (\d+)')
@@ -678,6 +684,19 @@ class GDELTConnector:
         return crises
 
     @staticmethod
+    def _assign_scope(crisis):
+        """Global or Local by what the story is about (services/scope.py), from the real headline once it is resolved, the
+        precision of the pin and the actor pair. The older actor-noise signal still counts as Local unless a global term
+        applies. Records the reason in scope_basis and drops the helper keys."""
+        noise = crisis.pop('_noise', crisis.get('scope') == 'local')
+        actors_differ = crisis.pop('_actors_differ', None)
+        verdict = classify(crisis.get('title') or '', place_specific=(crisis.get('location_confidence') or 0) >= 85,
+                           actors_differ=actors_differ, noise=noise)
+        crisis['scope'] = verdict['scope']
+        crisis['scope_basis'] = basis_json(verdict)
+        return crisis
+
+    @staticmethod
     def fetch_recent_events():
         """Real, current conflict-relevant events from GDELT — covers the
         last hour (4 real 15-minute files) so nothing is missed between
@@ -703,6 +722,7 @@ class GDELTConnector:
         # resolved once per distinct article, so repeats cost no extra fetches.
         start = datetime.utcnow()
         crises = GDELTConnector._resolve_real_titles(crises)
+        crises = [GDELTConnector._assign_scope(c) for c in crises]
         elapsed = (datetime.utcnow() - start).total_seconds()
         logger.info(f"Title resolution took {elapsed:.1f}s for {len(crises)} rows")
 

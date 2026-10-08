@@ -77,3 +77,18 @@ Changes made after reading the report samples:
 ## Stage 3 (next)
 
 Classify at ingest with the real actor pair and place precision; add `crises.scope_basis` (JSON of matched terms and the rule); an idempotent backfill over existing rows; the "All" button; migration. Review the stage 2 numbers first, because switching on moves about 12% of current events from Global to Local.
+
+## Stage 3 as built (switched on)
+
+- **Ingest:** `GDELTConnector._assign_scope` runs after the real headline is resolved and classifies with the real actor pair, pin precision and the old noise signal. It stores the verdict in `crises.scope` and the reason in the new `crises.scope_basis` (JSON: rule plus up to 6 terms per side).
+- **Existing events:** `services.scope.judge_missing()` judges every row with no `scope_basis`; it runs at every start-up from `scripts/ensure_db.py` (after the migrations), only touches unjudged rows, and never stops the app starting. By hand: `python -m services.scope`. On a copy of the dev database it judged 32,150 events and moved 4,632 (a second run did nothing).
+- **Migration:** `a9c3e5b7d142` (adds `scope_basis`), applied automatically on deploy.
+- **"All" button** added beside Global and Local; counts add up (Global 2,585 + Local 929 = All 3,514 for two days on the copy).
+- **Two more terms dropped from the Local list after checking the data:** "regional" (it was making "Tehran Regional Tensions" Local) and "protest" / "demonstration" (they were pulling national protests Local). They can be added back in `scope_terms.json`.
+- **Side effect:** location refinement only reads Global events, so events that move to Local are no longer refined (they are mostly city-precise already).
+- NewsAPI and curated events are not re-classified (they keep Global).
+- 31 scope tests.
+
+## Stage 4 (next)
+
+A "Why Global/Local" line in the event panel from `scope_basis`, and rewording the Local-view note and the "Unreliable" severity badge, which assumed Local meant GDELT noise.

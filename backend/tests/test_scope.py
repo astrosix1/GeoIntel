@@ -94,3 +94,53 @@ class TestRules:
         out = classify('IMF and World Bank meet')
         assert out['global'] == ['World Bank', 'IMF'] or set(out['global']) == {'World Bank', 'IMF'}
         assert out['global_score'] == 6 and out['local'] == []
+
+
+class TestIngest:
+    def test_assign_scope_uses_the_real_headline_pin_precision_and_actors(self):
+        from data_sources.gdelt import GDELTConnector as G
+        city = {'title': 'Man arrested after car crash in Dayton', 'location_confidence': 85, 'scope': 'global', '_noise': False, '_actors_differ': False}
+        out = G._assign_scope(dict(city))
+        assert out['scope'] == 'local' and '_noise' not in out and '_actors_differ' not in out
+        assert json.loads(out['scope_basis'])['rule'] == 'local terms and a specific place'
+        # the same words with a country-level pin and two different actors stay global
+        foreign = {**city, 'location_confidence': 55, '_actors_differ': True}
+        assert G._assign_scope(dict(foreign))['scope'] == 'global'
+        # a named institution beats the old noise signal
+        noisy = {'title': 'UN chief warns of famine', 'location_confidence': 55, 'scope': 'local', '_noise': True, '_actors_differ': None}
+        assert G._assign_scope(noisy)['scope'] == 'global'
+
+    def test_parse_row_hands_over_the_noise_signal_and_actors(self, app_module):
+        from tests.test_gdelt import make_row
+        import data_sources as ds
+        row = ds.GDELTConnector._parse_row(make_row())
+        assert '_noise' in row and '_actors_differ' in row
+
+
+def test_judge_missing_fills_in_only_unjudged_events_and_is_idempotent(app_module, db_session):
+    import uuid
+    from datetime import datetime
+    from models import Crisis
+    ids = []
+    for title, old_scope in (('City council votes on zoning', 'global'), ('NATO leaders meet', 'local'), ('Nothing to see', 'global')):
+        cid = f'sc-{uuid.uuid4().hex[:8]}'
+        ids.append(cid)
+        db_session.add(Crisis(id=cid, type='conflict', title=title, country='Testland', latitude=1.0, longitude=1.0, scope=old_scope,
+                              source='GDELT', date_start=datetime.utcnow(), location_confidence=55))
+    done = Crisis(id=f'sc-{uuid.uuid4().hex[:8]}', type='conflict', title='Mayor opens library', country='Testland', latitude=1.0,
+                  longitude=1.0, scope='global', scope_basis='{"rule":"kept"}', source='GDELT', date_start=datetime.utcnow())
+    db_session.add(done)
+    db_session.commit()
+    db_session.query(Crisis).filter(Crisis.scope_basis.is_(None), ~Crisis.id.in_(ids)).update({'scope_basis': '{}'}, synchronize_session=False)
+    db_session.commit()
+
+    judged, moved = scope.judge_missing()
+
+    assert judged == 3 and moved == 2
+    db_session.expire_all()
+    scopes = {r.title: (r.scope, json.loads(r.scope_basis)['rule']) for r in db_session.query(Crisis).filter(Crisis.id.in_(ids))}
+    assert scopes['City council votes on zoning'][0] == 'local'
+    assert scopes['NATO leaders meet'][0] == 'global'
+    assert scopes['Nothing to see'] == ('global', 'no match, default')
+    assert db_session.get(Crisis, done.id).scope_basis == '{"rule":"kept"}'
+    assert scope.judge_missing() == (0, 0)

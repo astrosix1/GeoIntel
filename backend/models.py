@@ -75,6 +75,8 @@ class Crisis(Base):
     # event and is inactive; `source_count` is the number of distinct outlets behind a story.
     merged_into = Column(String(50), nullable=True, index=True)
     source_count = Column(Integer, nullable=False, default=1, server_default='1')
+    # Why the event is Global or Local (services/scope.py): JSON {rule, global: [terms], local: [terms]}. NULL = not yet judged by topic.
+    scope_basis = Column(Text, nullable=True)
 
     date_start = Column(DateTime, default=datetime.utcnow)
     date_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

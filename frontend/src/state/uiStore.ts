@@ -40,7 +40,7 @@ export interface PendingWatchPoint {
   lon: number;
   name: string;
 }
-export type CrisisScopeFilter = 'global' | 'local';
+export type CrisisScopeFilter = 'global' | 'local' | 'all';
 
 // How far back the globe and Events list reach. GDELT adds ~11k events/day,
 // so the default is the last 48h; 7d is server-capped to stay phone-friendly.

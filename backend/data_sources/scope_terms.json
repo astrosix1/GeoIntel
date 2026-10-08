@@ -672,8 +672,6 @@
     "HOA",
     "advocacy group",
     "activist group",
-    "protest",
-    "demonstration",
     "petition",
     "public forum",
     "community forum",
@@ -746,15 +744,6 @@
     "close to home",
     "town",
     "county"
-   ]
-  },
-  {
-   "name": "Local scope words (weak)",
-   "side": "local",
-   "weight": 1,
-   "case": "insensitive",
-   "terms": [
-    "regional"
    ]
   },
   {

@@ -15,6 +15,7 @@ Rules (docs/global-local-filter-plan.md):
   6. Neither list matches: the event keeps the side the older rules gave it (`noise` true means local, else global).
 """
 import json
+import logging
 import re
 from functools import lru_cache
 from pathlib import Path
@@ -89,3 +90,54 @@ def classify(text, *, place_specific=False, actors_differ=None, noise=False):
         if actors_differ is False:
             return result('local', 'tie: one state')
     return result('global', 'no match, default')
+
+
+MAX_BASIS_TERMS = 6
+
+
+def basis_json(verdict):
+    """The stored reason: the rule and the first few terms that decided it, small enough to keep on every row."""
+    return json.dumps({'rule': verdict['rule'], 'global': verdict['global'][:MAX_BASIS_TERMS], 'local': verdict['local'][:MAX_BASIS_TERMS]},
+                      ensure_ascii=False, separators=(',', ':'))
+
+
+def _summary(facts):
+    try:
+        return ((json.loads(facts) or {}).get('summary') or '') if facts else ''
+    except (ValueError, TypeError):
+        return ''
+
+
+def judge_missing(batch=500):
+    """Judge every event that has no scope_basis yet (events from before this feature) and store the verdict. The event's
+    present scope came from the old actor-noise rule, so Local counts as that signal. Safe to run any time: it only touches
+    events with no basis, so a second run does nothing. Returns (judged, moved)."""
+    from models import Session, Crisis
+    log = logging.getLogger(__name__)
+    judged = moved = 0
+    session = Session()
+    try:
+        while True:
+            rows = session.query(Crisis).filter(Crisis.scope_basis.is_(None)).limit(batch).all()
+            if not rows:
+                break
+            for row in rows:
+                verdict = classify(f'{row.title} {_summary(row.facts)}', place_specific=(row.location_confidence or 0) >= 85,
+                                   noise=(row.scope == 'local'))
+                if row.scope != verdict['scope']:
+                    row.scope = verdict['scope']
+                    moved += 1
+                row.scope_basis = basis_json(verdict)
+                judged += 1
+            session.commit()
+        log.info('Judged Global/Local for %s events (%s changed side)', judged, moved)
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+    return judged, moved
+
+
+if __name__ == '__main__':
+    print('judged %s events, %s changed side' % judge_missing())

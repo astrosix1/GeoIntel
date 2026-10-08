@@ -46,6 +46,17 @@ def score_unscored():
         return None
 
 
+def judge_unjudged():
+    """Give every event with no Global/Local reason its topic verdict (services/scope.py). Only touches events with no
+    reason yet, so on an up-to-date database it does nothing; a problem here never stops the app starting."""
+    try:
+        from services.scope import judge_missing
+        return judge_missing()
+    except Exception as e:
+        print(f'Skipped Global/Local judging: {e}')
+        return None
+
+
 def main():
     tables = set(inspect(engine).get_table_names())
     has_app_tables = 'crises' in tables
@@ -63,6 +74,9 @@ def main():
         scored = score_unscored()
         if scored:
             print(f'Scored {scored} stories that had no severity score yet.')
+        judged = judge_unjudged()
+        if judged and judged[0]:
+            print(f'Judged Global/Local for {judged[0]} events ({judged[1]} changed side).')
 
     sys.exit(code)
 

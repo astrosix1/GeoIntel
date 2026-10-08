@@ -168,7 +168,7 @@ function EventsList() {
           size="sm"
           value={scope}
           onChange={setScope}
-          options={[{ value: 'global', label: 'Global' }, { value: 'local', label: 'Local' }]}
+          options={[{ value: 'global', label: 'Global' }, { value: 'local', label: 'Local' }, { value: 'all', label: 'All' }]}
         />
         <Segmented label="Time range" size="sm" value={timeRange} onChange={setTimeRange} options={RANGES} />
       </div>
