@@ -326,6 +326,14 @@ export interface CountryDetail {
     idps: string | null;
     military_branches: string | null;
   };
+  conflicts?: {
+    days: number;
+    total: number;
+    last_7_days: number;
+    by_type: Record<string, number>;
+    top_events: { id: string; title: string; type: string; severity: number | null; severity_level: number | null; date: string; sources: number }[];
+    source: string;
+  };
   migration?: {
     year: number;
     source: string;

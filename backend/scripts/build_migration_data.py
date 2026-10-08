@@ -8,6 +8,7 @@ country (ISO alpha-2) the migrant stock and its top origin countries, so the app
 import csv
 import io
 import json
+import re
 import sys
 import urllib.request
 from pathlib import Path
@@ -19,8 +20,29 @@ YEAR_COL = 14  # zero-based column of the 2024 value in the first (both sexes) b
 CODES_URL = 'https://raw.githubusercontent.com/datasets/country-codes/master/data/country-codes.csv'
 
 
+# The names the news feed (GDELT) uses where they differ from the ISO ones.
+ALIASES = {'US': ['United States'], 'GB': ['United Kingdom'], 'TR': ['Turkey'], 'SK': ['Slovak Republic'], 'CZ': ['Czech Republic'],
+           'MK': ['Macedonia'], 'RS': ['Serbia (general)'], 'PS': ['West Bank', 'Gaza Strip'], 'RE': ['Reunion'], 'CD': ['Democratic Republic of Congo'],
+           'CG': ['Congo']}
+
+
+def write_names(rows):
+    """country_names.json: ISO alpha-2 -> every name a country is known by in the events table."""
+    names = {}
+    for row in rows:
+        iso = row['ISO3166-1-Alpha-2']
+        if not iso:
+            continue
+        found = {row.get(c, '').strip() for c in ('CLDR display name', 'UNTERM English Short', 'official_name_en') if row.get(c, '').strip()}
+        found = {re.sub(r'^the ', '', n.replace(' (the)', ''), flags=re.I) for n in found} | set(ALIASES.get(iso, []))
+        names[iso] = sorted(found)
+    target = Path(__file__).resolve().parent.parent / 'data_sources' / 'country_names.json'
+    target.write_text(json.dumps(names, ensure_ascii=False, separators=(',', ':'), sort_keys=True), encoding='utf-8')
+
+
 def main(path):
     raw = urllib.request.urlopen(CODES_URL).read().decode('utf-8')
+    write_names(list(csv.DictReader(io.StringIO(raw))))
     m49_to_iso = {}
     for row in csv.DictReader(io.StringIO(raw)):
         if row['M49'] and row['ISO3166-1-Alpha-2']:

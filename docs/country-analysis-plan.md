@@ -41,3 +41,13 @@ Plan for the four groups the owner asked for. Nothing here is built yet.
 - Factbook free text varies by country; unparsed fields fall back to the raw text, shown as-is.
 - Factbook is a snapshot (leaders can lag); show "as of" and cross-check with Wikidata.
 - Country code mapping for small territories.
+
+## As built (stages 1-4)
+
+Decisions taken: bundle the UN migrant-stock table; conflicts from our own events; the new facts are premium (`/api/countries/<code>/detail`, `require_premium_feature`); the free profile is unchanged.
+
+- **Stage 1:** `data_sources/factbook.py` (parsers, nested shares as `children`), `factbook_codes.json` (ISO to Factbook file), `migration_origins.json` (UN DESA 2024, top 15 origins per destination). Rebuild both JSON files with `scripts/build_migration_data.py <ims.xlsx>`.
+- **Stage 2:** `services/country_detail.py` and the Government and People tabs. Religion and ethnic head counts are share x World Bank population and are labelled estimates; age bands carry the Factbook's own counts.
+- **Stage 3:** Migration (total, share of population, origins with counts) and Economy (exports, imports, partners, natural resources, infrastructure) tabs.
+- **Stage 4:** Security tab. Conflicts are the last 30 days of violent, non-statement, non-merged events for the country (matched by name through `country_names.json`), cached 15 minutes, with the caveat that they are media reports. Factbook refugees, IDPs, terrorist groups and forces sit beside them.
+- **Not done:** the AI narrative is not yet fed the new facts; top conflict events do not link to the event panel.
