@@ -8,10 +8,12 @@ import eventStyles from './EventAnalysis.module.css';
 import countryStyles from './CountryAnalysis.module.css';
 import styles from './CountryDetail.module.css';
 
-type Tab = 'government' | 'people';
+type Tab = 'government' | 'people' | 'migration' | 'economy';
 const TABS: { value: Tab; label: string }[] = [
   { value: 'government', label: 'Government' },
   { value: 'people', label: 'People' },
+  { value: 'migration', label: 'Migration' },
+  { value: 'economy', label: 'Economy' },
 ];
 
 const number = (value: number) => value.toLocaleString();
@@ -58,7 +60,7 @@ function ShareList({ title, shares }: { title: string; shares: Shares | null | u
         <>
           {shares.items.map((item) => <ShareRow key={item.name} item={item} />)}
           <div className={styles.asOf}>
-            {shares.as_of ? `Estimate for ${shares.as_of}. ` : ''}Head counts (≈) are the percentage applied to the population.
+            {shares.as_of ? `Estimate for ${shares.as_of}. ` : ''}{shares.items.some((item) => item.estimated_count != null) && 'Head counts (≈) are the percentage applied to the population.'}
           </div>
           {shares.note && <div className={styles.asOf}>{shares.note}</div>}
         </>
@@ -163,6 +165,98 @@ function People({ detail }: { detail: Detail }) {
   );
 }
 
+const countryName = (code: string) => {
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'region' }).of(code) ?? code;
+  } catch {
+    return code;
+  }
+};
+
+function Migration({ detail }: { detail: Detail }) {
+  const mig = detail.migration;
+  if (!mig) return <Unavailable>Immigration figures are unavailable for this country.</Unavailable>;
+  const largest = mig.origins[0]?.count ?? 1;
+  return (
+    <>
+      <div className={styles.group}>
+        <div className={styles.groupTitle}>Immigrants living here</div>
+        <div className={countryStyles.factsGrid}>
+          <Fact label="Total">{`${number(mig.migrant_stock)} (${mig.migrant_stock_year})`}</Fact>
+          <Fact label="Share of population">{mig.share_of_population != null ? `${mig.share_of_population}%` : null}</Fact>
+          <Fact label="Net migration">{rate(detail.people?.net_migration_rate, 'per 1,000')}</Fact>
+        </div>
+      </div>
+      <div className={styles.group}>
+        <div className={styles.groupTitle}>Where they come from</div>
+        {mig.origins.map((origin) => (
+          <div key={origin.country_code} className={styles.share}>
+            <div className={styles.shareHead}>
+              <span>{countryName(origin.country_code)}</span>
+              <span className={styles.shareValue}>
+                {number(origin.count)}
+                {origin.percent_of_migrants != null && ` · ${origin.percent_of_migrants}%`}
+              </span>
+            </div>
+            <div className={styles.bar} aria-hidden="true">
+              <div className={styles.fill} style={{ width: `${(origin.count / largest) * 100}%` }} />
+            </div>
+          </div>
+        ))}
+        {mig.other_count != null && mig.other_count > 0 && (
+          <div className={styles.asOf}>All other origins combined: {number(mig.other_count)}.</div>
+        )}
+        <div className={styles.asOf}>Bars are relative to the largest origin. Largest {mig.origins.length} origins shown ({mig.year}).</div>
+      </div>
+    </>
+  );
+}
+
+function ListBlock({ title, list, note }: { title: string; list: { items: string[]; as_of: number | null } | null | undefined; note?: string }) {
+  return (
+    <div className={styles.group}>
+      <div className={styles.groupTitle}>{title}</div>
+      {list ? (
+        <>
+          <div className={styles.text}>{list.items.join(', ')}</div>
+          {(list.as_of || note) && <div className={styles.asOf}>{[list.as_of ? `As of ${list.as_of}.` : '', note].filter(Boolean).join(' ')}</div>}
+        </>
+      ) : (
+        <Unavailable>{`${title} are unavailable for this country.`}</Unavailable>
+      )}
+    </div>
+  );
+}
+
+function Economy({ detail }: { detail: Detail }) {
+  const eco = detail.economy;
+  const infra = detail.infrastructure;
+  if (!eco && !infra) return <Unavailable>Economy and infrastructure facts are unavailable for this country.</Unavailable>;
+  return (
+    <>
+      <ListBlock title="Main exports" list={eco?.exports} />
+      <ListBlock title="Main imports" list={eco?.imports} />
+      {eco?.export_partners && <ShareList title="Top export partners" shares={eco.export_partners} />}
+      {eco?.import_partners && <ShareList title="Top import partners" shares={eco.import_partners} />}
+      <ListBlock title="Natural resources and minerals" list={eco?.natural_resources} note="Lists what is found there, not how much is produced." />
+      <div className={styles.group}>
+        <div className={styles.groupTitle}>Vital infrastructure</div>
+        {infra && Object.values(infra).some(Boolean) ? (
+          <div className={countryStyles.factsGrid}>
+            <Fact label="Airports">{infra.airports}</Fact>
+            <Fact label="Seaports">{infra.ports}</Fact>
+            <Fact label="Key ports">{infra.key_ports}</Fact>
+            <Fact label="Railways">{infra.railways}</Fact>
+            <Fact label="Electricity access">{infra.electricity_access}</Fact>
+          </div>
+        ) : (
+          <Unavailable>Infrastructure figures are unavailable for this country.</Unavailable>
+        )}
+      </div>
+    </>
+  );
+}
+
 function errorMessage(error: unknown): string {
   const kind = error instanceof ScenariosError ? error.kind : 'error';
   if (kind === 'sign_in_required') return 'Sign in to see the detailed country facts.';
@@ -180,9 +274,9 @@ export default function CountryDetail({ countryCode }: { countryCode: string }) 
   if (!unlocked) {
     return (
       <div className={eventStyles.section}>
-        <div className={eventStyles.sectionTitle}>Government &amp; People</div>
+        <div className={eventStyles.sectionTitle}>Country Facts</div>
         <PremiumGate feature="Detailed country facts" block>
-          <div className={styles.lockedBox}>Leaders, constitution, religions, ethnic groups, age groups and birth rates.</div>
+          <div className={styles.lockedBox}>Leaders and constitution, population breakdowns, immigration origins, trade, resources and infrastructure.</div>
         </PremiumGate>
       </div>
     );
@@ -190,13 +284,16 @@ export default function CountryDetail({ countryCode }: { countryCode: string }) 
 
   return (
     <div className={eventStyles.section}>
-      <div className={eventStyles.sectionTitle}>Government &amp; People</div>
+      <div className={eventStyles.sectionTitle}>Country Facts</div>
       <div className={styles.tabs}>
         <Segmented options={TABS} value={tab} onChange={setTab} label="Country facts" size="sm" block />
       </div>
       {isLoading && <div className={eventStyles.loading}>Loading…</div>}
       {error && <div className={eventStyles.error}>{errorMessage(error)}</div>}
-      {data && (tab === 'government' ? <Government detail={data} /> : <People detail={data} />)}
+      {data && tab === 'government' && <Government detail={data} />}
+      {data && tab === 'people' && <People detail={data} />}
+      {data && tab === 'migration' && <Migration detail={data} />}
+      {data && tab === 'economy' && <Economy detail={data} />}
       {data && <div className={styles.asOf}>Sources: {data.sources.join(', ')}.</div>}
     </div>
   );
