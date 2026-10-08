@@ -36,6 +36,7 @@ class NominatimGeocoder:
     """
     _last_request_at = 0.0
     _cache = {}  # place name -> {'lat', 'lon', 'country'} or None, in-process
+    _reverse_cache = {}  # (lat, lon) rounded to 2 places -> place name, in-process
 
     @staticmethod
     def geocode(place_name):
@@ -43,6 +44,36 @@ class NominatimGeocoder:
         has nothing for it or the request fails. See geocode_status() when
         the caller must tell those two apart."""
         return NominatimGeocoder.geocode_status(place_name)[0]
+
+    @staticmethod
+    def reverse(lat, lon):
+        """The name of the place at a point (town or city, then region), or None. For labelling clusters of events; a failed
+        lookup is not remembered, so a later try can succeed. Uses the same one-request-a-second limit as geocode()."""
+        key = (round(lat, 2), round(lon, 2))
+        if key in NominatimGeocoder._reverse_cache:
+            return NominatimGeocoder._reverse_cache[key]
+        import time
+        elapsed = time.monotonic() - NominatimGeocoder._last_request_at
+        if elapsed < 1.0:
+            time.sleep(1.0 - elapsed)
+        NominatimGeocoder._last_request_at = time.monotonic()
+        try:
+            response = requests.get(
+                NOMINATIM_BASE.replace('/search', '/reverse'),
+                params={'lat': lat, 'lon': lon, 'format': 'json', 'zoom': 10, 'addressdetails': 1, 'accept-language': 'en'},
+                headers={'User-Agent': 'GeoIntel/1.0 (geopolitical intelligence platform)'},
+                timeout=10,
+            )
+            response.raise_for_status()
+            address = (response.json() or {}).get('address') or {}
+        except Exception as e:
+            logger.warning(f"Nominatim reverse failed for {lat},{lon}: {e}")
+            return None
+        local = next((address[k] for k in ('city', 'town', 'village', 'municipality', 'county', 'state_district') if address.get(k)), None)
+        region = address.get('state') or address.get('region')
+        name = ', '.join(p for p in (local, region if region != local else None) if p) or None
+        NominatimGeocoder._reverse_cache[key] = name
+        return name
 
     @staticmethod
     def geocode_status(place_name):

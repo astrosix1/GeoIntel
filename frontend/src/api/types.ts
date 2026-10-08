@@ -383,6 +383,16 @@ export interface CountryDetail {
   energy?: CountryEnergy | null;
   minerals?: { items: CountryMineral[]; source: string } | null;
   net_migration_rate?: Rate | null;
+  advisory?: {
+    level: number;
+    alerts: { label: string; weight: number }[];
+    summary: string[];
+    updated: string | null;
+    url: string;
+    source: string;
+  } | null;
+  displacement?: { source: string; series: RefugeeRow[] } | null;
+  memberships?: { abbr: string; name: string; kind: 'security' | 'political' | 'economic' | 'other'; note: string | null }[];
   immigrants?: MigrationFlow | null;
   emigrants?: MigrationFlow | null;
   refugees?: CountryRefugees | null;
@@ -442,6 +452,9 @@ export interface CountryDetail {
     total: number;
     last_7_days: number;
     by_type: Record<string, number>;
+    // Reports per week for the last 13 weeks: [week start date, count].
+    weekly?: [string, number][];
+    hotspots?: { name: string | null; lat: number; lon: number; count: number; headline: string }[];
     top_events: { id: string; title: string; type: string; severity: number | null; severity_level: number | null; date: string; sources: number }[];
     source: string;
   };

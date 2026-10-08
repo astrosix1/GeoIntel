@@ -97,12 +97,12 @@ class TestTabs:
         bundled.energy.return_value = bundled.minerals.return_value = bundled.hdi.return_value = None
         assert ct.get_country_tab('FR', 'government') is None
         assert ct.get_country_tab('FR', 'economy') is None
-        assert ct.get_country_tab('FR', 'security') is None
+        with patch('services.country_security.build_tab', return_value=None):
+            assert ct.get_country_tab('FR', 'security') is None
 
+    @patch('services.country_security.build_tab', return_value={'country_code': 'FR', 'tab': 'security', 'sources': ['CIA World Factbook']})
     @patch('services.country_tabs.build_conflicts')
-    @patch('services.country_tabs.FactbookConnector')
-    def test_security_tab_adds_fresh_conflicts(self, fb, conflicts):
-        fb.fetch_profile.return_value = FR
+    def test_security_tab_adds_fresh_conflicts(self, conflicts, _tab):
         conflicts.return_value = {'total': 3, 'source': 'GeoIntel events (GDELT news feed)'}
         out = ct.get_country_tab('FR', 'security')
         assert out['conflicts']['total'] == 3 and 'GeoIntel events (GDELT news feed)' in out['sources']

@@ -124,3 +124,70 @@
 .mineral {
   margin-bottom: var(--space-2);
 }
+
+.weekly {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 48px;
+  margin-top: var(--space-2);
+}
+
+.weekBar {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  height: 100%;
+  background: var(--raised);
+  border-radius: var(--radius-1);
+}
+
+.weekFill {
+  width: 100%;
+  min-height: 2px;
+  background: var(--accent);
+  border-radius: var(--radius-1);
+}
+
+.advisory {
+  padding: var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-left-width: 4px;
+  border-radius: var(--radius-1);
+}
+
+.advisoryNone {
+  border-left-color: var(--sev-1);
+}
+
+.advisoryLow {
+  border-left-color: var(--sev-3);
+}
+
+.advisoryHigh {
+  border-left-color: var(--sev-4);
+}
+
+.advisoryMax {
+  border-left-color: var(--sev-5);
+}
+
+.chipBlock {
+  margin-bottom: var(--space-2);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+}
+
+.chip {
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--raised-strong);
+  font-size: var(--font-2);
+  color: var(--text-2);
+  cursor: default;
+}

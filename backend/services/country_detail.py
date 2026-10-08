@@ -43,34 +43,78 @@ def _country_names(iso2):
     return {n.lower() for n in _NAMES.get(iso2, [])}
 
 
+TREND_WEEKS = 13
+HOTSPOTS = 5
+CELL_DEGREES = 0.5
+
+
+def _hotspots(rows):
+    """The places in the country with the most reports in the window: events grouped into half-degree cells, each named by a
+    reverse lookup of the cell's centre (remembered for a month, so a place is looked up once)."""
+    cells = {}
+    for r in rows:
+        if r.latitude is None or r.longitude is None:
+            continue
+        key = (round(r.latitude / CELL_DEGREES), round(r.longitude / CELL_DEGREES))
+        cells.setdefault(key, []).append(r)
+    ranked = sorted(cells.values(), key=lambda members: -len(members))[:HOTSPOTS]
+    out = []
+    for members in ranked:
+        if len(members) < 2:
+            continue
+        lat = sum(m.latitude for m in members) / len(members)
+        lon = sum(m.longitude for m in members) / len(members)
+        refined = next((m.location_refined_name for m in members if m.location_refined_name), None)
+        name_key = f'hotspot_name:{round(lat, 1)}:{round(lon, 1)}'
+        name = refined or cache_get(name_key)
+        if name is None:
+            from data_sources.geocoding import NominatimGeocoder
+            name = NominatimGeocoder.reverse(lat, lon)
+            if name:
+                cache_set(name_key, name, ttl=30 * 24 * 3600)
+        worst = max(members, key=lambda m: (m.severity or 0))
+        out.append({'name': name, 'lat': round(lat, 2), 'lon': round(lon, 2), 'count': len(members), 'headline': worst.title})
+    return out
+
+
 def build_conflicts(iso2):
-    """Current violence in the country, from this app's own news-fed events (GDELT): counts over 30 and 7 days by kind, and
-    the most severe recent reports. These are media reports, not verified casualty data, and the UI says so."""
+    """Current violence in the country, from this app's own news-fed events (GDELT): counts over 30 and 7 days by kind, a
+    13-week trend, the busiest places and the most severe recent reports. These are media reports, not verified casualty data."""
     names = _country_names(iso2)
     if not names:
         return None
-    key = f'country_conflicts:{iso2}'
+    key = f'country_conflicts:v2:{iso2}'
     cached = cache_get(key)
     if cached is not None:
         return cached
+    from sqlalchemy import func, or_
     now = datetime.utcnow()
     session = Session()
     try:
         rows = (session.query(Crisis)
                 .filter(Crisis.is_active.is_(True), Crisis.merged_into.is_(None), Crisis.type.in_(VIOLENT_TYPES),
-                        Crisis.date_start >= now - timedelta(days=CONFLICT_DAYS))
+                        func.lower(Crisis.country).in_(names), or_(Crisis.event_kind.is_(None), Crisis.event_kind != 'statement'),
+                        Crisis.date_start >= now - timedelta(weeks=TREND_WEEKS))
                 .all())
-        rows = [r for r in rows if (r.country or '').lower() in names and r.event_kind != 'statement']
+        recent = [r for r in rows if r.date_start >= now - timedelta(days=CONFLICT_DAYS)]
         week = now - timedelta(days=7)
         by_type = {}
-        for r in rows:
+        for r in recent:
             by_type[r.type] = by_type.get(r.type, 0) + 1
-        top = sorted(rows, key=lambda r: (-(r.severity or 0), -r.date_start.timestamp()))[:CONFLICT_TOP]
+        buckets = [0] * TREND_WEEKS
+        for r in rows:
+            index = TREND_WEEKS - 1 - int((now - r.date_start).total_seconds() // (7 * 86400))
+            if 0 <= index < TREND_WEEKS:
+                buckets[index] += 1
+        start = (now - timedelta(weeks=TREND_WEEKS)).date()
+        top = sorted(recent, key=lambda r: (-(r.severity or 0), -r.date_start.timestamp()))[:CONFLICT_TOP]
         result = {
             'days': CONFLICT_DAYS,
-            'total': len(rows),
-            'last_7_days': sum(1 for r in rows if r.date_start >= week),
+            'total': len(recent),
+            'last_7_days': sum(1 for r in recent if r.date_start >= week),
             'by_type': by_type,
+            'weekly': [[(start + timedelta(weeks=i)).isoformat(), count] for i, count in enumerate(buckets)],
+            'hotspots': _hotspots(recent),
             'top_events': [{'id': r.id, 'title': r.title, 'type': r.type, 'severity': r.severity,
                             'severity_level': r.severity_level, 'date': r.date_start.isoformat(), 'sources': r.source_count or 1}
                            for r in top],

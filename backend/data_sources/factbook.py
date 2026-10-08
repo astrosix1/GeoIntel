@@ -205,6 +205,28 @@ def parse_cities(text):
 
 
 
+def parse_memberships(text):
+    """'ADB (nonregional member), AfDB, EU, G-7, UN (permanent member)' -> [{'abbr': 'ADB', 'note': 'nonregional member'}, ...].
+    Commas inside brackets do not split. None when the field is empty."""
+    if not text:
+        return None
+    parts, depth, current = [], 0, ''
+    for char in text:
+        depth += (char == '(') - (char == ')')
+        if char == ',' and depth <= 0:
+            parts.append(current)
+            current = ''
+        else:
+            current += char
+    parts.append(current)
+    items = []
+    for part in parts:
+        match = re.match(r'\s*([^()]+?)\s*(?:\(([^)]*)\))?\s*$', part)
+        if match and match.group(1):
+            items.append({'abbr': match.group(1), 'note': (match.group(2) or '').strip() or None})
+    return items or None
+
+
 def parse_profile(data):
     """The whole Factbook file -> only the fields the app shows. Missing pieces are simply absent."""
     if not isinstance(data, dict):
@@ -227,6 +249,7 @@ def parse_profile(data):
             'judicial': _subfield(data, 'Government', 'Judicial branch', 'highest courts'),
             'parties': _field(data, 'Government', 'Political parties and leaders'),
             'legal_system': _field(data, 'Government', 'Legal system'),
+            'memberships': parse_memberships(_field(data, 'Government', 'International organization participation')),
             'suffrage': _field(data, 'Government', 'Suffrage'),
         },
         'people': {

@@ -133,12 +133,8 @@ def _economy(cc):
 
 
 def _security(cc):
-    out = _base(cc, 'security')
-    factbook = FactbookConnector.fetch_profile(cc)
-    if factbook:
-        out['security'] = factbook['security']
-        out['sources'].append(FACTBOOK)
-    return out if factbook else None
+    from services.country_security import build_tab
+    return build_tab(cc)
 
 
 def _geography(cc):
