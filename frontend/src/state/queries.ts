@@ -12,6 +12,7 @@ import {
   fetchHazardDetail,
   fetchEventHazards,
   fetchEventAnalysis,
+  fetchSituation,
   fetchHazardEvents,
   fetchAlertSettings,
   fetchAlerts,
@@ -328,6 +329,17 @@ export function useEventAnalysisQuery(crisisId: string | undefined) {
   return useQuery({
     queryKey: ['event-analysis', crisisId],
     queryFn: () => fetchEventAnalysis(crisisId as string),
+    enabled: !!crisisId,
+    retry: false,
+    staleTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function useSituationQuery(crisisId: string | undefined) {
+  return useQuery({
+    queryKey: ['situation', crisisId],
+    queryFn: () => fetchSituation(crisisId as string),
     enabled: !!crisisId,
     retry: false,
     staleTime: 10 * 60 * 1000,

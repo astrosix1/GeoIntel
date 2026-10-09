@@ -22,6 +22,7 @@ from services.scenarios import generate_scenarios, ScenariosUnavailable
 from services.location_refine import refine_crisis_location
 from services.stories import canonical_id
 from services.event_analysis import get_event_analysis
+from services.situation_view import get_situation_view
 from services.hazard_links import hazards_for_event
 from services.gating import require_premium, require_premium_feature
 from services.realtime import broadcast_new_crisis
@@ -529,6 +530,16 @@ def get_crisis_analysis(crisis_id):
         return jsonify(result)
     except Exception as e:
         logger.error(f"Error building event analysis: {e}")
+        return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
+
+
+@crises_bp.route('/<crisis_id>/situation', methods=['GET'])
+def get_crisis_situation(crisis_id):
+    """The grouped view when this event belongs to a situation (several stories about one development); {'situation': null} otherwise."""
+    try:
+        return jsonify({'situation': get_situation_view(canonical_id(crisis_id))})
+    except Exception as e:
+        logger.error(f"Error building situation view: {e}")
         return jsonify({'error': 'An internal error occurred. Please try again.'}), 500
 
 

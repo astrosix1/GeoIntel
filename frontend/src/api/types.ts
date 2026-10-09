@@ -831,3 +831,32 @@ export interface EventAnalysisData {
   related: RelatedEvent[];
   parties: EventParty[];
 }
+
+// GET /api/crises/<id>/situation: several stories about one development, summarised from real data (no model needed).
+export interface SituationStory extends Crisis {
+  headline: string;
+  outlet: string | null;
+}
+export interface SituationFigure {
+  count: number;
+  kind: 'killed' | 'injured';
+  stated_by: number;
+  where: { outlet: string | null; url: string | null }[];
+  snippet: string;
+}
+export interface SituationView {
+  id: string;
+  title: string;
+  main_id: string;
+  country: string;
+  story_count: number;
+  outlet_count: number;
+  first_at: string;
+  last_at: string;
+  stories: SituationStory[];
+  angles: { id: string; headline: string; outlet: string | null }[];
+  key_sentences: { text: string; outlet: string | null; url: string | null; echoed_by: number }[];
+  figures: SituationFigure[];
+  pattern: EventPattern | null;
+  read_pages: number;
+}

@@ -6,12 +6,14 @@ import {
   useEntitlements,
   useEventHazardsQuery,
   useEventAnalysisQuery,
+  useSituationQuery,
   useRefineLocationMutation,
   useStormsQuery,
 } from '../../state/queries';
 import { useUiStore } from '../../state/uiStore';
 import Scenarios from './Scenarios';
 import EventPattern from './EventPattern';
+import SituationBlock from './SituationBlock';
 import { BriefingBlocks } from './BriefingBlocks';
 import Comments from './Comments';
 import SaveButton from '../../components/SaveButton';
@@ -44,6 +46,7 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
   const { data: detail } = useCrisisDetailQuery(crisis.id);
   const { data: hazardLinks } = useEventHazardsQuery(crisis.id);
   const { data: patternData } = useEventAnalysisQuery(crisis.id);
+  const { data: situation } = useSituationQuery(crisis.id);
   // When the first report appeared, as a clock time at the event's own pin (news-feed events only).
   const zoneIndex = useZoneIndex(hasReportTime(crisis.id));
   const reportZone = zoneIndex ? zoneAt(zoneIndex, crisis.lat, crisis.lon) : null;
@@ -255,6 +258,7 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
       )}
       {briefing && <BriefingBlocks briefing={briefing} />}
 
+      {situation && <SituationBlock situation={situation} currentId={crisis.id} />}
       {patternData && <EventPattern data={patternData} />}
 
       <Scenarios key={crisis.id} crisisId={crisis.id} />

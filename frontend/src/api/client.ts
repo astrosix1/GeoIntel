@@ -18,6 +18,7 @@ import type {
   HazardDetail,
   EventHazardLinks,
   EventAnalysisData,
+  SituationView,
   HazardEvents,
   UserPrefs,
   AlertSettings,
@@ -494,4 +495,12 @@ export async function fetchEventAnalysis(crisisId: string): Promise<EventAnalysi
     throw new Error(`Failed to fetch analysis for event ${crisisId}: ${res.status} ${res.statusText}`);
   }
   return res.json();
+}
+
+export async function fetchSituation(crisisId: string): Promise<SituationView | null> {
+  const res = await fetch(`${API_BASE_URL}/api/crises/${encodeURIComponent(crisisId)}/situation`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch situation for event ${crisisId}: ${res.status} ${res.statusText}`);
+  }
+  return (await res.json()).situation;
 }
