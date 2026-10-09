@@ -48,8 +48,8 @@ def build_pattern(session, crisis, now=None):
         if 0 <= index < WEEKS:
             buckets[index] += 1
     this_week, before = buckets[-1], buckets[-2]
-    if this_week + before < 4:
-        direction = 'too_few'      # too little to call a direction
+    if before < 3 or this_week + before < 6:
+        direction = 'too_few'      # too little earlier data to compare (also covers a feed that only recently began covering the country)
     elif this_week >= before * 1.25:
         direction = 'rising'
     elif this_week <= before * 0.75:
@@ -98,7 +98,7 @@ def build_parties(session, crisis):
         actor = found.get(code)
         if not actor:
             continue
-        is_state = (actor.category or '').upper() == 'STATE' and len(code) == 2
+        is_state = len(code) == 2 and (actor.category or 'STATE').upper() == 'STATE'  # two-letter ids are countries
         out.append({'code': code, 'name': actor.name, 'country_code': code if is_state else None})
     return out
 

@@ -11,9 +11,9 @@ def _add(db, cid, days_ago, country='Sudan', type_='conflict', kind='physical', 
 
 def test_pattern_counts_this_week_against_the_one_before(app_module, db_session):
     from services.event_analysis import build_pattern
-    for i in range(6):
+    for i in range(8):
         _add(db_session, f'now{i}', 1)
-    for i in range(2):
+    for i in range(4):
         _add(db_session, f'prev{i}', 9)
     _add(db_session, 'talk', 1, kind='statement')                 # statements are not counted
     _add(db_session, 'other', 1, country='Chad', lat=15, lon=19)                  # other countries are not counted
@@ -21,7 +21,7 @@ def test_pattern_counts_this_week_against_the_one_before(app_module, db_session)
     db_session.commit()
     me = db_session.query(Crisis).filter(Crisis.id == 'now0').one()
     p = build_pattern(db_session, me)
-    assert (p['last_7_days'], p['previous_7_days'], p['direction']) == (6, 2, 'rising')
+    assert (p['last_7_days'], p['previous_7_days'], p['direction']) == (8, 4, 'rising')
     assert len(p['weekly']) == 8
 
 
@@ -30,7 +30,7 @@ def test_pattern_is_none_without_reports_and_too_few_is_not_called(app_module, d
     _add(db_session, 'solo', 1, country='Norway', lat=60, lon=10)
     db_session.commit()
     me = db_session.query(Crisis).filter(Crisis.id == 'solo').one()
-    assert build_pattern(db_session, me)['direction'] == 'too_few'
+    assert build_pattern(db_session, me)['direction'] == 'too_few'   # nothing earlier to compare against
     _add(db_session, 'cyb', 1, country='Iceland', type_='cyber')
     db_session.commit()
     assert build_pattern(db_session, db_session.query(Crisis).filter(Crisis.id == 'cyb').one()) is None

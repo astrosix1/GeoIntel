@@ -10,7 +10,7 @@ const DIRECTION_TEXT = {
   rising: 'Rising: more reports than the week before',
   falling: 'Falling: fewer reports than the week before',
   steady: 'Steady: about the same as the week before',
-  too_few: 'Too few reports to call a direction',
+  too_few: 'Not enough earlier reports in the data to call a direction',
 } as const;
 
 // "The pattern here": counted from this app's own events, so it says what is counted and where it comes from.
