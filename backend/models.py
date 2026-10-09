@@ -79,6 +79,8 @@ class Crisis(Base):
     also_tagged = Column(Text, nullable=True)
     # Why an event was hidden without being a duplicate: 'template', 'domain' or 'site' (a junk title).
     hidden_reason = Column(String(20), nullable=True)
+    # The situation (services/situations.py) this story belongs to: the id of its lead story. NULL when it stands alone.
+    situation_id = Column(String(50), nullable=True, index=True)
     # Why the event is Global or Local (services/scope.py): JSON {rule, global: [terms], local: [terms]}. NULL = not yet judged by topic.
     scope_basis = Column(Text, nullable=True)
 
@@ -312,6 +314,20 @@ class StoryMergeCheck(Base):
     pair_key = Column(String(120), primary_key=True)
     same_event = Column(Boolean, nullable=False)
     checked_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class Situation(Base):
+    """Several stories about one developing event, grouped by services/situations.py. `id` is the lead (earliest) story's id."""
+    __tablename__ = 'situations'
+
+    id = Column(String(50), primary_key=True)
+    title = Column(String(200))
+    country = Column(String(100))
+    story_count = Column(Integer, nullable=False, default=2)
+    source_total = Column(Integer, nullable=False, default=2)
+    first_at = Column(DateTime)
+    last_at = Column(DateTime)
+    updated_at = Column(DateTime, default=datetime.utcnow)
 
 
 class News(Base):
