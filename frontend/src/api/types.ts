@@ -742,6 +742,12 @@ export interface WatchPlace {
   radius_km: number;
   created_at: string;
   nearby: NearbyHazard[];
+  // What this place alerts about; a missing part means the default (every hazard type, at the account's minimum level).
+  alert_prefs: PlaceAlertPrefs;
+}
+
+export interface PlaceAlertPrefs {
+  hazards?: { types?: string[]; min_level?: 'green' | 'orange' | 'red' };
 }
 
 export interface WatchResponse {
@@ -751,6 +757,7 @@ export interface WatchResponse {
 }
 
 export interface NewWatchPlace {
+  alert_prefs?: PlaceAlertPrefs;
   name: string;
   lat: number;
   lon: number;

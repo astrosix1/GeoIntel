@@ -18,6 +18,7 @@ import os
 from datetime import datetime, timedelta, timezone
 
 from services.geo import distance_km
+from services.place_alert_prefs import hazard_settings
 from services.mailer import is_configured, send_email
 from services.supabase_rest import SupabaseUnavailable, auth_user_email, check_uuid, rest
 from services.weather import get_active_storms
@@ -68,8 +69,12 @@ def _candidates(places, hazards, prefs):
     rows = []
     for place in places:
         user_prefs = prefs[place['user_id']]
-        minimum = LEVELS.get(user_prefs['alert_min_level'], LEVELS[DEFAULT_MIN_LEVEL])
+        # This place's own choices (hazard types and minimum level); the account's minimum level is the fallback.
+        wanted_types, min_level = hazard_settings(place.get('alert_prefs'), user_prefs['alert_min_level'])
+        minimum = LEVELS.get(min_level, LEVELS[DEFAULT_MIN_LEVEL])
         for hazard in hazards:
+            if hazard['event_type'] not in wanted_types:
+                continue
             level = LEVELS[hazard['alert_level'].lower()]
             if level < minimum:
                 continue
@@ -185,10 +190,13 @@ def evaluate_alerts():
             and s.get('id') is not None and s.get('event_type')
         ]
 
-        places = rest('GET', 'geointel_watch_places', params={
-            'select': 'id,user_id,name,lat,lon,radius_km', 'order': 'created_at.asc',
-            'limit': str(MAX_PLACES_SCANNED),
-        }).json()
+        scan = {'order': 'created_at.asc', 'limit': str(MAX_PLACES_SCANNED)}
+        try:
+            places = rest('GET', 'geointel_watch_places', params={**scan, 'select': 'id,user_id,name,lat,lon,radius_km,alert_prefs'}).json()
+        except SupabaseUnavailable as e:
+            if e.reason != 'column_missing':
+                raise
+            places = rest('GET', 'geointel_watch_places', params={**scan, 'select': 'id,user_id,name,lat,lon,radius_km'}).json()   # 007 not applied
         summary['places'] = len(places)
         places_by_id = {p['id']: p for p in places}
 

@@ -53,7 +53,8 @@ export function Tabs<T extends string>({
   onChange,
   label,
 }: {
-  tabs: { id: T; label: string }[];
+  // `dot` shows a small blue dot before the label (something new in that tab); `dotLabel` is what a screen reader says for it.
+  tabs: { id: T; label: string; dot?: boolean; dotLabel?: string }[];
   value: T;
   onChange: (id: T) => void;
   label: string;
@@ -89,6 +90,7 @@ export function Tabs<T extends string>({
           onClick={() => onChange(tab.id)}
           onKeyDown={(e) => onKey(e, i)}
         >
+          {tab.dot && <span className={styles.tabDot} role="img" aria-label={tab.dotLabel ?? 'New'} />}
           {tab.label}
         </button>
       ))}

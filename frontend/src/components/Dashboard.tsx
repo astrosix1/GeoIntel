@@ -184,39 +184,45 @@ function SourcesTab() {
   );
 }
 
-// What a visitor or free member sees in place of a premium section: the way in (sign in or upgrade), not a dead end.
-function Locked({ feature }: { feature: string }) {
+// What a visitor or free member sees in place of a premium section: that it is for subscribers, what it is for, and the way in
+// (sign in or upgrade) rather than a dead end.
+const PREMIUM_ABOUT: Record<Exclude<DashboardTab, 'settings'>, string> = {
+  saved:
+    'Saved keeps the events you bookmark with the Save button, so you can come back to their analysis any time without searching for them again.',
+  sources:
+    'Sources lets you hide news outlets you do not want to see. Their events disappear from your lists and from the map, and you can bring them back at any time.',
+  watchlist:
+    'The watchlist lets you save the places you care about and choose which alerts you want for each one, such as cyclones, floods, wildfires and droughts.',
+  alerts:
+    'Alerts collects what your watchlist raises, from hazards near your places to weather you set limits for, and shows a blue dot when something new arrives. You can also choose to receive them by email.',
+};
+
+function Locked({ tab }: { tab: Exclude<DashboardTab, 'settings'> }) {
   const { signedIn, loading } = useEntitlements();
   const upgradeUrl = getUpgradeUrl();
   if (loading) return <div className={styles.status}>Loading…</div>;
   return (
     <div className={styles.status}>
-      {feature} is a premium feature.{' '}
+      <p>
+        <strong>This feature is for premium subscribers only.</strong>
+      </p>
+      <p>{PREMIUM_ABOUT[tab]}</p>
       {!signedIn && isSignInConfigured() ? (
         <Button size="sm" onClick={signIn}>
           Sign in
         </Button>
       ) : signedIn && upgradeUrl ? (
-        <a href={upgradeUrl}>Upgrade</a>
+        <a href={upgradeUrl}>Upgrade to premium</a>
       ) : null}
     </div>
   );
 }
 
-const LOCKED_NAME: Record<DashboardTab, string> = {
-  saved: 'Saved events',
-  sources: 'Sources',
-  watchlist: 'The watchlist',
-  alerts: 'Alerts',
-  settings: '',
-};
-
 // The dashboard drawer. Settings are open to everyone; the other sections need a premium account.
 export default function Dashboard() {
   const { premium } = useEntitlements();
   const open = useUiStore((s) => s.dashboardOpen);
-  const storedTab = useUiStore((s) => s.dashboardTab);
-  const tab: DashboardTab = premium ? storedTab : 'settings';
+  const tab = useUiStore((s) => s.dashboardTab);
   const setOpen = useUiStore((s) => s.setDashboardOpen);
   const setTab = useUiStore((s) => s.setDashboardTab);
   const selectCrisis = useUiStore((s) => s.selectCrisis);
@@ -246,11 +252,11 @@ export default function Dashboard() {
         label="Dashboard sections"
         value={tab}
         onChange={setTab}
-        tabs={TABS.map((t) => ({ id: t.value, label: t.value === 'alerts' && premium && unread > 0 ? `${t.label} (${unread})` : t.label }))}
+        tabs={TABS.map((t) => ({ id: t.value, label: t.label, dot: t.value === 'alerts' && premium && unread > 0, dotLabel: 'New alerts' }))}
       />
       <div className={styles.body}>
         {tab === 'settings' && <SettingsPanel />}
-        {tab !== 'settings' && !premium && <Locked feature={LOCKED_NAME[tab]} />}
+        {tab !== 'settings' && !premium && <Locked tab={tab} />}
         {premium && tab === 'saved' && <SavedTab onOpen={openSaved} />}
         {premium && tab === 'sources' && <SourcesTab />}
         {premium && tab === 'watchlist' && <WatchlistTab />}

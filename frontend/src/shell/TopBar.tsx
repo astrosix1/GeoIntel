@@ -75,13 +75,20 @@ export default function TopBar() {
     <Button
       icon="user"
       onClick={() => {
-        if (premium && unread > 0) setDashboardTab('alerts');
+        // Premium members open on their alerts when there are new ones; everyone else opens on Settings.
+        if (!premium) setDashboardTab('settings');
+        else if (unread > 0) setDashboardTab('alerts');
         setDashboardOpen(true);
       }}
     >
       <span className={styles.hideSmall}>Dashboard</span>
-      {premium && unread > 0 && <span className={styles.unread}><Badge tone="accent">{unread}</Badge></span>}
     </Button>
+  );
+  const dashboardWithDot = (
+    <span className={styles.dashWrap}>
+      {dashboard}
+      {premium && unread > 0 && <span className={styles.dashDot} role="img" aria-label="New alerts" />}
+    </span>
   );
 
   // Visitors can sign in from here; everyone signed in signs out from Settings in the dashboard.
@@ -102,7 +109,7 @@ export default function TopBar() {
       <div className={styles.group}>
         <DrawButton />
         <LayersMenu />
-        {dashboard}
+        {dashboardWithDot}
         {account}
       </div>
     </header>

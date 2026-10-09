@@ -14,6 +14,7 @@ from services import watchlist as svc
 from services.forecast import ForecastUnavailable
 from services.gating import require_premium, require_user
 from services.geocode import InvalidQuery, search_places
+from services.place_alert_prefs import InvalidPlaceAlertPrefs
 from services.supabase_rest import SupabaseUnavailable
 from services.weather import get_active_storms
 
@@ -56,8 +57,8 @@ def post_watch():
         return jsonify({'error': 'invalid_place', 'message': 'expected a JSON object'}), 400
     try:
         place = svc.add_place(g.user['id'], body.get('name'), body.get('lat'), body.get('lon'),
-                              body.get('radius_km'))
-    except svc.InvalidPlace as e:
+                              body.get('radius_km'), body.get('alert_prefs'))
+    except (svc.InvalidPlace, InvalidPlaceAlertPrefs) as e:
         return jsonify({'error': 'invalid_place', 'message': str(e)}), 400
     except svc.PlaceExists:
         return jsonify({'error': 'place_exists'}), 409
@@ -66,6 +67,25 @@ def post_watch():
     except SupabaseUnavailable as e:
         return _failed(e)
     return jsonify({'place': place}), 201
+
+
+@watchlist_bp.route('/watch/<place_id>/alert-prefs', methods=['PUT'])
+@limiter.limit("60 per minute")
+@require_premium
+def put_place_alert_prefs(place_id):
+    """Which alerts a place raises. `apply_to_all: true` saves the same choices for every place the user has."""
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict) or 'alert_prefs' not in body:
+        return jsonify({'error': 'invalid_place', 'message': 'expected {"alert_prefs": {...}}'}), 400
+    try:
+        places = svc.update_place_prefs(g.user['id'], place_id, body['alert_prefs'], body.get('apply_to_all') is True)
+    except InvalidPlaceAlertPrefs as e:
+        return jsonify({'error': 'invalid_place', 'message': str(e)}), 400
+    except SupabaseUnavailable as e:
+        return _failed(e)
+    if not places:
+        return jsonify({'error': 'Not found'}), 404
+    return jsonify({'places': places})
 
 
 @watchlist_bp.route('/watch/<place_id>', methods=['DELETE'])

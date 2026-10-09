@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { UserDataError } from '../api/client';
-import type { GeoResult, WatchPlace } from '../api/types';
-import { alertTone, hazardIconName } from '../globe/hazards';
+import type { GeoResult, PlaceAlertPrefs, WatchPlace } from '../api/types';
+import { alertTone, HAZARD_TYPES, hazardIconName } from '../globe/hazards';
 import Icon from '../ui/Icon';
 import { Badge } from '../ui/Display';
-import { useAddPlaceMutation, useDeletePlaceMutation, usePlaceSearch, useWatchQuery } from '../state/queries';
+import { useAddPlaceMutation, useDeletePlaceMutation, usePlaceSearch, useSavePlaceAlertPrefsMutation, useWatchQuery } from '../state/queries';
 import { useUiStore } from '../state/uiStore';
 import dashboard from './Dashboard.module.css';
 import styles from './Watchlist.module.css';
@@ -159,9 +159,71 @@ function AddPlaceForm() {
   );
 }
 
+const LEVEL_CHOICES = [
+  { value: 'green', label: 'Green and above (all)' },
+  { value: 'orange', label: 'Orange and Red' },
+  { value: 'red', label: 'Red only' },
+] as const;
+
+// Which alerts this place raises. A new place starts with the choices of the one added before it; "Use for all my places"
+// saves these choices for every place at once.
+function PlaceAlertChoices({ place }: { place: WatchPlace }) {
+  const save = useSavePlaceAlertPrefsMutation();
+  const stored = place.alert_prefs?.hazards ?? {};
+  const [types, setTypes] = useState<string[]>(stored.types ?? HAZARD_TYPES.map((t) => t.code));
+  const [level, setLevel] = useState<string>(stored.min_level ?? '');
+  const [all, setAll] = useState(false);
+
+  function toggle(code: string) {
+    setTypes((current) => (current.includes(code) ? current.filter((c) => c !== code) : [...current, code]));
+  }
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const prefs: PlaceAlertPrefs = { hazards: { types, ...(level ? { min_level: level as 'green' | 'orange' | 'red' } : {}) } };
+    save.mutate({ id: place.id, prefs, applyToAll: all });
+  }
+
+  return (
+    <form className={styles.choices} onSubmit={submit}>
+      <fieldset className={styles.choiceGroup}>
+        <legend className={dashboard.rowMeta}>Alert me about</legend>
+        {HAZARD_TYPES.map((t) => (
+          <label key={t.code} className={styles.choice}>
+            <input type="checkbox" checked={types.includes(t.code)} onChange={() => toggle(t.code)} />
+            <Icon name={hazardIconName(t.code)} size={14} /> {t.label}
+          </label>
+        ))}
+      </fieldset>
+      <label className={styles.field}>
+        <span>Minimum level</span>
+        <select className={dashboard.search} value={level} onChange={(e) => setLevel(e.target.value)}>
+          <option value="">Same as my account setting</option>
+          {LEVEL_CHOICES.map((l) => (
+            <option key={l.value} value={l.value}>
+              {l.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className={styles.choice}>
+        <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} /> Use these choices for all my places
+      </label>
+      <div className={styles.buttons}>
+        <button type="submit" className={dashboard.action} disabled={save.isPending}>
+          {save.isPending ? 'Saving…' : 'Save'}
+        </button>
+        {save.isSuccess && <span className={dashboard.rowMeta}>Saved</span>}
+      </div>
+      {save.isError && <div className={dashboard.status}>{describeError(save.error)}</div>}
+    </form>
+  );
+}
+
 function PlaceRow({ place, hazardsAvailable }: { place: WatchPlace; hazardsAvailable: boolean }) {
   const remove = useDeletePlaceMutation();
   const [confirming, setConfirming] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   return (
     <li className={styles.place}>
@@ -198,6 +260,10 @@ function PlaceRow({ place, hazardsAvailable }: { place: WatchPlace; hazardsAvail
         )}
       </div>
       {remove.isError && <div className={dashboard.status}>{describeError(remove.error)}</div>}
+      <button type="button" className={dashboard.action} aria-expanded={editing} onClick={() => setEditing(!editing)}>
+        {editing ? 'Hide alert choices' : 'Choose alerts'}
+      </button>
+      {editing && <PlaceAlertChoices place={place} />}
       <div className={styles.nearby}>
         {!hazardsAvailable ? (
           <span className={dashboard.rowMeta}>Live hazard data isn&apos;t available right now.</span>

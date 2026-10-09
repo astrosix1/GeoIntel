@@ -9,9 +9,10 @@ import math
 import re
 from datetime import datetime, timezone
 
+from services.place_alert_prefs import InvalidPlaceAlertPrefs, clean_prefs, stored_prefs
 from services.condition_alerts import InvalidConditions, clean_conditions, stored_conditions, unavailable_conditions
 from services.geo import distance_km
-from services.supabase_rest import SupabaseConflict, check_uuid, rest
+from services.supabase_rest import SupabaseConflict, SupabaseUnavailable, check_uuid, rest
 
 MAX_PLACES = 25
 NAME_MAX = 80
@@ -20,7 +21,8 @@ RADIUS_MAX_KM = 2000
 ALERT_PAGE = 50
 MAX_READ_IDS = 200
 
-_PLACE_COLUMNS = 'id,name,lat,lon,radius_km,created_at'
+_PLACE_COLUMNS = 'id,name,lat,lon,radius_km,created_at,alert_prefs'
+_PLACE_COLUMNS_OLD = 'id,name,lat,lon,radius_km,created_at'     # before 007_geointel_place_alert_prefs.sql is applied
 _ALERT_COLUMNS = 'id,place_id,hazard_key,hazard_type,title,alert_level,distance_km,created_at,read_at'
 _CONTROL_CHARS = re.compile(r'[\x00-\x1f\x7f]')
 
@@ -74,29 +76,54 @@ def clean_place(name, lat, lon, radius_km):
     return {'name': cleaned, 'lat': round(lat, 4) + 0.0, 'lon': round(lon, 4) + 0.0, 'radius_km': int(radius)}
 
 
+def _with_prefs(rows):
+    return [{**r, 'alert_prefs': stored_prefs(r.get('alert_prefs'))} for r in rows]
+
+
 def list_places(user_id):
     uid = check_uuid(user_id)
-    return rest('GET', 'geointel_watch_places', params={
-        'user_id': f'eq.{uid}', 'select': _PLACE_COLUMNS, 'order': 'created_at.asc', 'limit': str(MAX_PLACES),
-    }).json()
+    params = {'user_id': f'eq.{uid}', 'order': 'created_at.asc', 'limit': str(MAX_PLACES)}
+    try:
+        rows = rest('GET', 'geointel_watch_places', params={**params, 'select': _PLACE_COLUMNS}).json()
+    except SupabaseUnavailable as e:
+        if e.reason != 'column_missing':
+            raise
+        rows = rest('GET', 'geointel_watch_places', params={**params, 'select': _PLACE_COLUMNS_OLD}).json()   # 007 not applied yet
+    return _with_prefs(rows)
 
 
-def add_place(user_id, name, lat, lon, radius_km):
-    """Adds a place (cap MAX_PLACES per user; a duplicate name is refused).
-    Returns the saved row."""
+def add_place(user_id, name, lat, lon, radius_km, alert_prefs=None):
+    """Adds a place (cap MAX_PLACES per user; a duplicate name is refused). Its alert choices are the ones given, else the same
+    as the user's most recently added place (so a new place starts like the others), else the defaults. Returns the saved row."""
     uid = check_uuid(user_id)
     place = clean_place(name, lat, lon, radius_km)
-    existing = rest('GET', 'geointel_watch_places', params={
-        'user_id': f'eq.{uid}', 'select': 'id', 'limit': str(MAX_PLACES + 1),
-    }).json()
+    prefs = clean_prefs(alert_prefs)
+    existing = list_places(uid)
     if len(existing) >= MAX_PLACES:
         raise PlaceLimitReached()
+    if alert_prefs is None and existing:
+        prefs = existing[-1].get('alert_prefs') or {}
+    row = {**place, 'user_id': uid}
+    if prefs:
+        row['alert_prefs'] = prefs        # only sent when set, so adding a place works before 007 is applied
     try:
-        rows = rest('POST', 'geointel_watch_places', params={'select': _PLACE_COLUMNS},
-                    json_body=[{**place, 'user_id': uid}], prefer='return=representation').json()
+        rows = rest('POST', 'geointel_watch_places', params={'select': _PLACE_COLUMNS if prefs else _PLACE_COLUMNS_OLD},
+                    json_body=[row], prefer='return=representation').json()
     except SupabaseConflict:
         raise PlaceExists()
-    return rows[0]
+    return _with_prefs(rows)[0]
+
+
+def update_place_prefs(user_id, place_id, alert_prefs, apply_to_all=False):
+    """Saves the alert choices for one of the user's places, or for all of them. Returns the updated place rows."""
+    uid = check_uuid(user_id)
+    pid = check_uuid(place_id)
+    prefs = clean_prefs(alert_prefs)
+    params = {'user_id': f'eq.{uid}', 'select': _PLACE_COLUMNS}
+    if not apply_to_all:
+        params['id'] = f'eq.{pid}'
+    rows = rest('PATCH', 'geointel_watch_places', params=params, json_body={'alert_prefs': prefs}, prefer='return=representation').json()
+    return _with_prefs(rows)
 
 
 def delete_place(user_id, place_id):

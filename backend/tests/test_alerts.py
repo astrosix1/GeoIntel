@@ -353,3 +353,35 @@ class TestResilience:
         h.storms = [hazard()]
         with patch.object(alerts, 'rest', side_effect=RuntimeError('boom')):
             assert evaluate_alerts()['skipped'] == 'error'
+
+
+class TestPerPlaceChoices:
+    def test_a_place_only_alerts_on_the_hazard_types_it_chose(self, h):
+        user = h.user()
+        place = h.place(user)
+        place['alert_prefs'] = {'hazards': {'types': ['FL']}}
+        h.storms = [hazard(1, 'Red'), hazard(2, 'Red', event_type='FL')]
+        evaluate_alerts()
+        assert [a['hazard_key'] for a in h.alerts(user)] == ['FL-2-red']
+
+    def test_a_place_with_no_types_chosen_raises_nothing(self, h):
+        user = h.user()
+        h.place(user)['alert_prefs'] = {'hazards': {'types': []}}
+        h.storms = [hazard(1, 'Red')]
+        evaluate_alerts()
+        assert h.alerts(user) == []
+
+    def test_the_places_own_minimum_level_beats_the_account_level(self, h):
+        user = h.user(alert_min_level='green')
+        loud, quiet = h.place(user, 'Loud'), h.place(user, 'Quiet', lat=29.8, lon=-95.2)
+        quiet['alert_prefs'] = {'hazards': {'min_level': 'red'}}
+        h.storms = [hazard(1, 'Orange')]
+        evaluate_alerts()
+        assert {a['place_id'] for a in h.alerts(user)} == {loud['id']}
+
+    def test_places_without_choices_use_the_account_level_as_before(self, h):
+        user = h.user(alert_min_level='red')
+        h.place(user)
+        h.storms = [hazard(1, 'Orange')]
+        evaluate_alerts()
+        assert h.alerts(user) == []

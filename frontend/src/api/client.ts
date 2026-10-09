@@ -18,6 +18,7 @@ import type {
   HazardDetail,
   EventHazardLinks,
   EventAnalysisData,
+  PlaceAlertPrefs,
   SituationView,
   HazardEvents,
   UserPrefs,
@@ -392,6 +393,17 @@ export async function addWatchPlace(place: NewWatchPlace): Promise<WatchPlace> {
   if (res.status === 400) throw new UserDataError('invalid');
   if (!res.ok) throw new UserDataError('error');
   return (await res.json()).place;
+}
+
+// Saves which alerts a place raises; with applyToAll the same choices go to every place the user has.
+export async function savePlaceAlertPrefs(id: string, alertPrefs: PlaceAlertPrefs, applyToAll: boolean): Promise<WatchPlace[]> {
+  return (
+    await userDataRequest<{ places: WatchPlace[] }>(`/api/me/watch/${encodeURIComponent(id)}/alert-prefs`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ alert_prefs: alertPrefs, apply_to_all: applyToAll }),
+    })
+  ).places;
 }
 
 export function deleteWatchPlace(id: string): Promise<void> {

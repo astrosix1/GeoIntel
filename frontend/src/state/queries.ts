@@ -3,7 +3,7 @@ import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClie
 import type { CrisisScope } from '../api/client';
 import { TIME_RANGE_DAYS } from './uiStore';
 import type { TimeRange } from './uiStore';
-import type { CrisisDetail, CrisisSummary, ReportReason } from '../api/types';
+import type { CrisisDetail, CrisisSummary, PlaceAlertPrefs, ReportReason } from '../api/types';
 import {
   deleteComment,
   addWatchPlace,
@@ -12,6 +12,7 @@ import {
   fetchHazardDetail,
   fetchEventHazards,
   fetchEventAnalysis,
+  savePlaceAlertPrefs,
   fetchSituation,
   fetchHazardEvents,
   fetchAlertSettings,
@@ -404,6 +405,14 @@ export function useAddPlaceMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: addWatchPlace,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['watch'] }),
+  });
+}
+
+export function useSavePlaceAlertPrefsMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; prefs: PlaceAlertPrefs; applyToAll: boolean }) => savePlaceAlertPrefs(v.id, v.prefs, v.applyToAll),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['watch'] }),
   });
 }

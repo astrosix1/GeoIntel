@@ -421,3 +421,57 @@ class TestSearchEndpoint:
         with patch('blueprints.watchlist.search_places', return_value=[]):
             codes = [call(client, 'get', '/api/me/geo/search?q=oslo', user).status_code for _ in range(21)]
         assert codes[:20] == [200] * 20 and codes[20] == 429
+
+
+class TestPlaceAlertPrefs:
+    GOOD = {'hazards': {'types': ['FL', 'TC'], 'min_level': 'red'}}
+
+    def test_clean_prefs(self):
+        from services.place_alert_prefs import InvalidPlaceAlertPrefs, clean_prefs
+        assert clean_prefs(None) == {} and clean_prefs({}) == {}
+        assert clean_prefs(self.GOOD) == {'hazards': {'types': ['TC', 'FL'], 'min_level': 'red'}}      # fixed order
+        assert clean_prefs({'hazards': {'types': []}}) == {'hazards': {'types': []}}                  # none is allowed
+        for bad in ('x', [], {'extra': 1}, {'hazards': 'x'}, {'hazards': {'types': ['EQ']}}, {'hazards': {'types': 'TC'}},
+                    {'hazards': {'min_level': 'purple'}}, {'hazards': {'oops': 1}}):
+            with pytest.raises(InvalidPlaceAlertPrefs):
+                clean_prefs(bad)
+
+    def test_a_new_place_copies_the_choices_of_the_latest_one(self, db):
+        user = uid()
+        first = add_place(user, 'A')
+        svc.update_place_prefs(user, first['id'], self.GOOD)
+        second = add_place(user, 'B')
+        assert second['alert_prefs'] == {'hazards': {'types': ['TC', 'FL'], 'min_level': 'red'}}
+        explicit = svc.add_place(user, 'C', 1, 1, 50, {'hazards': {'types': ['DR']}})
+        assert explicit['alert_prefs'] == {'hazards': {'types': ['DR']}}
+
+    def test_a_first_place_has_the_defaults(self, db):
+        assert add_place(uid())['alert_prefs'] == {}
+
+    def test_apply_to_all_changes_every_place_but_only_this_users(self, db):
+        user, other = uid(), uid()
+        a, b = add_place(user, 'A'), add_place(user, 'B')
+        theirs = add_place(other, 'Theirs')
+        svc.update_place_prefs(user, a['id'], self.GOOD, apply_to_all=True)
+        by_name = {p['name']: p['alert_prefs'] for p in svc.list_places(user)}
+        assert by_name['A'] == by_name['B'] == {'hazards': {'types': ['TC', 'FL'], 'min_level': 'red'}}
+        assert svc.list_places(other)[0]['alert_prefs'] == {}
+        svc.update_place_prefs(user, a['id'], {'hazards': {'types': ['WF']}})
+        assert {p['name']: p['alert_prefs'] for p in svc.list_places(user)}['B'] == by_name['B']      # one place only
+
+    def test_cannot_touch_another_users_place(self, db):
+        user, other = uid(), uid()
+        mine = add_place(user)
+        assert svc.update_place_prefs(other, mine['id'], self.GOOD) == []
+        assert svc.list_places(user)[0]['alert_prefs'] == {}
+
+    def test_endpoint_saves_and_rejects(self, client, secret, db):
+        user = uid()
+        place = add_place(user)
+        res = call(client, 'put', f"/api/me/watch/{place['id']}/alert-prefs", user, json={'alert_prefs': self.GOOD})
+        assert res.status_code == 200 and res.get_json()['places'][0]['alert_prefs']['hazards']['min_level'] == 'red'
+        bad = call(client, 'put', f"/api/me/watch/{place['id']}/alert-prefs", user, json={'alert_prefs': {'hazards': {'types': ['EQ']}}})
+        assert bad.status_code == 400
+        assert call(client, 'put', f"/api/me/watch/{place['id']}/alert-prefs", user, json={}).status_code == 400
+        assert call(client, 'put', f"/api/me/watch/{uid()}/alert-prefs", user, json={'alert_prefs': self.GOOD}).status_code == 404
+        assert call(client, 'put', f"/api/me/watch/{place['id']}/alert-prefs", user, plan=None, json={'alert_prefs': self.GOOD}).status_code == 403
