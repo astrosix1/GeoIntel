@@ -101,9 +101,11 @@ def _digest(alerts, place_names):
     kinds = {a.get('hazard_type') for a in alerts}
     if kinds == {'WX'}:
         subject = f"GeoIntel forecast alert: {len(alerts)} forecast limit{plural} passed for your places"
+    elif kinds == {'CLK'}:
+        subject = f"GeoIntel clock change: the clocks are about to change at {len(alerts)} of your places" if len(alerts) > 1 else "GeoIntel clock change: the clocks are about to change at one of your places"
     elif kinds == {'SIT'}:
         subject = f"GeoIntel situation alert: {len(alerts)} situation{plural} near your places"
-    elif 'WX' in kinds or 'SIT' in kinds:
+    elif 'WX' in kinds or 'SIT' in kinds or 'CLK' in kinds:
         subject = f"GeoIntel alerts: {len(alerts)} new alert{plural} for your places"
     else:
         subject = f"GeoIntel weather alert: {len(alerts)} hazard{plural} near your places"
@@ -112,15 +114,15 @@ def _digest(alerts, place_names):
     for a in shown:
         place = place_names.get(a['place_id'], 'your place')
         kind = a.get('hazard_type')
-        if kind == 'WX':
-            line = f"{a['title']} at {place}"
+        if kind in ('WX', 'CLK'):
+            line = f"{a['title']} at {place}" if kind == 'WX' else a['title']
         elif kind == 'SIT':
             line = f"Situation: {a['title']}, {a['distance_km']} km from {place}"
         else:
             line = f"{a['alert_level']} alert: {a['title']} is {a['distance_km']} km from {place}"
         lines.append(f'- {line}')
-        if kind == 'WX':
-            items.append(f"<li>{html.escape(a['title'])} at {html.escape(place)}</li>")
+        if kind in ('WX', 'CLK'):
+            items.append(f"<li>{html.escape(a['title'])}" + (f" at {html.escape(place)}</li>" if kind == 'WX' else '</li>'))
         elif kind == 'SIT':
             items.append(f"<li><strong>Situation:</strong> {html.escape(a['title'])}, {html.escape(str(a['distance_km']))} km from {html.escape(place)}</li>")
         else:

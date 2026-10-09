@@ -166,7 +166,7 @@ export default function AlertsTab() {
   // Open the alert's hazard on the globe in Weather mode, if it is still active.
   function open(alert: AlertItem) {
     if (!alert.read_at) markRead.mutate({ ids: [alert.id] });
-    if (alert.hazard_type === 'WX') return;   // a forecast alert has no hazard to open
+    if (alert.hazard_type === 'WX' || alert.hazard_type === 'CLK') return;   // a forecast or clock alert has nothing to open
     if (alert.hazard_type === 'SIT') {
       const eventId = eventIdOf(alert);
       if (!eventId) return;
@@ -216,7 +216,7 @@ export default function AlertsTab() {
       </div>
       {data.alerts.length === 0 ? (
         <div className={dashboard.status}>
-          No alerts yet. Hazards, forecast limits and situations you chose for your watchlist places show up here.
+          No alerts yet. Hazards, forecast limits, situations and clock changes you chose for your watchlist places show up here.
         </div>
       ) : (
         <ul className={dashboard.list}>
@@ -231,12 +231,14 @@ export default function AlertsTab() {
                   <Badge compact tone={alertTone(alert.alert_level)}>{alert.alert_level}</Badge>
                   {alert.hazard_type === 'WX'
                     ? `Forecast alert · ${alert.place_name ?? 'a removed place'}`
-                    : alert.hazard_type === 'SIT'
-                      ? `Situation · ${alert.distance_km} km from ${alert.place_name ?? 'a removed place'}`
-                      : `${alert.alert_level} alert · ${alert.distance_km} km from ${alert.place_name ?? 'a removed place'}`}{' '}
+                    : alert.hazard_type === 'CLK'
+                      ? `Clock change · ${alert.place_name ?? 'a removed place'}`
+                      : alert.hazard_type === 'SIT'
+                        ? `Situation · ${alert.distance_km} km from ${alert.place_name ?? 'a removed place'}`
+                        : `${alert.alert_level} alert · ${alert.distance_km} km from ${alert.place_name ?? 'a removed place'}`}{' '}
                   &middot; {timeAgo(alert.created_at)}
                 </span>
-                {gone === alert.id && alert.hazard_type !== 'WX' && (
+                {gone === alert.id && alert.hazard_type !== 'WX' && alert.hazard_type !== 'CLK' && (
                   <span className={styles.note}>{alert.hazard_type === 'SIT' ? 'That event is no longer available.' : 'That hazard is no longer active.'}</span>
                 )}
               </button>

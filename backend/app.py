@@ -295,6 +295,8 @@ def scheduled_condition_alerts():
     try:
         from services.condition_alerts import evaluate_conditions
         evaluate_conditions()
+        from services.clock_alerts import evaluate_clock_changes
+        evaluate_clock_changes()      # the hourly run also looks a week ahead for clock changes; repeats are blocked by the key
     except Exception as e:
         logger.error(f"Scheduled condition alert error: {e}")
 

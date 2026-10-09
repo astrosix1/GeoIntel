@@ -752,6 +752,8 @@ export interface PlaceAlertPrefs {
   weather?: Partial<Record<ConditionKey, number>>;
   // A situation or serious event starting inside the radius. Off unless enabled.
   situations?: { enabled?: boolean; min_severity?: 'serious' | 'severe' | 'critical'; statements?: boolean };
+  // Tell me when the clocks are about to change at this place (up to a week ahead).
+  clock?: { enabled?: boolean };
 }
 
 export interface WatchResponse {

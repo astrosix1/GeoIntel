@@ -192,7 +192,7 @@ const PREMIUM_ABOUT: Record<Exclude<DashboardTab, 'settings'>, string> = {
   sources:
     'Sources lets you hide news outlets you do not want to see. Their events disappear from your lists and from the map, and you can bring them back at any time.',
   watchlist:
-    'The watchlist lets you save the places you care about and choose which alerts you want for each one, such as cyclones, floods, wildfires and droughts.',
+    'The watchlist lets you save the places you care about and choose which alerts you want for each one: cyclones, floods, wildfires and droughts, weather limits, situations starting nearby, and clock changes.',
   alerts:
     'Alerts collects what your watchlist raises, from hazards near your places to weather you set limits for, and shows a blue dot when something new arrives. You can also choose to receive them by email.',
 };

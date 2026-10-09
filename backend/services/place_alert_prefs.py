@@ -3,6 +3,7 @@
     {"hazards": {"types": ["TC", "FL", "WF", "DR"], "min_level": "orange"}}
 
     {"weather": {"heat_c": 38, "rain_mm": 80}}
+    {"clock": {"enabled": true}}
     {"situations": {"enabled": true, "min_severity": "serious", "statements": false}}
 
 A missing "hazards" key means the default: every hazard type, at the account's minimum level. A missing "weather" key means
@@ -24,7 +25,7 @@ def clean_prefs(value):
         return {}
     if not isinstance(value, dict):
         raise InvalidPlaceAlertPrefs('alert_prefs must be an object')
-    unknown = set(value) - {'hazards', 'weather', 'situations'}
+    unknown = set(value) - {'hazards', 'weather', 'situations', 'clock'}
     if unknown:
         raise InvalidPlaceAlertPrefs(f"unknown alert choice: {sorted(unknown)[0]}")
     out = {}
@@ -64,6 +65,11 @@ def clean_prefs(value):
                 raise InvalidPlaceAlertPrefs(f"min_severity must be one of {', '.join(SITUATION_SEVERITIES)}")
             cleaned['min_severity'] = sit['min_severity']
         out['situations'] = cleaned
+    if 'clock' in value:
+        clock = value['clock']
+        if not isinstance(clock, dict) or set(clock) - {'enabled'} or not isinstance(clock.get('enabled', False), bool):
+            raise InvalidPlaceAlertPrefs('clock must be {"enabled": true or false}')
+        out['clock'] = dict(clock)
     return out
 
 
@@ -92,3 +98,8 @@ def situation_settings(prefs):
     sit = (stored_prefs(prefs) or {}).get('situations', {})
     floor = {'serious': 40, 'severe': 60, 'critical': 80}[sit.get('min_severity', 'serious')]
     return sit.get('enabled') is True, floor, sit.get('statements') is True
+
+
+def clock_enabled(prefs):
+    """Whether a place wants to hear about clock changes. Off unless the place switched it on."""
+    return ((stored_prefs(prefs) or {}).get('clock') or {}).get('enabled') is True

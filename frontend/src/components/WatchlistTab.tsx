@@ -178,6 +178,7 @@ function PlaceAlertChoices({ place }: { place: WatchPlace }) {
   const [sitOn, setSitOn] = useState(sit.enabled === true);
   const [sitLevel, setSitLevel] = useState<string>(sit.min_severity ?? 'serious');
   const [sitStatements, setSitStatements] = useState(sit.statements === true);
+  const [clockOn, setClockOn] = useState(place.alert_prefs?.clock?.enabled === true);
   // Forecast limits: this place's own, or (when off) the ones on the Alerts tab.
   const settings = useAlertSettingsQuery().data;
   const [ownWeather, setOwnWeather] = useState(place.alert_prefs?.weather !== undefined);
@@ -193,6 +194,7 @@ function PlaceAlertChoices({ place }: { place: WatchPlace }) {
   function submit(e: React.FormEvent) {
     e.preventDefault();
     const prefs: PlaceAlertPrefs = { hazards: { types, ...(level ? { min_level: level as 'green' | 'orange' | 'red' } : {}) } };
+    prefs.clock = { enabled: clockOn };
     prefs.situations = { enabled: sitOn, min_severity: sitLevel as 'serious' | 'severe' | 'critical', statements: sitStatements };
     if (ownWeather) {
       const weather: Partial<Record<ConditionKey, number>> = {};
@@ -248,6 +250,9 @@ function PlaceAlertChoices({ place }: { place: WatchPlace }) {
           <div className={dashboard.rowMeta}>One alert covers a whole situation, however many stories it has.</div>
         </div>
       )}
+      <label className={styles.choice}>
+        <input type="checkbox" checked={clockOn} onChange={(e) => setClockOn(e.target.checked)} /> Tell me when the clocks change here (up to a week ahead)
+      </label>
       <label className={styles.choice}>
         <input type="checkbox" checked={ownWeather} onChange={(e) => setOwnWeather(e.target.checked)} /> Set weather limits for this place
       </label>
