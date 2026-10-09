@@ -183,3 +183,10 @@
   gap: var(--space-1);
   font-size: var(--font-3);
 }
+
+.indent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-left: var(--space-4);
+}

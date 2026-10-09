@@ -284,6 +284,8 @@ def scheduled_alert_eval():
     try:
         from services.alerts import evaluate_alerts
         evaluate_alerts()
+        from services.situation_alerts import evaluate_situations
+        evaluate_situations()      # before the next run's emails, so a situation alert goes out with the hazard digest
     except Exception as e:
         logger.error(f"Scheduled alert evaluation error: {e}")
 

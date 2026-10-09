@@ -750,6 +750,8 @@ export interface PlaceAlertPrefs {
   hazards?: { types?: string[]; min_level?: 'green' | 'orange' | 'red' };
   // This place's own forecast limits; absent means it uses the account's limits.
   weather?: Partial<Record<ConditionKey, number>>;
+  // A situation or serious event starting inside the radius. Off unless enabled.
+  situations?: { enabled?: boolean; min_severity?: 'serious' | 'severe' | 'critical'; statements?: boolean };
 }
 
 export interface WatchResponse {

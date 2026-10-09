@@ -174,6 +174,10 @@ function PlaceAlertChoices({ place }: { place: WatchPlace }) {
   const [types, setTypes] = useState<string[]>(stored.types ?? HAZARD_TYPES.map((t) => t.code));
   const [level, setLevel] = useState<string>(stored.min_level ?? '');
   const [all, setAll] = useState(false);
+  const sit = place.alert_prefs?.situations ?? {};
+  const [sitOn, setSitOn] = useState(sit.enabled === true);
+  const [sitLevel, setSitLevel] = useState<string>(sit.min_severity ?? 'serious');
+  const [sitStatements, setSitStatements] = useState(sit.statements === true);
   // Forecast limits: this place's own, or (when off) the ones on the Alerts tab.
   const settings = useAlertSettingsQuery().data;
   const [ownWeather, setOwnWeather] = useState(place.alert_prefs?.weather !== undefined);
@@ -189,6 +193,7 @@ function PlaceAlertChoices({ place }: { place: WatchPlace }) {
   function submit(e: React.FormEvent) {
     e.preventDefault();
     const prefs: PlaceAlertPrefs = { hazards: { types, ...(level ? { min_level: level as 'green' | 'orange' | 'red' } : {}) } };
+    prefs.situations = { enabled: sitOn, min_severity: sitLevel as 'serious' | 'severe' | 'critical', statements: sitStatements };
     if (ownWeather) {
       const weather: Partial<Record<ConditionKey, number>> = {};
       for (const spec of offered) {
@@ -224,6 +229,25 @@ function PlaceAlertChoices({ place }: { place: WatchPlace }) {
           ))}
         </select>
       </label>
+      <label className={styles.choice}>
+        <input type="checkbox" checked={sitOn} onChange={(e) => setSitOn(e.target.checked)} /> Tell me when a situation or serious event starts inside the radius
+      </label>
+      {sitOn && (
+        <div className={styles.indent}>
+          <label className={styles.field}>
+            <span>Minimum severity</span>
+            <select className={dashboard.search} value={sitLevel} onChange={(e) => setSitLevel(e.target.value)}>
+              <option value="serious">Serious and above</option>
+              <option value="severe">Severe and above</option>
+              <option value="critical">Critical only</option>
+            </select>
+          </label>
+          <label className={styles.choice}>
+            <input type="checkbox" checked={sitStatements} onChange={(e) => setSitStatements(e.target.checked)} /> Include statements and talks
+          </label>
+          <div className={dashboard.rowMeta}>One alert covers a whole situation, however many stories it has.</div>
+        </div>
+      )}
       <label className={styles.choice}>
         <input type="checkbox" checked={ownWeather} onChange={(e) => setOwnWeather(e.target.checked)} /> Set weather limits for this place
       </label>

@@ -98,19 +98,31 @@ def _digest(alerts, place_names):
     shown = alerts[:MAX_DIGEST_ITEMS]
     extra = len(alerts) - len(shown)
     plural = 's' if len(alerts) != 1 else ''
-    if all(a.get('hazard_type') == 'WX' for a in alerts):
+    kinds = {a.get('hazard_type') for a in alerts}
+    if kinds == {'WX'}:
         subject = f"GeoIntel forecast alert: {len(alerts)} forecast limit{plural} passed for your places"
+    elif kinds == {'SIT'}:
+        subject = f"GeoIntel situation alert: {len(alerts)} situation{plural} near your places"
+    elif 'WX' in kinds or 'SIT' in kinds:
+        subject = f"GeoIntel alerts: {len(alerts)} new alert{plural} for your places"
     else:
         subject = f"GeoIntel weather alert: {len(alerts)} hazard{plural} near your places"
 
     lines, items = [], []
     for a in shown:
         place = place_names.get(a['place_id'], 'your place')
-        line = (f"{a['title']} at {place}" if a.get('hazard_type') == 'WX'
-                else f"{a['alert_level']} alert: {a['title']} is {a['distance_km']} km from {place}")
+        kind = a.get('hazard_type')
+        if kind == 'WX':
+            line = f"{a['title']} at {place}"
+        elif kind == 'SIT':
+            line = f"Situation: {a['title']}, {a['distance_km']} km from {place}"
+        else:
+            line = f"{a['alert_level']} alert: {a['title']} is {a['distance_km']} km from {place}"
         lines.append(f'- {line}')
-        if a.get('hazard_type') == 'WX':
+        if kind == 'WX':
             items.append(f"<li>{html.escape(a['title'])} at {html.escape(place)}</li>")
+        elif kind == 'SIT':
+            items.append(f"<li><strong>Situation:</strong> {html.escape(a['title'])}, {html.escape(str(a['distance_km']))} km from {html.escape(place)}</li>")
         else:
             items.append(f"<li><strong>{html.escape(a['alert_level'])} alert:</strong> {html.escape(a['title'])} "
                          f"is {html.escape(str(a['distance_km']))} km from {html.escape(place)}</li>")
@@ -121,9 +133,9 @@ def _digest(alerts, place_names):
     url = _app_url()
     footer = ('You are receiving this because email alerts are on for your GeoIntel watchlist. '
               f'Turn them off in Dashboard > Alerts at {url}')
-    text = 'New hazards near your watchlist places:\n\n' + '\n'.join(lines) + f'\n\nOpen GeoIntel: {url}\n\n{footer}\n'
+    text = 'New alerts for your watchlist places:\n\n' + '\n'.join(lines) + f'\n\nOpen GeoIntel: {url}\n\n{footer}\n'
     body = (
-        '<p>New hazards near your watchlist places:</p><ul>' + ''.join(items) + '</ul>'
+        '<p>New alerts for your watchlist places:</p><ul>' + ''.join(items) + '</ul>'
         f'<p><a href="{html.escape(url)}">Open GeoIntel</a></p>'
         f'<p style="color:#666;font-size:12px">{html.escape(footer)}</p>'
     )

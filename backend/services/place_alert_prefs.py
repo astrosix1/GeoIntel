@@ -3,6 +3,7 @@
     {"hazards": {"types": ["TC", "FL", "WF", "DR"], "min_level": "orange"}}
 
     {"weather": {"heat_c": 38, "rain_mm": 80}}
+    {"situations": {"enabled": true, "min_severity": "serious", "statements": false}}
 
 A missing "hazards" key means the default: every hazard type, at the account's minimum level. A missing "weather" key means
 the place uses the account's forecast limits; a "weather" object (even an empty one) replaces them for this place. Everything
@@ -10,6 +11,7 @@ is validated here, on the server, before it is saved or used.
 """
 HAZARD_TYPES = ('TC', 'FL', 'WF', 'DR')      # the live hazard feed: cyclones, floods, wildfires, droughts
 LEVELS = ('green', 'orange', 'red')
+SITUATION_SEVERITIES = ('serious', 'severe', 'critical')    # the app's own written scale: 40+, 60+, 80+
 
 
 class InvalidPlaceAlertPrefs(ValueError):
@@ -22,7 +24,7 @@ def clean_prefs(value):
         return {}
     if not isinstance(value, dict):
         raise InvalidPlaceAlertPrefs('alert_prefs must be an object')
-    unknown = set(value) - {'hazards', 'weather'}
+    unknown = set(value) - {'hazards', 'weather', 'situations'}
     if unknown:
         raise InvalidPlaceAlertPrefs(f"unknown alert choice: {sorted(unknown)[0]}")
     out = {}
@@ -47,6 +49,21 @@ def clean_prefs(value):
             out['weather'] = clean_conditions(value['weather'])
         except InvalidConditions as e:
             raise InvalidPlaceAlertPrefs(str(e))
+    if 'situations' in value:
+        sit = value['situations']
+        if not isinstance(sit, dict) or set(sit) - {'enabled', 'min_severity', 'statements'}:
+            raise InvalidPlaceAlertPrefs('situations must be {"enabled": ..., "min_severity": ..., "statements": ...}')
+        cleaned = {}
+        for key in ('enabled', 'statements'):
+            if key in sit:
+                if not isinstance(sit[key], bool):
+                    raise InvalidPlaceAlertPrefs(f'situations {key} must be true or false')
+                cleaned[key] = sit[key]
+        if 'min_severity' in sit:
+            if sit['min_severity'] not in SITUATION_SEVERITIES:
+                raise InvalidPlaceAlertPrefs(f"min_severity must be one of {', '.join(SITUATION_SEVERITIES)}")
+            cleaned['min_severity'] = sit['min_severity']
+        out['situations'] = cleaned
     return out
 
 
@@ -68,3 +85,10 @@ def weather_limits(prefs, account_conditions):
     """The forecast limits that apply to a place: its own when it has chosen some, else the account's."""
     own = (stored_prefs(prefs) or {}).get('weather')
     return dict(account_conditions) if own is None else dict(own)
+
+
+def situation_settings(prefs):
+    """(enabled, minimum severity score, include statements) for a place. Off unless the place switched it on."""
+    sit = (stored_prefs(prefs) or {}).get('situations', {})
+    floor = {'serious': 40, 'severe': 60, 'critical': 80}[sit.get('min_severity', 'serious')]
+    return sit.get('enabled') is True, floor, sit.get('statements') is True

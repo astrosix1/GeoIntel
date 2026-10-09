@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { UserDataError } from '../api/client';
+import { fetchCrisisDetail, UserDataError } from '../api/client';
 import type { AlertItem, AlertMinLevel, AlertSettings } from '../api/types';
 import { alertTone, hazardIconName } from '../globe/hazards';
 import Icon from '../ui/Icon';
@@ -32,6 +32,12 @@ function describeError(error: unknown): string {
   if (kind === 'sign_in_required') return 'Sign in to see your alerts.';
   if (kind === 'premium_required') return 'Alerts are a premium feature.';
   return "Couldn't load this. Please try again.";
+}
+
+// A situation alert's key is "SIT-<event id>-<level>"; the event id can itself contain dashes.
+function eventIdOf(alert: AlertItem): string | null {
+  const match = /^SIT-(.+)-(?:green|orange|red)$/.exec(alert.hazard_key);
+  return match ? match[1] : null;
 }
 
 // The hazard id is the middle part of "<type>-<id>-<level>".
@@ -152,6 +158,7 @@ export default function AlertsTab() {
   const { data: storms } = useStormsQuery(true);
   const setActiveMode = useUiStore((s) => s.setActiveMode);
   const selectHazard = useUiStore((s) => s.selectHazard);
+  const selectCrisis = useUiStore((s) => s.selectCrisis);
   const setOpen = useUiStore((s) => s.setDashboardOpen);
   const setRightOpen = useUiStore((s) => s.setRightOpen);
   const [gone, setGone] = useState<string | null>(null);
@@ -160,6 +167,20 @@ export default function AlertsTab() {
   function open(alert: AlertItem) {
     if (!alert.read_at) markRead.mutate({ ids: [alert.id] });
     if (alert.hazard_type === 'WX') return;   // a forecast alert has no hazard to open
+    if (alert.hazard_type === 'SIT') {
+      const eventId = eventIdOf(alert);
+      if (!eventId) return;
+      fetchCrisisDetail(eventId)
+        .then((event) => {
+          setGone(null);
+          setActiveMode('events');
+          selectCrisis(event);
+          setOpen(false);
+          setRightOpen(true);
+        })
+        .catch(() => setGone(alert.id));
+      return;
+    }
     const id = hazardIdOf(alert);
     const hazard = storms?.storms.find((s) => s.id === id && s.event_type === alert.hazard_type);
     if (!hazard) {
@@ -195,7 +216,7 @@ export default function AlertsTab() {
       </div>
       {data.alerts.length === 0 ? (
         <div className={dashboard.status}>
-          No alerts yet. When a hazard comes within one of your watchlist places&apos; radius, it shows up here.
+          No alerts yet. Hazards, forecast limits and situations you chose for your watchlist places show up here.
         </div>
       ) : (
         <ul className={dashboard.list}>
@@ -210,10 +231,14 @@ export default function AlertsTab() {
                   <Badge compact tone={alertTone(alert.alert_level)}>{alert.alert_level}</Badge>
                   {alert.hazard_type === 'WX'
                     ? `Forecast alert · ${alert.place_name ?? 'a removed place'}`
-                    : `${alert.alert_level} alert · ${alert.distance_km} km from ${alert.place_name ?? 'a removed place'}`}{' '}
+                    : alert.hazard_type === 'SIT'
+                      ? `Situation · ${alert.distance_km} km from ${alert.place_name ?? 'a removed place'}`
+                      : `${alert.alert_level} alert · ${alert.distance_km} km from ${alert.place_name ?? 'a removed place'}`}{' '}
                   &middot; {timeAgo(alert.created_at)}
                 </span>
-                {gone === alert.id && alert.hazard_type !== 'WX' && <span className={styles.note}>That hazard is no longer active.</span>}
+                {gone === alert.id && alert.hazard_type !== 'WX' && (
+                  <span className={styles.note}>{alert.hazard_type === 'SIT' ? 'That event is no longer available.' : 'That hazard is no longer active.'}</span>
+                )}
               </button>
             </li>
           ))}
