@@ -1,6 +1,5 @@
 import { lazy, Suspense, useEffect } from 'react';
 import Globe from '../globe/Globe';
-import DrawFab from '../globe/draw/DrawFab';
 import DrawToolbar from '../globe/draw/DrawToolbar';
 import PresentExit from '../globe/draw/PresentExit';
 import { handleFullscreenChange, stopPresenting } from '../globe/draw/present';
@@ -85,7 +84,6 @@ export default function Shell() {
             <RadarBar />
             <WeatherFieldLegend />
             <DrawToolbar />
-            <DrawFab />
             <PresentExit />
             <EdgeTab side="left" docked={docked} />
             <EdgeTab side="right" docked={docked} />

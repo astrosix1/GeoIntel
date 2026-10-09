@@ -24,7 +24,10 @@ const LEVELS: { value: AlertMinLevel; label: string }[] = [
 
 function describeError(error: unknown): string {
   const kind = error instanceof UserDataError ? error.kind : 'error';
-  if (kind === 'unavailable') return "Alerts aren't available right now.";
+  if (kind === 'unavailable') {
+    const setup = error instanceof UserDataError && (error.reason === 'table_missing' || error.reason === 'column_missing');
+    return setup ? "Alerts haven't been set up on the server yet. Please try again later." : "Alerts aren't available right now.";
+  }
   if (kind === 'sign_in_required') return 'Sign in to see your alerts.';
   if (kind === 'premium_required') return 'Alerts are a premium feature.';
   return "Couldn't load this. Please try again.";

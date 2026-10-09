@@ -11,7 +11,6 @@ import {
   useStormsQuery,
 } from '../../state/queries';
 import { useUiStore } from '../../state/uiStore';
-import Scenarios from './Scenarios';
 import EventPattern from './EventPattern';
 import SituationBlock from './SituationBlock';
 import { BriefingBlocks } from './BriefingBlocks';
@@ -54,6 +53,7 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
   const { data: stormData } = useStormsQuery(true);
   const setActiveMode = useUiStore((s) => s.setActiveMode);
   const selectHazard = useUiStore((s) => s.selectHazard);
+  const selectCountry = useUiStore((s) => s.selectCountry);
   const refine = useRefineLocationMutation();
   const refineAsked = useRef(false);
   const [imageFailed, setImageFailed] = useState(false);
@@ -106,7 +106,13 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
           {labelForSeverity(crisis.severity)} &middot; {crisis.severity}
         </Badge>
         {crisis.scope && <Badge>{crisis.scope === 'local' ? 'Local' : 'Global'}</Badge>}
-        <Badge>{crisis.country}</Badge>
+        {patternData?.country_code ? (
+          <Badge onClick={() => selectCountry(patternData.country_code as string)} title={`Open the ${crisis.country} analysis`}>
+            {crisis.country}
+          </Badge>
+        ) : (
+          <Badge>{crisis.country}</Badge>
+        )}
         <Badge>{crisis.type}</Badge>
         <Badge>{new Date(crisis.date).toLocaleDateString()}</Badge>
         <SaveButton crisisId={crisis.id} />
@@ -261,7 +267,7 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
       {situation && <SituationBlock situation={situation} currentId={crisis.id} />}
       {patternData && <EventPattern data={patternData} />}
 
-      <Scenarios key={crisis.id} crisisId={crisis.id} />
+      {/* Scenarios are hidden for now; the component stays in ./Scenarios for when they are reworked. */}
         </>
       )}
     </div>

@@ -171,9 +171,46 @@
   }
 }
 
-/* Phones: Draw lives at the bottom of the map instead (globe/draw/DrawFab.tsx). */
+/* The modes are a segmented row on wide screens and a hamburger menu on phones. */
+.modesPhone {
+  display: none;
+}
+
+.modeList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.modeItem {
+  min-height: 40px;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-2);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.modeItem:hover {
+  background: var(--raised-strong);
+  color: var(--text);
+}
+
+.modeItemActive {
+  background: var(--accent-soft);
+  color: var(--text);
+  font-weight: 600;
+}
+
 @media (max-width: 768px) {
-  .drawTop {
+  .modesDesktop {
     display: none;
+  }
+
+  .modesPhone {
+    display: block;
   }
 }

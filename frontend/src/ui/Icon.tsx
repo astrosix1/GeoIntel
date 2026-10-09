@@ -9,6 +9,7 @@ const PATHS: Record<string, ReactNode> = {
   close: <path d="M6 6l12 12M18 6L6 18" />,
   plus: <path d="M12 5v14M5 12h14" />,
   minus: <path d="M5 12h14" />,
+  menu: <path d="M4 7h16M4 12h16M4 17h16" />,
   settings: (
     <>
       <path d="M4 7h9M19 7h1M4 17h1M11 17h9" />

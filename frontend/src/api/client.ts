@@ -88,9 +88,21 @@ export type UserDataErrorKind =
 // Same idea as ScenariosError: which failure it was, so the UI says the right thing.
 export class UserDataError extends Error {
   kind: UserDataErrorKind;
-  constructor(kind: UserDataErrorKind) {
+  // The server's reason for an 'unavailable' answer: 'table_missing' or 'column_missing' mean the database is not set up
+  // for this feature yet (a setup problem), anything else is a temporary failure.
+  reason?: string;
+  constructor(kind: UserDataErrorKind, reason?: string) {
     super(kind);
     this.kind = kind;
+    this.reason = reason;
+  }
+}
+
+async function reasonOf(res: Response): Promise<string | undefined> {
+  try {
+    return (await res.clone().json())?.reason;
+  } catch {
+    return undefined;
   }
 }
 
@@ -98,7 +110,7 @@ async function userDataRequest<T>(path: string, init?: RequestInit): Promise<T> 
   const res = await authedFetch(path, init);
   if (res.status === 401) throw new UserDataError('sign_in_required');
   if (res.status === 403) throw new UserDataError('premium_required');
-  if (res.status === 503) throw new UserDataError('unavailable');
+  if (res.status === 503) throw new UserDataError('unavailable', await reasonOf(res));
   if (res.status === 409) throw new UserDataError('limit_reached');
   if (res.status === 400) throw new UserDataError('invalid');
   if (!res.ok) throw new UserDataError('error');
@@ -376,7 +388,7 @@ export async function addWatchPlace(place: NewWatchPlace): Promise<WatchPlace> {
   }
   if (res.status === 401) throw new UserDataError('sign_in_required');
   if (res.status === 403) throw new UserDataError('premium_required');
-  if (res.status === 503) throw new UserDataError('unavailable');
+  if (res.status === 503) throw new UserDataError('unavailable', await reasonOf(res));
   if (res.status === 400) throw new UserDataError('invalid');
   if (!res.ok) throw new UserDataError('error');
   return (await res.json()).place;

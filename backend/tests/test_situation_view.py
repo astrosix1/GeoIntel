@@ -69,7 +69,7 @@ def test_endpoint_returns_the_view_and_null_for_a_lone_story(app_module, client,
         data = client.get('/api/crises/v1/situation').get_json()['situation']
     assert data['story_count'] == 3 and data['id'] == 'v0' and len(data['stories']) == 3
     assert any(f['count'] == 3 and f['kind'] == 'killed' for item in data['figures'] for f in item['figures'])
-    assert all(item['sentence'].endswith('.') for item in data['figures'])
+    assert all(item['sentence'].strip() and item['figures'] for item in data['figures'])
     assert client.get('/api/crises/solo/situation').get_json() == {'situation': None}
     for model in (Situation, Crisis):
         db_session.query(model).delete()
@@ -96,3 +96,10 @@ def test_the_map_list_shows_one_pin_per_situation_with_its_story_count(app_modul
     for model in (Situation, Crisis):
         db_session.query(model).delete()
     db_session.commit()
+
+
+def test_a_headline_is_never_glued_onto_the_first_sentence_of_its_article():
+    head = 'Roundup: Saudi-led coalition, Houthis trade strikes as Yemen conflict escalates, casualties reported'
+    body = 'SANAA, Oct. 8 (Xinhua) -- At least three people were reportedly killed and eight others injured in strikes on Thursday.'
+    out = stated_figures([f'{head}\n\n{body}'])
+    assert [e['sentence'] for e in out] == [body]

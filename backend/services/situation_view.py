@@ -51,10 +51,12 @@ SENTENCE_CAP = 320
 def split_sentences(text):
     """Sentences of `text` with their start offsets. A full stop after an abbreviation or an initial ("U.S.", "Oct.", "Dr.") does not end one."""
     spans, start = [], 0
-    for match in re.finditer(r'[.!?]["\u201d\')]*\s+(?=["\u201c\']?[A-Z0-9])', text):
+    for match in re.finditer(r'(?:[.!?]["\u201d\')]*\s+(?=["\u201c\']?[A-Z0-9])|\n\s*\n)', text):
         before = text[start:match.start() + 1].split()
         last = before[-1].rstrip('.!?"\u201d\')').lower() if before else ''
-        if last in _ABBREVIATIONS or (len(last.replace('.', '')) == 1 and text[match.start()] == '.') or re.fullmatch(r'(?:[a-z]\.)+[a-z]', last):
+        paragraph_break = text[match.start():match.end()].strip() == ''
+        if not paragraph_break and (last in _ABBREVIATIONS or (len(last.replace('.', '')) == 1 and text[match.start()] == '.')
+                                    or re.fullmatch(r'(?:[a-z]\.)+[a-z]', last)):
             continue
         spans.append((start, match.start() + 1))
         start = match.end()
@@ -200,7 +202,7 @@ def build_view(session, situation, members):
                for c in members]
     sentences = key_sentences(stories) if any(s['text'] for s in stories) else []
 
-    corpus = [f"{s['title']}. {s['text']}" for s in stories]
+    corpus = [f"{s['title']}\n\n{s['text']}" for s in stories]   # a headline and its article are separate passages
     figures = []
     for fig in stated_figures(corpus):
         places = [{'outlet': stories[i]['outlet'], 'url': stories[i]['url']} for i in fig['stated_in'][:3]]
@@ -226,7 +228,7 @@ def build_view(session, situation, members):
 
 def get_situation_view(crisis_id):
     """The view for the situation this event belongs to, or None when it stands alone."""
-    key = f'situation_view:v1:{crisis_id}'
+    key = f'situation_view:v2:{crisis_id}'
     cached = cache_get(key)
     if cached is not None:
         return cached or None

@@ -19,8 +19,29 @@ export function Chip({ pressed, onClick, count, children }: { pressed: boolean; 
 
 export type BadgeTone = 'neutral' | 'accent' | 'warn' | 'sev1' | 'sev2' | 'sev3' | 'sev4' | 'sev5' | 'alertRed' | 'alertOrange' | 'alertGreen';
 
-export function Badge({ tone = 'neutral', compact = false, children }: { tone?: BadgeTone; compact?: boolean; children: ReactNode }) {
-  return <span className={`${styles.badge} ${compact ? styles.badgeCompact : ''} ${tone === 'neutral' ? '' : styles[tone]}`}>{children}</span>;
+export function Badge({
+  tone = 'neutral',
+  compact = false,
+  onClick,
+  title,
+  children,
+}: {
+  tone?: BadgeTone;
+  compact?: boolean;
+  // Makes the badge a button (for example a country tag that opens the country's analysis).
+  onClick?: () => void;
+  title?: string;
+  children: ReactNode;
+}) {
+  const className = `${styles.badge} ${compact ? styles.badgeCompact : ''} ${tone === 'neutral' ? '' : styles[tone]}`;
+  if (onClick) {
+    return (
+      <button type="button" className={`${className} ${styles.badgeButton}`} onClick={onClick} title={title}>
+        {children}
+      </button>
+    );
+  }
+  return <span className={className}>{children}</span>;
 }
 
 // ---- Tabs ---------------------------------------------------------------------------------------------------------

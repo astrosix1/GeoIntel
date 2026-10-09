@@ -16,7 +16,10 @@ function describeError(error: unknown): string {
   if (kind === 'exists') return 'You already have a place with that name. Pick another name.';
   if (kind === 'limit_reached') return "You've reached the limit of places. Remove one to add another.";
   if (kind === 'invalid') return 'Check the name and radius (10 to 2000 km) and try again.';
-  if (kind === 'unavailable') return "Your watchlist isn't available right now.";
+  if (kind === 'unavailable') {
+    const setup = error instanceof UserDataError && (error.reason === 'table_missing' || error.reason === 'column_missing');
+    return setup ? "The watchlist hasn't been set up on the server yet. Please try again later." : "Your watchlist isn't available right now.";
+  }
   if (kind === 'sign_in_required') return 'Sign in to use your watchlist.';
   if (kind === 'premium_required') return 'The watchlist is a premium feature.';
   return "Couldn't save that. Please try again.";

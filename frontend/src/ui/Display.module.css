@@ -50,6 +50,22 @@
   white-space: nowrap;
 }
 
+.badgeButton {
+  border: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.badgeButton:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.badgeButton:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .badgeCompact {
   height: 14px;
   padding: 0 var(--space-1);

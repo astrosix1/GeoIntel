@@ -41,7 +41,7 @@ export default function SituationBlock({ situation, currentId }: { situation: Si
             {situation.figures.map((item) => (
               <li key={item.sentence}>
                 <div>
-                  {item.figures.map((f) => (
+                  {(item.figures ?? []).map((f) => (
                     <Badge key={`${f.kind}-${f.count}`}>
                       {f.count} {f.kind}
                     </Badge>
@@ -49,7 +49,7 @@ export default function SituationBlock({ situation, currentId }: { situation: Si
                 </div>
                 &ldquo;{item.sentence}&rdquo;
                 <span className={styles.sourceOutlet}>
-                  {item.where.map((w, i) => (
+                  {(item.where ?? []).map((w, i) => (
                     <span key={`${w.outlet}-${i}`}>
                       {i > 0 && ', '}
                       {w.url ? (
@@ -61,7 +61,7 @@ export default function SituationBlock({ situation, currentId }: { situation: Si
                       )}
                     </span>
                   ))}
-                  {item.stated_by > item.where.length ? ` and ${item.stated_by - item.where.length} more` : ''}
+                  {item.stated_by > (item.where ?? []).length ? ` and ${item.stated_by - (item.where ?? []).length} more` : ''}
                 </span>
               </li>
             ))}

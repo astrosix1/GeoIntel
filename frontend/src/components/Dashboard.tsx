@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
 import { UserDataError } from '../api/client';
-import { signOut } from '../auth/session';
+import { getUpgradeUrl, isSignInConfigured, signIn } from '../auth/session';
 import type { SavedEvent } from '../api/types';
 import { outletOf } from '../lib/outlet';
 import { labelForSeverity, severityTone } from '../globe/severity';
 import { Badge, Tabs } from '../ui/Display';
 import { Drawer } from '../ui/Overlay';
 import Button, { IconButton } from '../ui/Button';
+import SettingsPanel from './SettingsPanel';
 import { useUiStore } from '../state/uiStore';
 import type { DashboardTab } from '../state/uiStore';
 import {
@@ -27,6 +28,7 @@ const TABS: { value: DashboardTab; label: string }[] = [
   { value: 'sources', label: 'Sources' },
   { value: 'watchlist', label: 'Watchlist' },
   { value: 'alerts', label: 'Alerts' },
+  { value: 'settings', label: 'Settings' },
 ];
 
 const MAX_OUTLET_RESULTS = 40;
@@ -182,11 +184,39 @@ function SourcesTab() {
   );
 }
 
-// "My dashboard" overlay, opened from the account chip (premium).
+// What a visitor or free member sees in place of a premium section: the way in (sign in or upgrade), not a dead end.
+function Locked({ feature }: { feature: string }) {
+  const { signedIn, loading } = useEntitlements();
+  const upgradeUrl = getUpgradeUrl();
+  if (loading) return <div className={styles.status}>Loading…</div>;
+  return (
+    <div className={styles.status}>
+      {feature} is a premium feature.{' '}
+      {!signedIn && isSignInConfigured() ? (
+        <Button size="sm" onClick={signIn}>
+          Sign in
+        </Button>
+      ) : signedIn && upgradeUrl ? (
+        <a href={upgradeUrl}>Upgrade</a>
+      ) : null}
+    </div>
+  );
+}
+
+const LOCKED_NAME: Record<DashboardTab, string> = {
+  saved: 'Saved events',
+  sources: 'Sources',
+  watchlist: 'The watchlist',
+  alerts: 'Alerts',
+  settings: '',
+};
+
+// The dashboard drawer. Settings are open to everyone; the other sections need a premium account.
 export default function Dashboard() {
   const { premium } = useEntitlements();
-  const open = useUiStore((s) => s.dashboardOpen) && premium;
-  const tab = useUiStore((s) => s.dashboardTab);
+  const open = useUiStore((s) => s.dashboardOpen);
+  const storedTab = useUiStore((s) => s.dashboardTab);
+  const tab: DashboardTab = premium ? storedTab : 'settings';
   const setOpen = useUiStore((s) => s.setDashboardOpen);
   const setTab = useUiStore((s) => s.setDashboardTab);
   const selectCrisis = useUiStore((s) => s.selectCrisis);
@@ -211,23 +241,20 @@ export default function Dashboard() {
   }
 
   return (
-    <Drawer open={open} title="My dashboard" onClose={() => setOpen(false)}>
+    <Drawer open={open} title="Dashboard" onClose={() => setOpen(false)}>
       <Tabs
         label="Dashboard sections"
         value={tab}
         onChange={setTab}
-        tabs={TABS.map((t) => ({ id: t.value, label: t.value === 'alerts' && unread > 0 ? `${t.label} (${unread})` : t.label }))}
+        tabs={TABS.map((t) => ({ id: t.value, label: t.value === 'alerts' && premium && unread > 0 ? `${t.label} (${unread})` : t.label }))}
       />
       <div className={styles.body}>
-        {tab === 'saved' && <SavedTab onOpen={openSaved} />}
-        {tab === 'sources' && <SourcesTab />}
-        {tab === 'watchlist' && <WatchlistTab />}
-        {tab === 'alerts' && <AlertsTab />}
-      </div>
-      <div className={styles.footer}>
-        <Button size="sm" onClick={signOut}>
-          Sign out
-        </Button>
+        {tab === 'settings' && <SettingsPanel />}
+        {tab !== 'settings' && !premium && <Locked feature={LOCKED_NAME[tab]} />}
+        {premium && tab === 'saved' && <SavedTab onOpen={openSaved} />}
+        {premium && tab === 'sources' && <SourcesTab />}
+        {premium && tab === 'watchlist' && <WatchlistTab />}
+        {premium && tab === 'alerts' && <AlertsTab />}
       </div>
     </Drawer>
   );

@@ -22,6 +22,31 @@ class SupabaseConflict(Exception):
     """The write violated a uniqueness constraint (HTTP 409 from PostgREST)."""
 
 
+# Which SQL file creates which table, for the log line that tells the owner what to run.
+_SQL_FILES = {
+    'geointel_watch_places': '004_geointel_watchlist.sql',
+    'geointel_alerts': '004_geointel_watchlist.sql',
+    'geointel_user_prefs': '002_geointel_user_data.sql, then 004 and 005',
+    'geointel_saved_events': '002_geointel_user_data.sql',
+    'geointel_comments': '003_geointel_comments.sql',
+    'geointel_drawings': '006_geointel_drawings.sql',
+}
+
+
+def _failure_reason(response):
+    """'table_missing', 'column_missing' or 'request_failed', read from PostgREST's error body."""
+    try:
+        code = str((response.json() or {}).get('code', ''))
+    except (ValueError, AttributeError):
+        code = ''
+    status = getattr(response, 'status_code', None)
+    if code in ('PGRST205', '42P01') or (status == 404 and not code):
+        return 'table_missing'
+    if code in ('PGRST204', '42703'):
+        return 'column_missing'
+    return 'request_failed'
+
+
 def check_uuid(value):
     """The canonical form of a UUID, or SupabaseUnavailable if it isn't one.
     Used on ids interpolated into PostgREST filters."""
@@ -46,8 +71,16 @@ def rest(method, table, params=None, json_body=None, prefer=None):
     except requests.HTTPError as e:
         if e.response is not None and e.response.status_code == 409:
             raise SupabaseConflict() from e
-        logger.error(f"Supabase {method} {table} failed: {e}")
-        raise SupabaseUnavailable('request_failed') from e
+        reason = _failure_reason(e.response)
+        if reason == 'table_missing':
+            logger.error(f"Supabase table '{table}' does not exist: apply the matching SQL file in backend/supabase/ "
+                         f"in the Supabase SQL editor ({_SQL_FILES.get(table, 'see backend/supabase/')}). {e}")
+        elif reason == 'column_missing':
+            logger.error(f"Supabase table '{table}' lacks a column the app reads: apply the newest SQL files in "
+                         f"backend/supabase/ (004 and 005 for the watchlist and alert settings). {e}")
+        else:
+            logger.error(f"Supabase {method} {table} failed: {e}")
+        raise SupabaseUnavailable(reason) from e
     except requests.RequestException as e:
         logger.error(f"Supabase {method} {table} failed: {e}")
         raise SupabaseUnavailable('request_failed') from e

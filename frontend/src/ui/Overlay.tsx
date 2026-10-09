@@ -21,7 +21,8 @@ export function Popover({
   // A small count shown on the button (for example how many filters are on).
   badge?: number;
   align?: 'start' | 'end';
-  children: ReactNode;
+  // A function receives close(), for a menu whose choices should close it.
+  children: ReactNode | ((close: () => void) => ReactNode);
 }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement | null>(null);
@@ -60,7 +61,7 @@ export function Popover({
       </Button>
       {open && (
         <div id={id} role="dialog" aria-label={label} className={`${styles.popover} ${align === 'end' ? styles.alignEnd : styles.alignStart}`}>
-          {children}
+          {typeof children === 'function' ? children(() => setOpen(false)) : children}
         </div>
       )}
     </div>

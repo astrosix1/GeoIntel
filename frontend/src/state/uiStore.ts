@@ -32,7 +32,7 @@ export type PinnedSelection =
   | null;
 
 export type EventsTab = 'all' | 'major' | 'categories';
-export type DashboardTab = 'saved' | 'sources' | 'watchlist' | 'alerts';
+export type DashboardTab = 'saved' | 'sources' | 'watchlist' | 'alerts' | 'settings';
 
 // A point picked from the forecast panel, waiting to be named and added to the watchlist.
 export interface PendingWatchPoint {

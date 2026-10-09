@@ -50,7 +50,7 @@ def headline_of(title):
             text = text.encode('cp1252').decode('utf-8')
         except (UnicodeEncodeError, UnicodeDecodeError):
             pass
-    return _WIRE_TAIL.sub('', _OUTLET_TAIL.sub('', text)).strip()
+    return _WIRE_TAIL.sub('', _OUTLET_TAIL.sub('', text)).strip().rstrip('-–— ')
 
 
 def tokens_of(title):
