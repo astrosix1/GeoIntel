@@ -153,6 +153,50 @@ def parse_list(text):
     return {'items': items, 'as_of': as_of} if items else None
 
 
+_SCALES = {'thousand': 1e3, 'million': 1e6, 'billion': 1e9, 'trillion': 1e12}
+
+
+def parse_quantity(text):
+    """'4.337 billion cubic meters (2023 est.)' -> {'value': 4.337e9, 'unit': 'm3', 'as_of': 2023}; '10.879 million bbl/day (2023 est.)'
+    -> {'value': 1.0879e7, 'unit': 'bbl/day', ...}. None when no quantity in cubic metres or barrels a day can be read."""
+    if not text:
+        return None
+    match = re.search(r'([\d][\d,]*\.?\d*)\s*(thousand|million|billion|trillion)?\s*(cubic meters|bbl/day)', text)
+    if not match:
+        return None
+    try:
+        value = float(match.group(1).replace(',', ''))
+    except ValueError:
+        return None
+    value *= _SCALES.get(match.group(2), 1.0)
+    return {'value': value, 'unit': 'm3' if match.group(3) == 'cubic meters' else 'bbl/day', 'as_of': _as_of(text)}
+
+
+def parse_energy_fuels(data):
+    """What the Factbook says about each fuel's production, consumption and trade volumes: {'gas': {...}, 'oil': {...}} with only the
+    figures it publishes. Gas is in cubic metres a year, oil in barrels a day."""
+    energy = data.get('Energy') or {}
+    out = {}
+    gas = energy.get('Natural gas') or {}
+    fuel = {}
+    for key, name in (('production', 'production'), ('consumption', 'consumption'), ('imports', 'imports'), ('exports', 'exports')):
+        quantity = parse_quantity(clean(gas.get(key)))
+        if quantity:
+            fuel[name] = quantity
+    if fuel:
+        out['gas'] = fuel
+    oil = energy.get('Petroleum') or {}
+    fuel = {}
+    for key, name in (('total petroleum production', 'production'), ('refined petroleum consumption', 'consumption'),
+                      ('refined petroleum imports', 'imports'), ('refined petroleum exports', 'exports')):
+        quantity = parse_quantity(clean(oil.get(key)))
+        if quantity:
+            fuel[name] = quantity
+    if fuel:
+        out['oil'] = fuel
+    return out
+
+
 def parse_partners(text):
     """'United States 14%, Germany 9% (2023)' -> shares; same reader as religions."""
     return parse_shares(text)
@@ -416,6 +460,7 @@ def parse_profile(data):
             'electricity_access': _subfield(data, 'Energy', 'Electricity access', 'electrification - total population'),
         },
         'geography': parse_geography(data),
+        'energy_fuels': parse_energy_fuels(data),
         'security': {
             'terrorist_groups': _field(data, 'Terrorism', 'Terrorist group(s)'),
             'refugees': _subfield(data, 'Transnational Issues', 'Refugees and internally displaced persons', 'refugees'),
@@ -435,7 +480,7 @@ class FactbookConnector:
         entry = _codes().get(iso2.upper())
         if not entry:
             return None
-        key = f'factbook:{iso2.upper()}'
+        key = f'factbook:v2:{iso2.upper()}'
         cached = cache_get(key)
         if cached is not None:
             return cached
