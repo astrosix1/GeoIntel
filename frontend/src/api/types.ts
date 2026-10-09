@@ -65,6 +65,8 @@ export type CrisisSummary = Pick<
   statement?: boolean;
   // Number of outlets behind the story; present only when above 1.
   sources?: number;
+  // Set on the pin of a situation: how many stories it stands for.
+  stories?: number;
 };
 
 // GET /api/crises/<id>/scenarios (premium). Likelihood is a qualitative word on

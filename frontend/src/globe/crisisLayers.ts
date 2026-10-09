@@ -240,7 +240,7 @@ function stackedList(events: CrisisSummary[], onPick: (crisis: CrisisSummary) =>
     const text = document.createElement('span');
     text.textContent = `${crisis.country} · ${labelForSeverity(crisis.severity)} (${crisis.severity})`;
     meta.append(dot, text);
-    const tag = [sourcesTag(crisis.sources), pinTag(crisis.location_confidence, crisis.statement)]
+    const tag = [sourcesTag(crisis.sources, crisis.stories), pinTag(crisis.location_confidence, crisis.statement)]
       .filter((t): t is string => !!t)
       .join(' · ');
     row.append(title, meta);
@@ -288,7 +288,7 @@ export function attachCrisisInteractions(map: maplibregl.Map, { getGroup, onSele
       .setLngLat(at)
       .setHTML(
         `<div class="geo-pop-title">${escapeHtml(first.title)}</div><div class="geo-pop-meta">${escapeHtml(first.country)} &middot; ${labelForSeverity(first.severity)} (${first.severity})</div>` +
-          [sourcesTag(first.sources), pinTag(first.location_confidence, first.statement)]
+          [sourcesTag(first.sources, first.stories), pinTag(first.location_confidence, first.statement)]
             .filter((tag): tag is string => !!tag)
             .map((tag) => `<div class="geo-pop-note">${escapeHtml(tag)}</div>`)
             .join(''),

@@ -136,3 +136,32 @@ def test_ai_path_returns_structured_briefing_and_drops_bad_citations(app_module,
     assert result['structured']['unknowns'] == ['No casualty figure given']
     assert result['parties'] == ['USA', 'RUS']
     assert 'Two sentences.' in result['briefing']
+
+
+def test_a_situation_gets_one_briefing_over_every_story_with_every_source(app_module, db_session):
+    from datetime import datetime, timedelta
+    from types import SimpleNamespace
+    from models import Situation
+    db_session.query(Situation).delete()
+    seed_crisis(db_session, id='brief-1', title='Houthi missiles hit Saudi airports', situation_id='brief-1', source_url='https://a.example/1')
+    for i, t in enumerate(['Three killed as Houthis strike Saudi airports', 'Saudi airports attacked, 36 injured']):
+        seed_crisis(db_session, id=f'brief-s{i}', title=t, situation_id='brief-1', source_url=f'https://o{i}.example/x', source_count=2,
+                    analysis='x')
+    db_session.add(Situation(id='brief-1', title='x', country='North Korea', story_count=3, source_total=5,
+                             first_at=datetime.utcnow(), last_at=datetime.utcnow() - timedelta(hours=1)))
+    db_session.commit()
+    seen = {}
+
+    def create(**kw):
+        seen['prompt'] = kw['messages'][0]['content']
+        block = SimpleNamespace(type='tool_use', input={'summary': 'S', 'unknowns': [], 'key_points': [{'text': 'P', 'sources': [1, 2, 3]}]})
+        return SimpleNamespace(content=[block])
+    client = SimpleNamespace(api_key='k', messages=SimpleNamespace(create=create))
+    with patch('services.briefing.anthropic_client', client):
+        member = _run('brief-s0')
+    assert 'SITUATION' in seen['prompt'] and 'Saudi airports attacked, 36 injured' in seen['prompt']
+    assert [s['url'] for s in member['sources']] == ['https://a.example/1', 'https://o0.example/x', 'https://o1.example/x']
+    assert member['structured']['key_points'][0]['sources'] == [1, 2, 3]
+    db_session.query(Situation).delete()
+    db_session.commit()
+    cache_delete('briefing:brief-s0')

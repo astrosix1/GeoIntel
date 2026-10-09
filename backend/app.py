@@ -249,6 +249,13 @@ def scheduled_sync():
     except Exception as e:
         logger.error(f"Story merge error: {e}")
 
+    # Group related stories into situations (code only). Its own try/except as well.
+    try:
+        from services.situations import build_recent
+        build_recent()
+    except Exception as e:
+        logger.error(f"Situation grouping error: {e}")
+
     # Snapshot current severity for every active crisis, once per sync run —
     # this is the real history analyze_escalation() needs. Its own
     # try/except so a snapshot failure never blocks the primary sync above.

@@ -60,3 +60,25 @@ def test_endpoint_returns_the_view_and_null_for_a_lone_story(app_module, client,
     for model in (Situation, Crisis):
         db_session.query(model).delete()
     db_session.commit()
+
+
+def test_the_map_list_shows_one_pin_per_situation_with_its_story_count(app_module, client, db_session):
+    for model in (Situation, Crisis):
+        db_session.query(model).delete()
+    db_session.commit()
+    now = datetime.utcnow()
+    for i in range(3):
+        db_session.add(Crisis(id=f'p{i}', type='conflict', title=f'Houthi strike on Saudi airport variant {i}', country='Saudi Arabia', latitude=25, longitude=45,
+                              severity=60, is_active=True, source='GDELT', source_url=f'https://o{i}.example/a', date_start=now - timedelta(hours=5 - i),
+                              situation_id='p0', source_count=1))
+    db_session.add(Crisis(id='alone', type='conflict', title='Unrelated event', country='Peru', latitude=0, longitude=0, severity=40, is_active=True, date_start=now))
+    db_session.add(Situation(id='p0', title='x', country='Saudi Arabia', story_count=3, source_total=3, first_at=now, last_at=now))
+    db_session.commit()
+    data = client.get('/api/crises?view=map&scope=global&days=2').get_json()
+    rows = data['crises'] if isinstance(data, dict) else data
+    ids = {c['id']: c for c in rows}
+    assert 'p1' not in ids and 'p2' not in ids and 'alone' in ids
+    assert ids['p0']['stories'] == 3 and ids['p0']['sources'] == 3
+    for model in (Situation, Crisis):
+        db_session.query(model).delete()
+    db_session.commit()

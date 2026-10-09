@@ -67,6 +67,31 @@ def fetch_wikipedia_image(country, title):
     return None
 
 
+def _situation_members(crisis_id):
+    """(lead_id, [member Crisis rows other than the lead]) when the event belongs to a situation of two or more stories, else
+    (crisis_id, []). Rows are detached copies of the few fields the briefing reads."""
+    from models import Situation
+    session = Session()
+    try:
+        row = session.query(Crisis.situation_id).filter(Crisis.id == crisis_id).first()
+        sid = row and row.situation_id
+        if not sid or not session.get(Situation, sid):
+            return crisis_id, []
+        members = (session.query(Crisis).filter(Crisis.situation_id == sid, Crisis.is_active.is_(True), Crisis.merged_into.is_(None))
+                   .order_by(Crisis.date_start).all())
+        if len(members) < 2:
+            return crisis_id, []
+        return sid, [{'id': m.id, 'title': m.title, 'url': m.source_url, 'source': m.source, 'date': m.date_start,
+                      'excerpt': m.article_excerpt, 'sources': m.source_count or 1}
+                     for m in members if m.id != sid]
+    finally:
+        session.close()
+
+
+def _situation_stamp(members):
+    return f":sit{len(members)}:{sum(m['sources'] for m in members)}" if members else ''
+
+
 def generate_ai_briefing(crisis_id):
     """
     Generate AI-powered briefing summary using Claude API.
@@ -74,8 +99,11 @@ def generate_ai_briefing(crisis_id):
     Briefings are cached for 1 hour to avoid redundant Anthropic API calls.
     """
     # ── Cache check ──────────────────────────────────────────────────────────
+    # An event inside a situation gets the situation's briefing, written over every story in it and cached under the lead
+    # story's id, so each member shows the same combined analysis.
+    crisis_id, situation_members = _situation_members(crisis_id)
     cache_key = f"briefing:{crisis_id}"
-    stamp = story_stamp(crisis_id)
+    stamp = f"{story_stamp(crisis_id)}{_situation_stamp(situation_members)}"
     cached = cache_get(cache_key)
     if cached is not None and cached.get('story_stamp') == stamp:
         logger.info(f"[Briefing] Cache hit for crisis {crisis_id}")
@@ -126,6 +154,17 @@ def generate_ai_briefing(crisis_id):
                 'url': crisis.source_url,
                 'published': crisis.date_start.strftime('%Y-%m-%d') if crisis.date_start else 'undated',
             })
+        # Every other story in the situation adds its own article (and any merged duplicates' articles) as a citable source.
+        seen_urls = {s['url'] for s in numbered_sources}
+        for m in sorted(situation_members, key=lambda m: -m['sources']):
+            if len(numbered_sources) >= 20:
+                break
+            if m['url'] and m['url'] not in seen_urls:
+                seen_urls.add(m['url'])
+                numbered_sources.append({
+                    'n': len(numbered_sources) + 1, 'title': m['title'], 'source': m['source'] or 'Unknown outlet', 'url': m['url'],
+                    'published': m['date'].strftime('%Y-%m-%d') if m['date'] else 'undated',
+                })
         sources_block = '\n'.join(
             f"[{s['n']}] {s['title']} — {s['source']}, {s['published']}. {s['url']}"
             for s in numbered_sources
@@ -157,7 +196,18 @@ def generate_ai_briefing(crisis_id):
                     'image_url': meta.get('image_url'),
                     'video_url': meta.get('video_url'),
                 }
+        for m in situation_members[:3]:
+            if m['excerpt']:
+                n = next((x['n'] for x in numbered_sources if x['url'] == m['url']), None)
+                excerpt_parts.append(f"[{n}] {m['excerpt'][:600]}" if n else m['excerpt'][:600])
         excerpts_block = '\n\n'.join(excerpt_parts) or 'No real article text is available beyond the headlines above.'
+
+        situation_note = ''
+        if situation_members:
+            others = '; '.join(f"{m['title'][:110]} ({m['source'] or 'unknown outlet'})" for m in situation_members[:12])
+            situation_note = (f"This is a SITUATION: {len(situation_members) + 1} separate stories from different outlets about the same "
+                              f"development. Write one briefing over all of them, say where they differ, and cite the numbered sources. "
+                              f"Other headlines in the situation: {others}")
 
         # Build context for Claude
         context = f"""
@@ -170,6 +220,7 @@ Source Reliability: {reliability['reliability']} ({reliability['source_count']} 
 
 Analysis: {crisis.analysis}
 {chr(10).join(story_context_lines(crisis))}
+{situation_note}
 
 Numbered Source List (cite these by number — see instructions):
 {sources_block}

@@ -200,7 +200,8 @@ def build_recent(days=WINDOW_DAYS):
             lead = lead_of(members)
             crises = [by_id[it.id] for it in members]
             situation = session.get(Situation, lead.id) or Situation(id=lead.id)
-            situation.title = by_id[lead.id].title[:200]
+            main = max(crises, key=lambda c: (c.source_count or 1, -c.date_start.timestamp()))   # the most-reported headline names the pin
+            situation.title = headline_of(main.title)[:200]
             situation.country = by_id[lead.id].country
             situation.story_count = len(members)
             situation.source_total = sum(c.source_count or 1 for c in crises)

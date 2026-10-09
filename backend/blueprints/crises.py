@@ -8,7 +8,8 @@ from datetime import datetime, timedelta
 
 from flask import Blueprint, jsonify, request
 
-from models import Session, Crisis, News
+from models import Session, Crisis, News, Situation
+from sqlalchemy import or_
 from data_sources import fetch_real_page_metadata
 from cache import cache_get, cache_set
 from extensions import limiter
@@ -82,7 +83,9 @@ def get_crises():
         session = Session()
         min_severity_int = int(min_severity)
 
-        query = session.query(Crisis).filter(Crisis.is_active == True)
+        # One pin per situation: its lead story stands for the group, the other stories are reached through it.
+        query = session.query(Crisis).filter(Crisis.is_active == True,
+                                             or_(Crisis.situation_id.is_(None), Crisis.situation_id == Crisis.id))
 
         if crisis_type:
             query = query.filter(Crisis.type == crisis_type)
@@ -123,12 +126,13 @@ def get_crises():
             rows = query.with_entities(
                 Crisis.id, Crisis.title, Crisis.country, Crisis.type, Crisis.severity,
                 Crisis.scope, Crisis.date_start, Crisis.latitude, Crisis.longitude,
-                Crisis.source_url, Crisis.location_confidence, Crisis.event_kind, Crisis.source_count,
+                Crisis.source_url, Crisis.location_confidence, Crisis.event_kind, Crisis.source_count, Crisis.situation_id,
             ).all()
+            situations = {s.id: s for s in session.query(Situation).filter(Situation.id.in_([r.id for r in rows if r.situation_id == r.id])).all()} if rows else {}
             result = [
                 {
                     'id': r.id,
-                    'title': r.title,
+                    'title': situations[r.id].title if r.id in situations and situations[r.id].title else r.title,
                     'country': r.country,
                     'type': r.type,
                     'severity': r.severity,
@@ -140,7 +144,9 @@ def get_crises():
                     'location_confidence': r.location_confidence,
                     # Only present when true, to keep the payload small.
                     **({'statement': True} if r.event_kind == 'statement' else {}),
-                    **({'sources': r.source_count} if (r.source_count or 1) > 1 else {}),
+                    **({'sources': situations[r.id].source_total} if r.id in situations else
+                       {'sources': r.source_count} if (r.source_count or 1) > 1 else {}),
+                    **({'stories': situations[r.id].story_count} if r.id in situations else {}),
                 }
                 for r in rows
             ]
@@ -220,6 +226,7 @@ def get_balanced_crises():
                 session.query(Crisis)
                 .filter(
                     Crisis.is_active == True,
+                    or_(Crisis.situation_id.is_(None), Crisis.situation_id == Crisis.id),
                     Crisis.date_start >= since,
                     Crisis.latitude  >= bounds['lat_min'],
                     Crisis.latitude  <= bounds['lat_max'],
