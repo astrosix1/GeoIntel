@@ -75,6 +75,10 @@ class Crisis(Base):
     # event and is inactive; `source_count` is the number of distinct outlets behind a story.
     merged_into = Column(String(50), nullable=True, index=True)
     source_count = Column(Integer, nullable=False, default=1, server_default='1')
+    # Other countries the same article was tagged with when its duplicates were merged (JSON list).
+    also_tagged = Column(Text, nullable=True)
+    # Why an event was hidden without being a duplicate: 'template', 'domain' or 'site' (a junk title).
+    hidden_reason = Column(String(20), nullable=True)
     # Why the event is Global or Local (services/scope.py): JSON {rule, global: [terms], local: [terms]}. NULL = not yet judged by topic.
     scope_basis = Column(Text, nullable=True)
 
@@ -140,6 +144,7 @@ class Crisis(Base):
             'event_kind': self.event_kind,
             'source_count': self.source_count or 1,
             'merged_into': self.merged_into,
+            'also_tagged': json.loads(self.also_tagged) if self.also_tagged else [],
             'location_refined_at': self.location_refined_at.isoformat() if self.location_refined_at else None,
             'date': self.date_start.isoformat() if self.date_start else None,
             'date_scheduled': self.date_scheduled.isoformat() if self.date_scheduled else None,

@@ -91,9 +91,23 @@ class TestClearCases:
                        ev('b', title='Parliament passes new budget after long debate')])[0] == [['a'], ['b']]
 
     @pytest.mark.parametrize('field,value', [('country', 'Egypt'), ('scope', 'local'), ('kind', 'statement')])
-    def test_never_merges_across_country_scope_or_kind(self, field, value):
-        other = ev('b', **{field: value})
-        assert groups([ev('a'), other])[0] == [['a'], ['b']]
+    def test_similar_but_not_identical_wording_never_merges_across_country_scope_or_kind(self, field, value):
+        a = ev('a', title='Five miners killed in Plateau attack, others injured')
+        b = ev('b', title='5 miners killed in Plateau attack, others injured', **{field: value})
+        assert groups([a, b])[0] == [['a'], ['b']]
+
+    def test_one_article_tagged_with_several_countries_is_one_story(self):
+        url = 'https://example.com/the-same-article'
+        events = [ev('a', url=url, country='Iraq'), ev('b', url=url, country='Syria'), ev('c', url=url, country='Turkey')]
+        assert groups(events)[0] == [['a', 'b', 'c']]
+        title = 'American ignorance risks fueling deadly Middle East sectarianism'
+        assert groups([ev('a', title=title, country='Iraq'), ev('b', title=title, country='Lebanon', hours=3)])[0] == [['a', 'b']]
+
+    def test_the_country_the_headline_names_becomes_the_pin(self):
+        title = 'Houthis claim new attack on airport in Saudi Arabia as witnesses report evacuation'
+        a = ev('a', title=title, country='Egypt', hours=5)
+        b = ev('b', title=title, country='Saudi Arabia', hours=1)
+        assert pick_primary([a, b]).id == 'b'
 
     def test_never_merges_events_more_than_two_days_apart(self):
         assert groups([ev('a'), ev('b', hours=49)])[0] == [['a'], ['b']]
@@ -116,7 +130,9 @@ class TestClearCases:
                        ev('c', title='Other words entirely')])[0] == [['a', 'b', 'c']]
 
     def test_events_without_a_country_are_left_alone(self):
-        assert groups([ev('a', country=None), ev('b', country=None)])[0] == [['a'], ['b']]
+        a = ev('a', country=None, title='Five miners killed in Plateau attack, others injured')
+        b = ev('b', country=None, title='5 miners killed in Plateau attack, others injured')
+        assert groups([a, b])[0] == [['a'], ['b']]   # similar wording needs a known country; an identical headline or URL does not
 
     def test_primary_is_the_earliest_then_the_most_confident_then_the_id(self):
         assert pick_primary([ev('b', hours=1), ev('a', hours=5), ev('c', hours=2)]).id == 'a'
@@ -448,3 +464,42 @@ class TestApi:
         seed(db_session, 'g1')
         body = row(db_session, 'g1').to_dict()
         assert body['source_count'] == 1 and body['merged_into'] is None
+
+
+class TestJunkAndTags:
+    @pytest.mark.parametrize('title,why', [
+        ('Facebook', 'site'), ('newsroomamerica.com — newsroomamerica.com', 'domain'), ('example.co.uk', 'domain'),
+        ('Conflict-related event in India', 'template'), ('', 'domain'),
+    ])
+    def test_junk_titles(self, title, why):
+        from services.stories import junk_reason
+        assert junk_reason(title) == why
+
+    @pytest.mark.parametrize('title', ['Facebook fined 5 million over data leak', 'Student fights Uganda', 'Rubio wants Europe awake'])
+    def test_real_headlines_are_not_junk(self, title):
+        from services.stories import junk_reason
+        assert junk_reason(title) is None
+
+
+class TestCrossCountryAndHidden:
+    def test_one_article_tagged_with_countries_becomes_one_pin_and_remembers_the_others(self, db_session):
+        url = 'https://example.com/one-article'
+        title = 'American ignorance risks fueling deadly Middle East sectarianism'
+        seed(db_session, 'i1', title=title, url=url, country='Iraq', hours=5)
+        seed(db_session, 'i2', title=title, url=url, country='Lebanon', hours=4)
+        seed(db_session, 'i3', title=title, url=url, country='Syria', hours=3)
+        stories.merge_recent(ai_per_run=0)
+        live = [i for i in ('i1', 'i2', 'i3') if row(db_session, i).is_active]
+        assert live == ['i1']
+        assert sorted(row(db_session, 'i1').to_dict()['also_tagged']) == ['Lebanon', 'Syria']
+
+    def test_junk_titles_are_hidden_with_a_reason_and_nothing_is_deleted(self, db_session):
+        seed(db_session, 'j1', title='Facebook', hours=2)
+        seed(db_session, 'j2', title='Conflict-related event in India', hours=2, country='India')
+        seed(db_session, 'ok', title='Two soldiers killed in border clash near Rafah', hours=2)
+        summary = stories.merge_recent(ai_per_run=0)
+        assert summary['hidden'] == 2
+        assert (row(db_session, 'j1').is_active, row(db_session, 'j1').hidden_reason) == (False, 'site')
+        assert row(db_session, 'j2').hidden_reason == 'template'
+        assert row(db_session, 'ok').is_active and row(db_session, 'ok').hidden_reason is None
+        assert db_session.query(Crisis).count() == 3

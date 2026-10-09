@@ -21,12 +21,14 @@ Events are never merged across countries, across kinds (statement vs physical), 
 when more than 2 days apart.
 """
 import hashlib
+import json
 import logging
 import os
 import re
 import unicodedata
 from collections import defaultdict
 from datetime import datetime, timedelta
+from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
 from cache import cache_clear_prefix
@@ -140,6 +142,51 @@ def similarity(a, b):
     return len(a & b) / len(a | b)
 
 
+# Titles that are not headlines at all: a bare site name or domain (the page title could not be read),
+# or the feed's "Conflict-related event in <country>" stand-in. Such events are hidden, not shown as pins.
+_SITE_NAMES = frozenset('facebook youtube twitter instagram tiktok linkedin reddit whatsapp telegram google yahoo msn bing'.split())
+_DOMAIN = re.compile(r'^[\w-]+(?:\.[\w-]+)*\.[a-z]{2,}(?:\s*[\u2014\u2013-]\s*[\w-]+(?:\.[\w-]+)*\.[a-z]{2,})?$', re.I)
+
+
+def junk_reason(title):
+    """'template', 'domain' or 'site' for a title that says nothing about what happened, else None."""
+    text = (title or '').strip()
+    if not text:
+        return 'domain'
+    lowered = text.lower()
+    if lowered.startswith(GDELT_GENERIC_FALLBACK_TITLE_PREFIX.lower()) or 'conflict-related event in ' in lowered:
+        return 'template'
+    if _DOMAIN.match(text):
+        return 'domain'
+    if normalize_headline(text) in _SITE_NAMES:
+        return 'site'
+    return None
+
+
+_COUNTRY_NAMES = None
+
+
+def _country_names_by_iso():
+    """({iso2: [normalised names]}, {name: iso2}) from the bundled country names."""
+    global _COUNTRY_NAMES
+    if _COUNTRY_NAMES is None:
+        path = Path(__file__).resolve().parent.parent / 'data_sources' / 'country_names.json'
+        raw = json.loads(path.read_text(encoding='utf-8'))
+        by_iso = {iso: [normalize_headline(n) for n in names] for iso, names in raw.items()}
+        _COUNTRY_NAMES = (by_iso, {n: iso for iso, names in by_iso.items() for n in names})
+    return _COUNTRY_NAMES
+
+
+def names_country(title, country):
+    """True when the headline itself names the country the event is tagged with (names of four
+    letters or more, so "us" is not matched as a word)."""
+    by_iso, iso_of = _country_names_by_iso()
+    wanted = normalize_headline(country)
+    names = by_iso.get(iso_of.get(wanted), [wanted]) if wanted else []
+    head = f' {normalize_headline(title)} '
+    return any(len(n) >= 4 and f' {n} ' in head for n in names)
+
+
 # --- clustering ----------------------------------------------------------------------
 
 class Ev:
@@ -187,8 +234,16 @@ def _comparable(a, b):
             and abs(a.date - b.date) <= MAX_GAP)
 
 
+def _close_in_time(a, b):
+    return abs(a.date - b.date) <= MAX_GAP
+
+
 def pick_primary(events):
-    """The earliest event (so its id stays stable); ties go to the higher confidence, then the id."""
+    """The earliest event (so its id stays stable); ties go to the higher confidence, then the id.
+    When the group spans several countries (one article tagged with each place it mentions), the
+    country the headline itself names comes first."""
+    if len({e.country for e in events}) > 1:
+        return min(events, key=lambda e: (not names_country(e.title, e.country), e.date, -e.confidence, e.id))
     return min(events, key=lambda e: (e.date, -e.confidence, e.id))
 
 
@@ -204,17 +259,18 @@ def cluster_events(events, judge=None):
     uf = _UnionFind(n)
     stats = {'tier1': 0, 'tier2_asked': 0, 'tier2_merged': 0}
 
-    # Same article or same headline: a dictionary lookup, no pairwise comparison needed.
+    # Same article or same headline: a dictionary lookup, no pairwise comparison needed. The country
+    # tag does not matter here: one article tagged with several countries is still one article.
     for attr in ('nurl', 'nhead'):
         groups = defaultdict(list)
         for i, ev in enumerate(events):
             key = getattr(ev, attr)
             if key and (attr == 'nurl' or len(ev.tokens) >= MIN_TOKENS):   # short or stand-in headlines are not identity
-                groups[(ev.country, ev.scope, ev.kind, key)].append(i)
+                groups[key].append(i)
         for members in groups.values():
             members.sort(key=lambda i: events[i].date)
             for a, b in zip(members, members[1:]):
-                if _comparable(events[a], events[b]):
+                if _close_in_time(events[a], events[b]):
                     uf.union(a, b)
 
     # Similar wording at the same place: only compare events in neighbouring map cells.
@@ -384,6 +440,12 @@ def _merge_cluster(session, members, now):
                            url=url[:500], source=outlet[:100], published_at=published, fetched_at=now))
 
     primary.source_count = max(1, len(outlets))
+    tagged = set(json.loads(primary.also_tagged)) if primary.also_tagged else set()
+    tagged.update(rows[i].country for i in dupe_ids if rows[i].country)
+    for i in dupe_ids:
+        tagged.update(json.loads(rows[i].also_tagged) if rows[i].also_tagged else [])
+    tagged.discard(primary.country)
+    primary.also_tagged = json.dumps(sorted(tagged)) if tagged else None
     from services.severity import rescore
     rescore(primary)    # corroboration changed
     primary.confidence = max(primary.confidence or 50, min(95, 50 + 5 * primary.source_count))
@@ -410,8 +472,16 @@ def merge_recent(days=DEFAULT_WINDOW_DAYS, ai_per_run=None):
                 .filter(Crisis.source == 'GDELT', Crisis.is_active.is_(True), Crisis.merged_into.is_(None),
                         Crisis.date_start >= cutoff)
                 .all())
+        junk = {r.id: junk_reason(r.title) for r in rows}
+        hidden = [i for i, why in junk.items() if why]
+        for chunk in _chunks(hidden):
+            for crisis in session.query(Crisis).filter(Crisis.id.in_(chunk)).all():
+                crisis.is_active = False
+                crisis.hidden_reason = junk[crisis.id]
+        summary['hidden'] = len(hidden)
+        session.commit()
         events = [Ev(r.id, r.title, r.source_url, r.country, r.scope, r.event_kind, r.latitude, r.longitude,
-                     r.date_start or datetime.utcnow(), r.confidence) for r in rows]
+                     r.date_start or datetime.utcnow(), r.confidence) for r in rows if not junk[r.id]]
         summary['events'] = len(events)
 
         clusters, stats = cluster_events(events, judge=_make_judge(session, budget))
@@ -434,7 +504,7 @@ def merge_recent(days=DEFAULT_WINDOW_DAYS, ai_per_run=None):
     finally:
         session.close()
 
-    if summary['events_merged']:
+    if summary['events_merged'] or summary.get('hidden'):
         cache_clear_prefix('crises:')
         logger.info(f"Story merge: {summary}")
     return summary
