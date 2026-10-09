@@ -1,27 +1,18 @@
 import { useState } from 'react';
 import { fetchCrisisDetail, UserDataError } from '../api/client';
-import type { AlertItem, AlertMinLevel, AlertSettings } from '../api/types';
+import type { AlertItem } from '../api/types';
 import { alertTone, hazardIconName } from '../globe/hazards';
 import Icon from '../ui/Icon';
 import { Badge } from '../ui/Display';
 import { timeAgo } from '../lib/time';
 import {
-  useAlertSettingsQuery,
   useAlertsQuery,
   useMarkAlertsReadMutation,
-  useSaveAlertSettingsMutation,
   useStormsQuery,
 } from '../state/queries';
 import { useUiStore } from '../state/uiStore';
-import { CONDITIONS } from './conditions';
 import dashboard from './Dashboard.module.css';
 import styles from './Watchlist.module.css';
-
-const LEVELS: { value: AlertMinLevel; label: string }[] = [
-  { value: 'green', label: 'All alerts (Green and above)' },
-  { value: 'orange', label: 'Orange and Red' },
-  { value: 'red', label: 'Red only' },
-];
 
 function describeError(error: unknown): string {
   const kind = error instanceof UserDataError ? error.kind : 'error';
@@ -44,112 +35,6 @@ function eventIdOf(alert: AlertItem): string | null {
 function hazardIdOf(alert: AlertItem): number | null {
   const id = Number(alert.hazard_key.split('-')[1]);
   return Number.isFinite(id) ? id : null;
-}
-
-function ConditionRow({ spec, value, disabled, onSave }: {
-  spec: (typeof CONDITIONS)[number];
-  value: number | undefined;
-  disabled: boolean;
-  onSave: (value: number | null) => void;
-}) {
-  const [text, setText] = useState(value === undefined ? '' : String(value));
-  const enabled = value !== undefined;
-
-  function commit() {
-    const number = Number(text);
-    if (!enabled || text.trim() === '' || !Number.isFinite(number)) return;
-    const clamped = Math.min(spec.max, Math.max(spec.min, number));
-    setText(String(clamped));
-    if (clamped !== value) onSave(clamped);
-  }
-
-  return (
-    <label>
-      <input
-        type="checkbox"
-        checked={enabled}
-        disabled={disabled}
-        onChange={(e) => {
-          if (e.target.checked) {
-            setText(String(spec.fallback));
-            onSave(spec.fallback);
-          } else {
-            onSave(null);
-          }
-        }}
-      />
-      {spec.label}
-      <input
-        type="number"
-        value={text}
-        min={spec.min}
-        max={spec.max}
-        disabled={disabled || !enabled}
-        onChange={(e) => setText(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') commit();
-        }}
-        className={styles.numberInput}
-        aria-label={`${spec.label} (${spec.unit || 'index'})`}
-      />
-      {spec.unit}
-    </label>
-  );
-}
-
-function Settings() {
-  const { data, isLoading } = useAlertSettingsQuery();
-  const save = useSaveAlertSettingsMutation();
-
-  if (isLoading || !data) return null;
-
-  return (
-    <div className={styles.settings}>
-      <label>
-        <input
-          type="checkbox"
-          checked={data.alert_email}
-          disabled={save.isPending}
-          onChange={(e) => save.mutate({ alert_email: e.target.checked })}
-        />
-        Email me alerts
-      </label>
-      <label>
-        Alert on
-        <select
-          value={data.alert_min_level}
-          disabled={save.isPending}
-          onChange={(e) => save.mutate({ alert_min_level: e.target.value as AlertMinLevel })}
-        >
-          {LEVELS.map((level) => (
-            <option key={level.value} value={level.value}>
-              {level.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <div>
-        <div className={styles.note}>Forecast alerts: tell me when a place&apos;s forecast for the next 3 days passes a limit.</div>
-        {CONDITIONS.filter((spec) => !data.unavailable_conditions?.includes(spec.key)).map((spec) => (
-          <ConditionRow
-            key={spec.key}
-            spec={spec}
-            value={data.alert_conditions[spec.key]}
-            disabled={save.isPending}
-            onSave={(value) => save.mutate({ alert_conditions: { [spec.key]: value } as AlertSettings['alert_conditions'] })}
-          />
-        ))}
-      </div>
-      {data.unavailable_conditions?.includes('gust_kmh') && (
-        <span className={styles.note}>
-          Gust alerts are not offered: the forecast source (MET Norway) does not publish wind gusts. The UV limit looks at the next two days,
-          using the clear-sky UV index.
-        </span>
-      )}
-      {save.isError && <span className={styles.note}>Couldn&apos;t save that setting.</span>}
-    </div>
-  );
 }
 
 export default function AlertsTab() {
@@ -200,7 +85,6 @@ export default function AlertsTab() {
 
   return (
     <div>
-      <Settings />
       <div className={dashboard.summary}>
         {data.unread} unread
         {data.unread > 0 && (

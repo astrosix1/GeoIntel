@@ -194,7 +194,7 @@ const PREMIUM_ABOUT: Record<Exclude<DashboardTab, 'settings'>, string> = {
   watchlist:
     'The watchlist lets you save the places you care about and choose which alerts you want for each one: cyclones, floods, wildfires and droughts, weather limits, situations starting nearby, and clock changes.',
   alerts:
-    'Alerts collects what your watchlist raises, from hazards near your places to weather you set limits for, and shows a blue dot when something new arrives. You can also choose to receive them by email.',
+    'Alerts collects what your watchlist raises, from hazards near your places to the weather limits, situations and clock changes you chose for each one, and shows a blue dot when something new arrives. You can also choose to receive them by email.',
 };
 
 function Locked({ tab }: { tab: Exclude<DashboardTab, 'settings'> }) {

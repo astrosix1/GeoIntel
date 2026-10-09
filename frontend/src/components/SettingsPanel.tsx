@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { signOut } from '../auth/session';
 import { LIGHT_THEME_READY, useSettings } from '../state/settings';
-import { useEntitlements } from '../state/queries';
+import { useAlertSettingsQuery, useEntitlements, useSaveAlertSettingsMutation } from '../state/queries';
 import { useUiStore } from '../state/uiStore';
 import Button from '../ui/Button';
 import Segmented from '../ui/Segmented';
@@ -22,7 +22,9 @@ export default function SettingsPanel() {
   const s = useSettings();
   const clock = useUiStore((u) => u.clockPrefs);
   const setClock = useUiStore((u) => u.setClockPrefs);
-  const { signedIn } = useEntitlements();
+  const { signedIn, premium } = useEntitlements();
+  const alertSettings = useAlertSettingsQuery().data;
+  const saveAlertSettings = useSaveAlertSettingsMutation();
   const lightHint = 'Light theme arrives when every screen has been converted to the new design. Preview it at ?ui.';
 
   return (
@@ -105,7 +107,22 @@ export default function SettingsPanel() {
         options={[{ value: 'long', label: 'Wed, Oct 7' }, { value: 'iso', label: '2026-10-07' }]}
       />
     </Setting>
-      <p className={styles.hint}>Your choices are remembered on this device.</p>
+      {premium && alertSettings && (
+        <>
+          <div className={styles.divider} />
+          <Setting label="Alert emails">
+            <Segmented
+              label="Alert emails"
+              size="sm"
+              value={alertSettings.alert_email ? 'on' : 'off'}
+              onChange={(v) => saveAlertSettings.mutate({ alert_email: v === 'on' })}
+              options={[{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }]}
+            />
+          </Setting>
+          <p className={styles.hint}>Which alerts you get is chosen for each place in the Watchlist tab. This switch turns the emails for all of them on or off.</p>
+        </>
+      )}
+      <p className={styles.hint}>Your display choices are remembered on this device.</p>
       {signedIn && (
         <>
           <div className={styles.divider} />

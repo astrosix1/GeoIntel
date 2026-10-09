@@ -223,7 +223,7 @@ function PlaceAlertChoices({ place }: { place: WatchPlace }) {
       <label className={styles.field}>
         <span>Minimum level</span>
         <select className={dashboard.search} value={level} onChange={(e) => setLevel(e.target.value)}>
-          <option value="">Same as my account setting</option>
+          <option value="">Default (Orange and Red)</option>
           {LEVEL_CHOICES.map((l) => (
             <option key={l.value} value={l.value}>
               {l.label}
@@ -256,7 +256,13 @@ function PlaceAlertChoices({ place }: { place: WatchPlace }) {
       <label className={styles.choice}>
         <input type="checkbox" checked={ownWeather} onChange={(e) => setOwnWeather(e.target.checked)} /> Set weather limits for this place
       </label>
-      {!ownWeather && <div className={dashboard.rowMeta}>This place uses the forecast limits on the Alerts tab.</div>}
+      {!ownWeather && (
+        <div className={dashboard.rowMeta}>
+          {Object.keys(settings?.alert_conditions ?? {}).length > 0
+            ? 'This place uses the account-wide forecast limits you set earlier. Set limits here to replace them.'
+            : 'No weather limits for this place.'}
+        </div>
+      )}
       {ownWeather &&
         offered.map((spec) => (
           <label key={spec.key} className={styles.field}>
