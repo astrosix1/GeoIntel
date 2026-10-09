@@ -6,13 +6,26 @@ from models import Crisis, Situation
 from services.situation_view import key_sentences, pick_angles, stated_figures
 
 
-def test_figures_are_only_what_the_text_states_and_are_not_summed():
-    texts = ['Houthi attacks on Saudi airports kill 3, injure 36', 'Three killed and dozens injured in attacks',
-             'At least three people were killed, 36 wounded', 'Fighting continues in Taiz']
-    got = {(f['count'], f['kind']): f['stated_in'] for f in stated_figures(texts)}
-    assert got[(3, 'killed')] == [0, 1, 2]
-    assert got[(36, 'injured')] == [0, 2]
-    assert (39, 'killed') not in got
+def test_figures_are_whole_sentences_quoted_as_written_and_not_summed():
+    t1 = ('SANAA, Oct. 8 (Xinhua) -- At least three people were reportedly killed and eight others injured in Saudi-led coalition '
+          'strikes on Yemen on Thursday, as the Houthis launched attacks. U.S. forces said nothing.')
+    t2 = 'Officials say three people were killed and eight others injured in Saudi-led coalition strikes on Yemen on Thursday.'
+    t3 = 'In Hajjah one was killed and two others were injured in the airstrikes.'
+    out = stated_figures([t1, t2, t3, 'Fighting continues in Taiz'])
+    first = out[0]
+    assert first['stated_in'] == [0, 1]                       # the same statement in two stories is one entry
+    assert {(f['count'], f['kind']) for f in first['figures']} == {(3, 'killed'), (8, 'injured')}
+    assert first['sentence'].startswith('SANAA, Oct. 8') and first['sentence'].endswith('launched attacks.')   # whole sentence, abbreviations kept
+    hajjah = next(e for e in out if 'Hajjah' in e['sentence'])
+    assert {(f['count'], f['kind']) for f in hajjah['figures']} == {(1, 'killed'), (2, 'injured')}
+    assert all(f['count'] != 39 for e in out for f in e['figures'])
+
+
+def test_a_very_long_sentence_is_cut_at_a_clause_not_mid_word():
+    long = 'The ministry said, ' + 'in a statement released late on a day of confusion across several provinces, ' * 6 + 'that five people were killed in the blast.'
+    sentence = stated_figures([long])[0]['sentence']
+    assert len(sentence) <= 330 and sentence.count('five people were killed') == 1
+    assert sentence.startswith('… ') and not sentence.startswith('… n ')
 
 
 def test_no_figure_without_a_number_that_attaches_to_killed_or_injured():
@@ -55,7 +68,8 @@ def test_endpoint_returns_the_view_and_null_for_a_lone_story(app_module, client,
     with patch('services.situation_view.fetch_real_page_metadata', return_value={'description': None, 'excerpt': 'Three people were killed and 36 injured when missiles struck airports in Riyadh and Abha on Tuesday.'}):
         data = client.get('/api/crises/v1/situation').get_json()['situation']
     assert data['story_count'] == 3 and data['id'] == 'v0' and len(data['stories']) == 3
-    assert any(f['count'] == 3 and f['kind'] == 'killed' for f in data['figures'])
+    assert any(f['count'] == 3 and f['kind'] == 'killed' for item in data['figures'] for f in item['figures'])
+    assert all(item['sentence'].endswith('.') for item in data['figures'])
     assert client.get('/api/crises/solo/situation').get_json() == {'situation': None}
     for model in (Situation, Crisis):
         db_session.query(model).delete()

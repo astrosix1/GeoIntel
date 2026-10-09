@@ -1,9 +1,7 @@
 import type { SituationView } from '../../api/types';
-import { Section } from '../../ui/Display';
+import { Badge, Section } from '../../ui/Display';
 import { useUiStore } from '../../state/uiStore';
 import styles from './EventAnalysis.module.css';
-
-const KIND_TEXT = { killed: 'killed', injured: 'injured' } as const;
 
 function span(first: string, last: string): string {
   const a = new Date(first);
@@ -38,16 +36,37 @@ export default function SituationBlock({ situation, currentId }: { situation: Si
         )}
       </Section>
       {situation.figures.length > 0 && (
-        <Section title="Figures stated in the reporting">
+        <Section title="Casualty figures stated in the reporting">
           <ul className={styles.sourceList}>
-            {situation.figures.map((f) => (
-              <li key={`${f.kind}-${f.count}`}>
-                {f.count} {KIND_TEXT[f.kind]}: {f.snippet}
-                <span className={styles.sourceOutlet}>stated by {f.stated_by} stor{f.stated_by === 1 ? 'y' : 'ies'}</span>
+            {situation.figures.map((item) => (
+              <li key={item.sentence}>
+                <div>
+                  {item.figures.map((f) => (
+                    <Badge key={`${f.kind}-${f.count}`}>
+                      {f.count} {f.kind}
+                    </Badge>
+                  ))}
+                </div>
+                &ldquo;{item.sentence}&rdquo;
+                <span className={styles.sourceOutlet}>
+                  {item.where.map((w, i) => (
+                    <span key={`${w.outlet}-${i}`}>
+                      {i > 0 && ', '}
+                      {w.url ? (
+                        <a className={styles.sourceLink} href={w.url} target="_blank" rel="noopener noreferrer">
+                          {w.outlet}
+                        </a>
+                      ) : (
+                        w.outlet
+                      )}
+                    </span>
+                  ))}
+                  {item.stated_by > item.where.length ? ` and ${item.stated_by - item.where.length} more` : ''}
+                </span>
               </li>
             ))}
           </ul>
-          <div className={styles.mediaCaption}>Each figure is quoted from the reporting with the words around it. They are not added up, and a figure for one place is not a total.</div>
+          <div className={styles.mediaCaption}>Whole sentences quoted from the reporting, with the outlets that state them. Figures are never added up, and a figure for one place is not a total.</div>
         </Section>
       )}
       {situation.key_sentences.length > 0 && (

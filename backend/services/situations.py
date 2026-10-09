@@ -34,17 +34,23 @@ LINK_SCORE = 0.30           # IDF-weighted Jaccard of the two headlines
 LINK_SCORE_3 = 0.20         # the lower bar when they share at least three rare words
 FAR_KM = 800.0              # beyond this the places must be tagged alike, or the wording must be very close
 STRONG_SHARED = 4           # this many shared rare words link whatever the place
-MAX_SIZE = 25
+MAX_SIZE = 60
 CORE_SHARE = 0.5            # a word is "core" when at least this share of the members has it
 MIN_STORIES = 2
 
+_WIRE_TAIL = re.compile(r'(?<=\S)-(?:Xinhua|Reuters|AP|AFP|UPI|TASS|IANS|ANI|PTI|WAM|Anadolu)$')   # "...reported-Xinhua"
 _OUTLET_TAIL = re.compile(r'\s[-–—]\s(?:(?!\s[-–—]\s).){2,90}$')
 
 
 def headline_of(title):
     """The headline without its outlet decoration ("... | National News | site.com", "... - The Outlet")."""
     text = (title or '').split('|')[0].strip()
-    return _OUTLET_TAIL.sub('', text).strip()
+    if 'Ã' in text or 'â€' in text:        # UTF-8 read as Latin-1 ("NicolÃ¡s"): put it right when it round-trips
+        try:
+            text = text.encode('cp1252').decode('utf-8')
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            pass
+    return _WIRE_TAIL.sub('', _OUTLET_TAIL.sub('', text)).strip()
 
 
 def tokens_of(title):

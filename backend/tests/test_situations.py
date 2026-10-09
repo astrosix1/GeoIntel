@@ -64,6 +64,12 @@ def test_size_is_capped():
     assert max(len(g) for g in group_items(same + [item(f'f{i}', t, lat=10 + 5 * i) for i, t in enumerate(FILLER)])) <= situations.MAX_SIZE
 
 
+def test_mojibake_and_wire_tails_are_cleaned():
+    assert headline_of('Former president NicolÃ¡s Maduro charged') == 'Former president Nicolás Maduro charged'
+    assert headline_of('Saudi-led coalition, Houthis trade strikes, casualties reported-Xinhua') == 'Saudi-led coalition, Houthis trade strikes, casualties reported'
+    assert headline_of('Hamas-Israel') == 'Hamas-Israel'
+
+
 def test_outlet_decoration_is_stripped():
     assert headline_of('Police admit error | National News | site.com') == 'Police admit error'
     assert headline_of("Andrew's warrants unlawful - AL-MONITOR: The Middle East's leading source") == "Andrew's warrants unlawful"

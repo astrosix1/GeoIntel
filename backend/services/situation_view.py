@@ -16,7 +16,7 @@ from data_sources import fetch_real_page_metadata
 from models import Session, Crisis, Situation
 from services.event_analysis import build_pattern
 from services.situations import headline_of, tokens_of
-from services.stories import outlet_of
+from services.stories import outlet_of, significant_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,8 @@ _NUMBER_WORDS = {w: i for i, w in enumerate(
 _NUM = r'(\d[\d,]*|' + '|'.join(w for w in _NUMBER_WORDS if w != 'zero') + r')'
 _FIGURE = re.compile(
     r'\b' + _NUM + r'(?:\s+(?:more\s+)?(?:people|civilians|soldiers|police|officers|children|students|migrants|protesters|others|dead|victims))?'
-    r'(?:\s+(?:were|have been|has been|are))?\s+(killed|dead|injured|wounded|hurt)\b', re.I)
+    r'(?:\s+(?:were|was|have been|has been|had been|are|is))?(?:\s+(?:reportedly|also|later|confirmed|officially))?'
+    r'\s+(killed|dead|injured|wounded|hurt)\b', re.I)
 _VERB_FIRST = re.compile(r'\b(kills?|killed|injures?|injured|wounds?|wounded)\s+(?:at least\s+)?' + _NUM + r'\b', re.I)
 
 
@@ -43,27 +44,68 @@ def _count(text):
     return int(text) if text.isdigit() else _NUMBER_WORDS.get(text)
 
 
-def _snippet(text, match):
-    start, end = max(0, match.start() - 45), min(len(text), match.end() + 45)
-    return ('...' if start else '') + ' '.join(text[start:end].split()) + ('...' if end < len(text) else '')
+_ABBREVIATIONS = frozenset('mr mrs ms dr st mt gen lt col sgt capt jan feb mar apr jun jul aug sep sept oct nov dec no vs etc'.split())
+SENTENCE_CAP = 320
+
+
+def split_sentences(text):
+    """Sentences of `text` with their start offsets. A full stop after an abbreviation or an initial ("U.S.", "Oct.", "Dr.") does not end one."""
+    spans, start = [], 0
+    for match in re.finditer(r'[.!?]["\u201d\')]*\s+(?=["\u201c\']?[A-Z0-9])', text):
+        before = text[start:match.start() + 1].split()
+        last = before[-1].rstrip('.!?"\u201d\')').lower() if before else ''
+        if last in _ABBREVIATIONS or (len(last.replace('.', '')) == 1 and text[match.start()] == '.') or re.fullmatch(r'(?:[a-z]\.)+[a-z]', last):
+            continue
+        spans.append((start, match.start() + 1))
+        start = match.end()
+    if start < len(text):
+        spans.append((start, len(text)))
+    return [(a, text[a:b]) for a, b in spans if text[a:b].strip()]
+
+
+def _sentence_around(text, match):
+    """The whole sentence a figure appears in, trimmed only at a clause break when it is very long, never mid-word."""
+    for start, sentence in split_sentences(text):
+        if start <= match.start() < start + len(sentence):
+            sentence = ' '.join(sentence.split())
+            if len(sentence) <= SENTENCE_CAP:
+                return sentence
+            at = match.start() - start
+            lead = ''
+            if at > SENTENCE_CAP // 2:                                   # begin at the clause before the figure
+                cut = max(sentence.rfind(', ', 0, at), sentence.rfind('; ', 0, at), sentence.rfind(' -- ', 0, at))
+                if cut > 0:
+                    sentence, lead = sentence[cut + 2:].lstrip('- '), '\u2026 '
+            if len(sentence) > SENTENCE_CAP:
+                sentence = sentence[:SENTENCE_CAP].rsplit(' ', 1)[0].rstrip(',;:') + ' \u2026'
+            return lead + sentence
+    return ' '.join(text[max(0, match.start() - 120):match.end() + 120].split())
 
 
 def stated_figures(texts):
-    """[{'count', 'kind', 'stated_in': [index...], 'snippet'}] for 'N killed / injured' found in `texts` (a list of strings). Only
-    what a text says outright; the same figure from several texts is one entry that lists every text it appears in, with the
-    words around its first mention so a per-place figure is not read as a total."""
-    found, snippets = {}, {}
+    """Casualty statements found in `texts` (a list of strings): [{'sentence', 'figures': [{'count', 'kind'}], 'stated_in': [index...]}].
+    Each is the whole sentence the figures appear in, quoted as written, so a figure for one place is not read as a total. The same
+    sentence in several texts is one entry that lists every text it appears in. Nothing is added up."""
+    entries = []     # [{'sentence', 'tokens', 'figures': {(count, kind)}, 'stated_in': set}]
     for index, text in enumerate(texts):
         text = text or ''
         for regex, group_count, group_kind in ((_FIGURE, 1, 2), (_VERB_FIRST, 2, 1)):
             for match in regex.finditer(text):
                 count, word = _count(match.group(group_count)), match.group(group_kind).lower()
                 kind = 'killed' if word in ('killed', 'dead') or word.startswith('kill') else 'injured'
-                if count is not None and 0 < count < 100000:
-                    found.setdefault((count, kind), set()).add(index)
-                    snippets.setdefault((count, kind), _snippet(text, match))
-    return [{'count': c, 'kind': k, 'stated_in': sorted(ix), 'snippet': snippets[(c, k)]}
-            for (c, k), ix in sorted(found.items(), key=lambda kv: (-len(kv[1]), kv[0][1], -kv[0][0]))]
+                if count is None or not 0 < count < 100000:
+                    continue
+                sentence = _sentence_around(text, match)
+                tokens = significant_tokens(sentence)
+                entry = next((e for e in entries if len(e['tokens'] & tokens) / max(1, min(len(e['tokens']), len(tokens))) >= 0.75), None)
+                if entry is None:
+                    entry = {'sentence': sentence, 'tokens': tokens, 'figures': set(), 'stated_in': set()}
+                    entries.append(entry)
+                entry['figures'].add((count, kind))
+                entry['stated_in'].add(index)
+    entries.sort(key=lambda e: (-len(e['stated_in']), -len(e['figures'])))
+    return [{'sentence': e['sentence'], 'figures': [{'count': c, 'kind': k} for c, k in sorted(e['figures'], key=lambda f: (f[1] != 'killed', -f[0]))],
+             'stated_in': sorted(e['stated_in'])} for e in entries]
 
 
 def pick_angles(headlines, limit=ANGLES):
@@ -162,7 +204,7 @@ def build_view(session, situation, members):
     figures = []
     for fig in stated_figures(corpus):
         places = [{'outlet': stories[i]['outlet'], 'url': stories[i]['url']} for i in fig['stated_in'][:3]]
-        figures.append({'count': fig['count'], 'kind': fig['kind'], 'stated_by': len(fig['stated_in']), 'where': places, 'snippet': fig['snippet']})
+        figures.append({'sentence': fig['sentence'], 'figures': fig['figures'], 'stated_by': len(fig['stated_in']), 'where': places})
 
     return {
         'id': situation.id,
@@ -176,7 +218,7 @@ def build_view(session, situation, members):
         'stories': [dict(c.to_dict(), headline=headline_of(c.title), outlet=outlet_of(c.source_url)) for c in members],
         'angles': angles,
         'key_sentences': sentences,
-        'figures': figures[:6],
+        'figures': figures[:5],
         'pattern': build_pattern(session, lead),
         'read_pages': sum(1 for t in texts.values() if t),
     }

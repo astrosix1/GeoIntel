@@ -839,12 +839,12 @@ export interface SituationStory extends Crisis {
   headline: string;
   outlet: string | null;
 }
+// A casualty statement: the whole sentence as the outlet wrote it, with the figures it contains.
 export interface SituationFigure {
-  count: number;
-  kind: 'killed' | 'injured';
+  sentence: string;
+  figures: { count: number; kind: 'killed' | 'injured' }[];
   stated_by: number;
   where: { outlet: string | null; url: string | null }[];
-  snippet: string;
 }
 export interface SituationView {
   id: string;
