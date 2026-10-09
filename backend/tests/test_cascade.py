@@ -138,3 +138,65 @@ class TestRun:
                                ({'kind': 'supply_loss', 'country': 'ZZ'}, ce.UnknownCountry)):
             with pytest.raises(error):
                 ce.run(graph, trigger)
+
+
+def trade_table():
+    entry = lambda total, shares, year=2022: {'year': year, 'total': total, 'shares': shares}
+    return {
+        'commodities': {'cereals': {'label': 'Cereals', 'hs': '10'}, 'gas': {'label': 'Natural gas and LNG', 'hs': '2711'},
+                        'crude_oil': {'label': 'Crude oil', 'hs': '2709'}, 'oil_products': {'label': 'Refined oil products', 'hs': '2710'}},
+        'imports': {
+            'EG': {'cereals': entry(7.4e9, {'RU': 29.3, 'BR': 21.4, 'UA': 11.1})},
+            'LB': {'cereals': entry(0.5e9, {'UA': 61.0, 'RU': 12.0})},
+            'DE': {'cereals': entry(3e9, {'UA': 2.0, 'FR': 30.0}), 'gas': entry(40e9, {'RU': 30.0, 'NO': 40.0}),
+                   'crude_oil': entry(60e9, {'RU': 20.0}), 'oil_products': entry(20e9, {'RU': 5.0})},
+            'NO': {'gas': entry(1e9, {'RU': 50.0})},                      # supplies itself
+            'TV': {'cereals': entry(0.01e9, {'UA': 90.0})},               # a $10 million import bill is ignored
+        },
+    }
+
+
+class TestTradedCommodities:
+    @pytest.fixture()
+    def graph(self):
+        return build_graph({
+            'UA': profile(commodities=['corn', 'wheat', 'sunflower oil']),
+            'RU': profile(commodities=['natural gas', 'crude petroleum'], fuels=gas(600e9, 470e9)),
+            'EG': profile(imports=partners(('Russia', 1))), 'LB': profile(imports=partners(('Ukraine', 1))), 'TV': profile(imports=partners(('Ukraine', 1))),
+            'DE': profile(fuels=gas(4e9, 82e9, 75e9)), 'NO': profile(fuels=gas(120e9, 5e9)),
+        })
+
+    @pytest.mark.parametrize('share,dependence,level', [(61, None, 'High'), (25, None, 'High'), (24.9, None, 'Moderate'), (10, None, 'Moderate'),
+                                                        (9.9, None, 'Low'), (3, None, 'Low'), (2.9, None, None),
+                                                        (12, 60, 'High'), (30, 10, 'Low'), (8, 10, None)])
+    def test_levels(self, share, dependence, level):
+        assert ce._commodity_level(share, dependence) == level
+
+    def test_ukraine_grain_halt_now_shows_the_importers_that_really_depend_on_it(self, graph):
+        result = ce.run(graph, {'kind': 'supply_loss', 'country': 'UA', 'commodity': 'grain'}, trade_table())
+        by = {e['iso']: e for e in result['effects']}
+        assert by['LB']['exposure'] == 'High' and by['EG']['exposure'] == 'Moderate'
+        assert 'TV' not in by and 'DE' not in by                       # tiny bill; and 2% is negligible
+        evidence = by['EG']['evidence'][0]
+        assert evidence['text'].startswith("Ukraine supplied 11.1% of Egypt's imports of cereals ($7.40 billion in all)")
+        assert evidence['source'] == 'UN Comtrade' and evidence['as_of'] == 2022
+        assert [e['iso'] for e in result['effects']] == ['LB', 'EG']
+
+    def test_gas_combines_the_share_with_the_fuels_own_dependence(self, graph):
+        result = ce.run(graph, {'kind': 'supply_loss', 'country': 'RU', 'commodity': 'gas'}, trade_table())
+        by = {e['iso']: e for e in result['effects']}
+        assert by['DE']['exposure'] == 'High'                           # 30% of its gas, imports 91% of what it uses
+        assert by['NO']['exposure'] == 'Low'                            # 50% from Russia, but imports under 20% of its gas
+        assert any('imports about' in e['text'] for e in by['DE']['evidence'])
+
+    def test_oil_merges_crude_and_products_by_value(self, graph):
+        data = __import__('services.cascade_trade', fromlist=['combined']).combined(trade_table(), 'DE', 'oil')
+        assert data['total'] == 80e9 and data['shares']['RU'] == pytest.approx(16.2, abs=0.05)     # (20*60 + 5*20) / 80
+
+    def test_without_the_table_it_falls_back_to_the_factbook(self, graph):
+        result = ce.run(graph, {'kind': 'supply_loss', 'country': 'UA', 'commodity': 'grain'})
+        assert all(e['evidence'][0]['source'] == 'CIA World Factbook' for e in result['effects'])
+
+    def test_no_probability_wording(self, graph):
+        text = json.dumps(ce.run(graph, {'kind': 'supply_loss', 'country': 'UA', 'commodity': 'grain'}, trade_table())).lower()
+        assert 'probab' not in text and 'chance' not in text

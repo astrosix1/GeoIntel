@@ -12,6 +12,8 @@ Run it by hand:  python -m services.cascade_engine supply_loss RU --commodity ga
 import argparse
 import json
 
+from services import cascade_trade
+
 HIGH, MODERATE, LOW = 'High', 'Moderate', 'Low'
 _ORDER = {HIGH: 0, MODERATE: 1, LOW: 2}
 
@@ -27,9 +29,24 @@ COMMODITY_TERMS = {
     'gas': ('natural gas', 'gas', 'lng', 'liquefied'),
     'oil': ('petroleum', 'crude', 'oil', 'refined'),
     'grain': ('wheat', 'grain', 'corn', 'maize', 'barley', 'cereal', 'sunflower', 'rice'),
+    'coal': ('coal',),
+    'veg_oils': ('sunflower', 'palm oil', 'soybean oil', 'vegetable oil'),
+    'fertilizers': ('fertilizer', 'fertiliser', 'potash', 'ammonia', 'urea'),
+    'iron_ore': ('iron ore',),
+    'copper': ('copper',),
+    'aluminium': ('aluminum', 'aluminium', 'bauxite', 'alumina'),
+    'chips': ('semiconductor', 'integrated circuit', 'electronic'),
 }
 FUELS = ('gas', 'oil')
-HORIZONS = {'gas': 'days to weeks', 'oil': 'weeks', 'grain': 'weeks to months', None: 'weeks to months'}
+HORIZONS = {'gas': 'days to weeks', 'oil': 'weeks', 'coal': 'weeks', 'grain': 'weeks to months', 'veg_oils': 'weeks to months',
+            'fertilizers': 'months', 'iron_ore': 'months', 'copper': 'months', 'aluminium': 'months', 'chips': 'months', None: 'weeks to months'}
+
+# Commodity-level rules, used when the bundled UN Comtrade table has the importer: shares are of the importer's imports of that
+# commodity, so the bar is higher than for all goods, and tiny import bills are ignored.
+COMMODITY_SHARE_HIGH_PCT = 25.0
+COMMODITY_SHARE_MODERATE_PCT = 10.0
+COMMODITY_SHARE_LISTED_PCT = 3.0
+MIN_IMPORT_USD = 50e6
 
 NOT_MODELLED = [
     'Prices and markets: a supply loss moves prices before it moves quantities, and this does not model that.',
@@ -123,7 +140,60 @@ def _energy_level(share, dependence):
     return MODERATE if share >= TRADE_LISTED_PCT else None
 
 
-def _supply_loss(graph, iso, commodity):
+def _commodity_level(share, dependence):
+    """Exposure of an importer to losing a supplier of one commodity: the supplier's share of its imports of it, tempered for fuels by
+    how much of the fuel the country imports at all."""
+    if dependence is not None and dependence < DEPENDENCE_MODERATE_PCT:
+        return LOW if share >= COMMODITY_SHARE_MODERATE_PCT else None            # mostly supplies itself
+    if share >= COMMODITY_SHARE_HIGH_PCT or (dependence is not None and dependence >= DEPENDENCE_HIGH_PCT and share >= COMMODITY_SHARE_MODERATE_PCT):
+        return HIGH
+    if share >= COMMODITY_SHARE_MODERATE_PCT:
+        return MODERATE
+    return LOW if share >= COMMODITY_SHARE_LISTED_PCT else None
+
+
+def _supply_loss_traded(graph, table, iso, commodity):
+    """Supply loss from the commodity-level table. Importers come from the table; names and fuel balances from the graph."""
+    source_name = graph['countries'][iso]['name']
+    effects, notes = [], []
+    label = ', '.join(table['commodities'][g]['label'].lower() for g in cascade_trade.GROUPS[commodity] if g in table['commodities'])
+    for code in sorted(table['imports']):
+        if code == iso or code not in graph['countries']:
+            continue
+        data = cascade_trade.combined(table, code, commodity)
+        if not data or data['total'] < MIN_IMPORT_USD:
+            continue
+        share = data['shares'].get(iso)
+        if not share:
+            continue
+        entry = graph['countries'][code]
+        dep = fuel_dependence(entry.get('fuels'), commodity) if commodity in FUELS else None
+        level = _commodity_level(share, dep['percent'] if dep else None)
+        if level is None:
+            continue
+        evidence = [{'text': f"{source_name} supplied {share:g}% of {entry['name']}'s imports of {label} (${data['total'] / 1e9:,.2f} billion in all).",
+                     'source': 'UN Comtrade', 'as_of': data['year']}]
+        caveats = []
+        if dep:
+            evidence.append(_evidence(f"{entry['name']} {dep['text']}.", dep['as_of']))
+        elif commodity in FUELS:
+            caveats.append(f"The Factbook publishes no {_fuel_label(commodity)} balance for {entry['name']}, so its dependence is not known.")
+        effects.append({'iso': code, 'name': entry['name'], 'exposure': level, 'mechanism': f'Supply loss: {commodity.replace("_", " ")} import dependence',
+                        'horizon': HORIZONS.get(commodity, HORIZONS[None]), 'driver_percent': share, 'evidence': evidence, 'caveats': caveats})
+    if not effects:
+        notes.append(f"No importer in the trade table gets {COMMODITY_SHARE_LISTED_PCT:g}% or more of its {label} from {source_name}.")
+    else:
+        notes.append(f'Shares are of each country\'s imports of {label}, from UN Comtrade; importers with under ${MIN_IMPORT_USD / 1e6:,.0f} million of imports are left out.')
+    return effects, notes
+
+
+def _supply_loss(graph, iso, commodity, table=None):
+    if table and commodity in cascade_trade.GROUPS:
+        return _supply_loss_traded(graph, table, iso, commodity)
+    return _supply_loss_factbook(graph, iso, commodity)
+
+
+def _supply_loss_factbook(graph, iso, commodity):
     countries = graph['countries']
     source = countries[iso]
     effects, notes = [], []
@@ -193,10 +263,10 @@ def _demand_loss(graph, iso, commodity):
     return effects, notes
 
 
-KINDS = {'supply_loss': _supply_loss, 'demand_loss': _demand_loss}
+KINDS = {'supply_loss': _supply_loss, 'demand_loss': lambda graph, iso, commodity, table=None: _demand_loss(graph, iso, commodity)}
 
 
-def run(graph, trigger):
+def run(graph, trigger, table=None):
     """Run a trigger over a graph. `trigger` is {'kind': 'supply_loss' | 'demand_loss', 'country': ISO2, 'commodity': optional}.
     Returns the effects ranked High first, with the method, what is not modelled, and which data it used."""
     kind, iso, commodity = trigger.get('kind'), (trigger.get('country') or '').upper(), trigger.get('commodity')
@@ -206,7 +276,7 @@ def run(graph, trigger):
         raise ValueError(f"unknown commodity: {commodity}")
     if iso not in graph['countries']:
         raise UnknownCountry(f"no data for country: {iso}")
-    effects, notes = KINDS[kind](graph, iso, commodity)
+    effects, notes = KINDS[kind](graph, iso, commodity, table)
     effects.sort(key=lambda e: (_ORDER[e['exposure']], -e['driver_percent'], e['name']))
     counts = {level: sum(1 for e in effects if e['exposure'] == level) for level in (HIGH, MODERATE, LOW)}
     return {
@@ -232,7 +302,7 @@ def main():
     parser.add_argument('--top', type=int, default=15)
     args = parser.parse_args()
     from services.cascade_graph import get_graph
-    result = run(get_graph(), {'kind': args.kind, 'country': args.country, 'commodity': args.commodity})
+    result = run(get_graph(), {'kind': args.kind, 'country': args.country, 'commodity': args.commodity}, cascade_trade.load())
     print(json.dumps({**result, 'effects': result['effects'][:args.top]}, indent=2, ensure_ascii=False))
 
 
