@@ -748,6 +748,8 @@ export interface WatchPlace {
 
 export interface PlaceAlertPrefs {
   hazards?: { types?: string[]; min_level?: 'green' | 'orange' | 'red' };
+  // This place's own forecast limits; absent means it uses the account's limits.
+  weather?: Partial<Record<ConditionKey, number>>;
 }
 
 export interface WatchResponse {

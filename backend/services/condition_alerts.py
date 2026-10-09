@@ -15,6 +15,7 @@ import time
 from datetime import datetime, timezone
 
 from services.forecast import ForecastUnavailable, get_forecast
+from services.place_alert_prefs import weather_limits
 from services.supabase_rest import SupabaseUnavailable, rest
 
 logger = logging.getLogger(__name__)
@@ -129,22 +130,29 @@ def evaluate_conditions():
         prefs = rest('GET', 'geointel_user_prefs', params={
             'select': 'user_id,alert_conditions', 'limit': str(MAX_PLACES_SCANNED),
         }).json()
-        wanted = {}
+        account = {}
         for row in prefs:
             conditions = stored_conditions(row.get('alert_conditions'))
             if conditions:
-                wanted[row['user_id']] = conditions
-        summary['users'] = len(wanted)
-        if not wanted:
-            return summary
+                account[row['user_id']] = conditions
 
-        places = []
-        ids = sorted(wanted)
-        for chunk in _chunks(ids, USERS_PER_QUERY):
-            places.extend(rest('GET', 'geointel_watch_places', params={
-                'user_id': f'in.({",".join(chunk)})', 'select': 'id,user_id,name,lat,lon',
-                'limit': str(MAX_PLACES_SCANNED),
-            }).json())
+        # Every place is looked at: a place uses the limits it chose, else its owner's account limits.
+        scan = {'order': 'created_at.asc', 'limit': str(MAX_PLACES_SCANNED)}
+        try:
+            all_places = rest('GET', 'geointel_watch_places', params={**scan, 'select': 'id,user_id,name,lat,lon,alert_prefs'}).json()
+        except SupabaseUnavailable as e:
+            if e.reason != 'column_missing':
+                raise
+            all_places = rest('GET', 'geointel_watch_places', params={**scan, 'select': 'id,user_id,name,lat,lon'}).json()   # 007 not applied
+        places, wanted = [], {}
+        for place in all_places:
+            limits = weather_limits(place.get('alert_prefs'), account.get(place['user_id'], {}))
+            if limits:
+                places.append(place)
+                wanted[place['id']] = limits
+        summary['users'] = len({p['user_id'] for p in places})
+        if not places:
+            return summary
         summary['places'] = len(places)
 
         forecasts, started, rows = {}, time.monotonic(), []
@@ -167,7 +175,7 @@ def evaluate_conditions():
             forecast = forecasts.get(grid)
             if not forecast:
                 continue
-            for key, date, value, limit in breaches(forecast, wanted[place['user_id']]):
+            for key, date, value, limit in breaches(forecast, wanted[place['id']]):
                 rows.append(alert_row(place, key, date, value, limit))
         summary['grids'] = len(forecasts)
 

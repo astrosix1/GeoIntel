@@ -173,3 +173,41 @@ def test_forecast_alert_email_reads_as_a_forecast_alert():
            'alert_level': 'Orange', 'distance_km': 0}
     subject, html_body, text = alerts._digest([row], {'p': 'Home'})
     assert 'forecast' in subject and 'is 0 km' not in text and 'at Home' in text and 'at Home' in html_body
+
+
+class TestPerPlaceLimits:
+    HOT = dict(temperature_2m_max=[40, 41, 30, 30, 30])
+
+    def test_a_place_with_its_own_limits_ignores_the_account_ones(self, h):
+        uid = h.user(heat_c=38)
+        own = h.place(uid, 'Cool', lat=60.0, lon=10.0)
+        own['alert_prefs'] = {'weather': {'rain_mm': 80}}
+        h.forecasts[(60.0, 10.0)] = forecast(**self.HOT)
+        assert ca.evaluate_conditions()['new_alerts'] == 0           # heat is not this place's limit
+
+    def test_a_place_can_set_limits_even_when_the_account_has_none(self, h):
+        uid = h.user()
+        h.place(uid)['alert_prefs'] = {'weather': {'heat_c': 38}}
+        h.forecasts[(29.7, -95.3)] = forecast(**self.HOT)
+        assert ca.evaluate_conditions()['new_alerts'] == 2
+
+    def test_an_empty_weather_choice_switches_the_place_off(self, h):
+        uid = h.user(heat_c=38)
+        h.place(uid)['alert_prefs'] = {'weather': {}}
+        h.forecasts[(29.7, -95.3)] = forecast(**self.HOT)
+        assert ca.evaluate_conditions()['new_alerts'] == 0
+
+    def test_a_place_without_a_choice_uses_the_account_limits_as_before(self, h):
+        uid = h.user(heat_c=38)
+        h.place(uid)
+        h.forecasts[(29.7, -95.3)] = forecast(**self.HOT)
+        assert ca.evaluate_conditions()['new_alerts'] == 2
+
+    def test_validation(self):
+        from services.place_alert_prefs import InvalidPlaceAlertPrefs, clean_prefs, weather_limits
+        assert clean_prefs({'weather': {'heat_c': 38, 'cold_c': None}}) == {'weather': {'heat_c': 38.0}}
+        for bad in ({'weather': {'heat_c': 10}}, {'weather': {'x': 1}}, {'weather': 'hot'}):
+            with pytest.raises(InvalidPlaceAlertPrefs):
+                clean_prefs(bad)
+        assert weather_limits({}, {'heat_c': 38.0}) == {'heat_c': 38.0}
+        assert weather_limits({'weather': {}}, {'heat_c': 38.0}) == {}

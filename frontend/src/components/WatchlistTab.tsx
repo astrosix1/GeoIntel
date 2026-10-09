@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { UserDataError } from '../api/client';
-import type { GeoResult, PlaceAlertPrefs, WatchPlace } from '../api/types';
+import type { ConditionKey, GeoResult, PlaceAlertPrefs, WatchPlace } from '../api/types';
 import { alertTone, HAZARD_TYPES, hazardIconName } from '../globe/hazards';
 import Icon from '../ui/Icon';
 import { Badge } from '../ui/Display';
-import { useAddPlaceMutation, useDeletePlaceMutation, usePlaceSearch, useSavePlaceAlertPrefsMutation, useWatchQuery } from '../state/queries';
+import { useAddPlaceMutation, useAlertSettingsQuery, useDeletePlaceMutation, usePlaceSearch, useSavePlaceAlertPrefsMutation, useWatchQuery } from '../state/queries';
 import { useUiStore } from '../state/uiStore';
+import { CONDITIONS } from './conditions';
 import dashboard from './Dashboard.module.css';
 import styles from './Watchlist.module.css';
 
@@ -173,6 +174,13 @@ function PlaceAlertChoices({ place }: { place: WatchPlace }) {
   const [types, setTypes] = useState<string[]>(stored.types ?? HAZARD_TYPES.map((t) => t.code));
   const [level, setLevel] = useState<string>(stored.min_level ?? '');
   const [all, setAll] = useState(false);
+  // Forecast limits: this place's own, or (when off) the ones on the Alerts tab.
+  const settings = useAlertSettingsQuery().data;
+  const [ownWeather, setOwnWeather] = useState(place.alert_prefs?.weather !== undefined);
+  const [limits, setLimits] = useState<Partial<Record<ConditionKey, string>>>(
+    Object.fromEntries(Object.entries(place.alert_prefs?.weather ?? {}).map(([k, v]) => [k, String(v)])),
+  );
+  const offered = CONDITIONS.filter((c) => !settings?.unavailable_conditions?.includes(c.key));
 
   function toggle(code: string) {
     setTypes((current) => (current.includes(code) ? current.filter((c) => c !== code) : [...current, code]));
@@ -181,6 +189,16 @@ function PlaceAlertChoices({ place }: { place: WatchPlace }) {
   function submit(e: React.FormEvent) {
     e.preventDefault();
     const prefs: PlaceAlertPrefs = { hazards: { types, ...(level ? { min_level: level as 'green' | 'orange' | 'red' } : {}) } };
+    if (ownWeather) {
+      const weather: Partial<Record<ConditionKey, number>> = {};
+      for (const spec of offered) {
+        const raw = limits[spec.key];
+        if (raw === undefined || raw.trim() === '') continue;
+        const n = Number(raw);
+        if (Number.isFinite(n)) weather[spec.key] = Math.min(spec.max, Math.max(spec.min, n));
+      }
+      prefs.weather = weather;
+    }
     save.mutate({ id: place.id, prefs, applyToAll: all });
   }
 
@@ -206,6 +224,28 @@ function PlaceAlertChoices({ place }: { place: WatchPlace }) {
           ))}
         </select>
       </label>
+      <label className={styles.choice}>
+        <input type="checkbox" checked={ownWeather} onChange={(e) => setOwnWeather(e.target.checked)} /> Set weather limits for this place
+      </label>
+      {!ownWeather && <div className={dashboard.rowMeta}>This place uses the forecast limits on the Alerts tab.</div>}
+      {ownWeather &&
+        offered.map((spec) => (
+          <label key={spec.key} className={styles.field}>
+            <span>
+              {spec.label} ({spec.min} to {spec.max}
+              {spec.unit ? ` ${spec.unit}` : ''}), blank for off
+            </span>
+            <input
+              type="number"
+              className={dashboard.search}
+              min={spec.min}
+              max={spec.max}
+              placeholder={`for example ${spec.fallback}`}
+              value={limits[spec.key] ?? ''}
+              onChange={(e) => setLimits({ ...limits, [spec.key]: e.target.value })}
+            />
+          </label>
+        ))}
       <label className={styles.choice}>
         <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} /> Use these choices for all my places
       </label>
