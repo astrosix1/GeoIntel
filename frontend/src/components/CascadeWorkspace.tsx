@@ -113,7 +113,7 @@ export default function CascadeWorkspace() {
               {run.error && <div className={styles.error}>{cascadeErrorText(run.error)}</div>}
             </form>
           )}
-          {run.data && <CascadeResult result={run.data} onOpenCountry={() => setOpen(false)} />}
+          {run.data && <CascadeResult result={run.data} onOpenCountry={() => setOpen(false)} onShowMap={() => setOpen(false)} />}
         </>
       )}
     </Drawer>

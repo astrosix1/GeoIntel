@@ -134,3 +134,26 @@ class TestApi:
             assert call(client, 'post', '/api/cascade/run', str(uuid.uuid4()), json={'crisis_id': 'nope'}).status_code == 404
         db_session.query(Crisis).filter(Crisis.id == 'casc-1').delete()
         db_session.commit()
+
+
+class TestWhatWouldChange:
+    @pytest.fixture()
+    def graph(self):
+        fuels = lambda p, c: {'gas': {'production': {'value': p, 'unit': 'm3', 'as_of': 2023}, 'consumption': {'value': c, 'unit': 'm3', 'as_of': 2023}}}
+        return build_graph({
+            'RU': {**profile(commodities=['natural gas']), 'energy_fuels': fuels(600e9, 470e9)},
+            'QA': {**profile(imports=partners(('Russia', 1))), 'energy_fuels': fuels(180e9, 40e9)},
+            'NO': {**profile(imports=partners(('Russia', 1))), 'energy_fuels': fuels(120e9, 5e9)},
+            'TR': {**profile(imports=partners(('Russia', 30), ('Iran', 12), ('Azerbaijan', 9), ('Algeria', 7))), 'energy_fuels': fuels(0.4e9, 50e9)},
+        })
+
+    def test_lists_other_net_exporters_and_the_other_suppliers_of_the_most_exposed(self, graph):
+        result = ct.run_template(graph, 'export_ban', 'RU', 'gas')
+        texts = [w['text'] for w in result['would_change']]
+        assert texts[0].startswith('Other countries that produce more natural gas than they use: Qatar (140 bcm), Norway (115 bcm)')
+        assert any(t.startswith("Turkey's other main import partners (all goods, not necessarily natural gas): Iran 12%, Azerbaijan 9%, Algeria 7%") for t in texts)
+        assert all('Russia' not in t.split(':')[1] for t in texts[:1])           # the trigger country is never offered as an alternative
+        assert all(w['source'] for w in result['would_change'])
+
+    def test_nothing_is_invented_when_no_data(self, graph):
+        assert ct.run_template(graph, 'attack', 'RU')['would_change'] == [] or all('Other countries' not in w['text'] for w in ct.run_template(graph, 'attack', 'RU')['would_change'])

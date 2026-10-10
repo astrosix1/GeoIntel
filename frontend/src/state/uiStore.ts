@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { CrisisSummary, Storm } from '../api/types';
+import type { CascadeResult, CrisisSummary, Storm } from '../api/types';
 import { cleanClocks, loadClockPrefs, loadClocks, MAX_CLOCKS, saveClockPrefs, saveClocks } from '../lib/clocks';
 import type { ClockPrefs } from '../lib/timezones';
 import { DEFAULT_CRISIS_SORT } from '../lib/filters';
@@ -170,6 +170,8 @@ interface UiState {
   // "My dashboard" overlay (premium), opened from the account chip.
   dashboardOpen: boolean;
   cascadeOpen: boolean;
+  cascadeResult: CascadeResult | null;
+  setCascadeResult: (result: CascadeResult | null) => void;
   setCascadeOpen: (open: boolean) => void;
   dashboardTab: DashboardTab;
   setDashboardOpen: (open: boolean) => void;
@@ -292,6 +294,8 @@ export const useUiStore = create<UiState>((set) => ({
 
   dashboardOpen: false,
   cascadeOpen: false,
+  cascadeResult: null,
+  setCascadeResult: (result) => set({ cascadeResult: result }),
   setCascadeOpen: (open) => set({ cascadeOpen: open }),
   dashboardTab: 'saved',
   setDashboardOpen: (open) => set({ dashboardOpen: open }),

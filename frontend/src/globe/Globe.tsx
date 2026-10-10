@@ -27,6 +27,7 @@ import { hazardIconName } from './hazards';
 import { useDraw } from './draw/useDraw';
 import { useRadar } from './useRadar';
 import { useWeatherLayers } from './useWeatherLayers';
+import { useCascadeLayer } from './useCascadeLayer';
 import { isDrawingOpen, useDrawStore } from '../state/drawStore';
 import { applyInteraction } from './viewLock';
 import { applyCrisisFilter, applyHazardFilter } from '../lib/filters';
@@ -404,6 +405,7 @@ export default function Globe() {
 
   useRadar(mapRef, mapReady);
   useWeatherLayers(mapRef, mapReady);
+  useCascadeLayer(mapRef, mapReady);
   useDraw(mapRef, mapReady);
 
   // Weather mode: one pin per active hazard (cyclone, flood, wildfire,

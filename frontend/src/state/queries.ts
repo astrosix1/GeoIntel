@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CrisisScope } from '../api/client';
-import { TIME_RANGE_DAYS } from './uiStore';
+import { TIME_RANGE_DAYS, useUiStore } from './uiStore';
 import type { TimeRange } from './uiStore';
 import type { CrisisDetail, CrisisSummary, PlaceAlertPrefs, ReportReason } from '../api/types';
 import {
@@ -432,7 +432,8 @@ export function useCascadeOptionsQuery(enabled: boolean) {
 }
 
 export function useRunCascadeMutation() {
-  return useMutation({ mutationFn: runCascade });
+  // A finished cascade also goes to the store, which is what draws it on the map.
+  return useMutation({ mutationFn: runCascade, onSuccess: (result) => useUiStore.getState().setCascadeResult(result) });
 }
 
 export function useDeletePlaceMutation() {

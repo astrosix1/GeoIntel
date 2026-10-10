@@ -902,6 +902,7 @@ export interface CascadeResult {
   counts: Record<CascadeExposure, number>;
   notes: string[];
   method: { trade: string; energy: string };
+  would_change: { text: string; source: string; as_of: number | null }[];
   not_modelled: string[];
   data: { source: string | null; built_at: string | null; countries_in_graph: number };
 }

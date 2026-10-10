@@ -7,14 +7,17 @@ import styles from './Cascade.module.css';
 
 const TONES: Record<CascadeEffect['exposure'], BadgeTone> = { High: 'alertRed', Moderate: 'alertOrange', Low: 'neutral' };
 const SHOWN = 25;
+const HORIZON_ORDER = ['days to weeks', 'weeks', 'weeks to months', 'months'];
 
 // The answer to "who is exposed": counts, a ranked list where each country opens its evidence, and what the method does not cover.
 // Everything here comes from the server; the only words of ours are the labels.
-export default function CascadeResult({ result, onOpenCountry }: { result: Result; onOpenCountry?: () => void }) {
+export default function CascadeResult({ result, onOpenCountry, onShowMap }: { result: Result; onOpenCountry?: () => void; onShowMap?: () => void }) {
   const [all, setAll] = useState(false);
   const selectCountry = useUiStore((s) => s.selectCountry);
   const t = result.trigger;
   const shown = all ? result.effects : result.effects.slice(0, SHOWN);
+  // How soon: the effects grouped by the horizon their mechanism gives (days, weeks, months), soonest first.
+  const horizons = HORIZON_ORDER.map((h) => ({ h, n: result.effects.filter((e) => e.horizon === h).length })).filter((x) => x.n > 0);
   return (
     <div>
       <p className={styles.assumes}>
@@ -36,6 +39,16 @@ export default function CascadeResult({ result, onOpenCountry }: { result: Resul
         <Badge tone="alertOrange">{result.counts.Moderate} Moderate</Badge>
         <Badge>{result.counts.Low} Low</Badge>
       </div>
+      {horizons.length > 0 && (
+        <p className={styles.assumes}>
+          How soon: {horizons.map((x) => `${x.n} in ${x.h}`).join(', ')}. Each row shows its own horizon and the reason is its mechanism.
+        </p>
+      )}
+      {onShowMap && result.effects.length > 0 && (
+        <button type="button" className={styles.showAll} onClick={onShowMap}>
+          Show on the map
+        </button>
+      )}
       {result.effects.length === 0 ? (
         <p className={styles.assumes}>No country reaches the thresholds for this trigger in the data we have.</p>
       ) : (
@@ -82,6 +95,18 @@ export default function CascadeResult({ result, onOpenCountry }: { result: Resul
         <button type="button" className={styles.showAll} onClick={() => setAll(true)}>
           Show all {result.effects.length}
         </button>
+      )}
+      {result.would_change.length > 0 && (
+        <div className={styles.foot}>
+          <h4>What could soften it</h4>
+          <ul>
+            {result.would_change.map((w) => (
+              <li key={w.text}>
+                {w.text} <span className={styles.meta}>({w.source}{w.as_of ? `, ${w.as_of}` : ''})</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
       <div className={styles.foot}>
         <h4>How exposure is decided</h4>

@@ -6,6 +6,7 @@ import { handleFullscreenChange, stopPresenting } from '../globe/draw/present';
 import ForecastBar from '../globe/ForecastBar';
 import RadarBar from '../globe/RadarBar';
 import WeatherFieldLegend from '../globe/WeatherFieldLegend';
+import CascadeLegend from '../globe/CascadeLegend';
 import TimeBar from '../globe/TimeBar';
 import AnalysisSidebar from '../sidebars/AnalysisSidebar';
 import EdgeTab from '../sidebars/EdgeTab';
@@ -84,6 +85,7 @@ export default function Shell() {
             <ForecastBar />
             <RadarBar />
             <WeatherFieldLegend />
+            <CascadeLegend />
             <DrawToolbar />
             <PresentExit />
             <EdgeTab side="left" docked={docked} />
