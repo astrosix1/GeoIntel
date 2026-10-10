@@ -2,10 +2,11 @@ import { HAZARD_TYPES } from '../globe/hazards';
 import { timeAgo } from '../lib/time';
 import { useRadarFramesQuery, useStormsQuery } from '../state/queries';
 import { useUiStore } from '../state/uiStore';
+import Button from '../ui/Button';
 import { Chip } from '../ui/Display';
 import styles from './Bar.module.css';
 
-// A thin strip under the top bar with whatever belongs to the current mode: in Events, the key to how pins are drawn;
+// A thin strip under the top bar with whatever belongs to the current mode: in Events, the Cascade button and the key to how pins are drawn;
 // in Weather, the hazard-type chips and the honest notices (loading, feed down, nothing active, radar unavailable);
 // in Time Zone, nothing (its time control sits on the map).
 export default function ContextStrip() {
@@ -16,8 +17,14 @@ export default function ContextStrip() {
 }
 
 function EventsKey() {
+  const setCascadeOpen = useUiStore((s) => s.setCascadeOpen);
+  const hasResult = useUiStore((s) => s.cascadeResult !== null);
   return (
     <div className={styles.strip}>
+      {/* Cascade belongs to Events: it is opened from here, and its colours show on the map only in this mode. */}
+      <Button size="sm" icon="bolt" variant={hasResult ? 'primary' : 'default'} onClick={() => setCascadeOpen(true)}>
+        Cascade
+      </Button>
       <div className={styles.key}>
         <span className={styles.keyItem}><span className={`${styles.dot} ${styles.dotSolid}`} aria-hidden="true" />Something that happened</span>
         <span className={styles.keyItem}><span className={`${styles.dot} ${styles.dotHollow}`} aria-hidden="true" />A statement or talks (no physical place)</span>

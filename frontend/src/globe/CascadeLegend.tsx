@@ -9,7 +9,8 @@ export default function CascadeLegend() {
   const setResult = useUiStore((s) => s.setCascadeResult);
   const setOpen = useUiStore((s) => s.setCascadeOpen);
   const presenting = useDrawStore((s) => s.presenting);
-  if (!result || presenting) return null;
+  const inEvents = useUiStore((s) => s.activeMode) === 'events';
+  if (!result || presenting || !inEvents) return null;
   const t = result.trigger;
   return (
     <div className={styles.legend} data-ui-hover-surface>
