@@ -95,7 +95,7 @@ def entry_from(rows, partners, year):
             named[iso] = named.get(iso, 0.0) + r['primaryValue']
     top = dict(sorted(named.items(), key=lambda kv: -kv[1])[:TOP_PARTNERS])
     # Shares, not the raw values: a derived market share is "transformed" data under the UN Comtrade re-dissemination policy.
-    return {'year': year, 'total': round(total), 'shares': {k: round(100.0 * v / total, 1) for k, v in top.items()}}
+    return {'year': year, 'total': round(total), 'shares': {k: r for k, v in top.items() if (r := round(100.0 * v / total, 1)) > 0}}
 
 
 def fetch_batch(codes, hs, year):
