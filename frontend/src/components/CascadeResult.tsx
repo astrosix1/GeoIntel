@@ -20,6 +20,9 @@ export default function CascadeResult({ result, onOpenCountry, onShowMap }: { re
   const horizons = HORIZON_ORDER.map((h) => ({ h, n: result.effects.filter((e) => e.horizon === h).length })).filter((x) => x.n > 0);
   return (
     <div>
+      <p className={styles.srOnly} role="status">
+        {`Cascade finished: ${result.effects.length} countries listed, ${result.counts.High} High, ${result.counts.Moderate} Moderate, ${result.counts.Low} Low exposure.`}
+      </p>
       <p className={styles.assumes}>
         <strong>
           {t.label}: {t.country_name}

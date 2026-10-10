@@ -60,13 +60,21 @@ class BadTrigger(ValueError):
     pass
 
 
-def options():
-    """What the picker offers: templates, commodities, nothing else."""
-    return {
+def options(graph=None, trade_table=None):
+    """What the picker offers: templates, commodities and, when the graph is given, the methods page content."""
+    base = {
         'templates': [{'key': k, 'label': t['label'], 'assumes': t['assumes'], 'commodity': t['commodity']} for k, t in TEMPLATES.items()],
         'commodities': [{'key': k, 'label': COMMODITY_LABELS.get(k, k)} for k in COMMODITY_TERMS],
         'chokepoints': cascade_chokepoints.options(),
     }
+    if graph is not None:
+        meta = engine.metadata(graph)
+        base['methods'] = {
+            'rules': {**meta['method'], 'people': cascade_links.METHOD['people'], 'treaty': cascade_links.METHOD['treaty']},
+            'not_modelled': meta['not_modelled'] + ['Rerouting around a chokepoint and its added time and cost are not modelled.'],
+            'sources': cascade_links.sources(graph, trade_table),
+        }
+    return base
 
 
 def trigger_for_event(event_type, country_iso):

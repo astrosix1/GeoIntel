@@ -16,6 +16,7 @@ import Button from '../ui/Button';
 import { Drawer } from '../ui/Overlay';
 import type { CascadeRequest, CascadeResult as Result, SavedScenario } from '../api/types';
 import CascadeCompare from './CascadeCompare';
+import CascadeMethodsPanel from './CascadeMethods';
 import CascadeResult from './CascadeResult';
 import dashboard from './Dashboard.module.css';
 import styles from './Cascade.module.css';
@@ -86,6 +87,7 @@ export default function CascadeWorkspace() {
         <CascadeLocked />
       ) : (
         <>
+          {options.data?.methods && <CascadeMethodsPanel methods={options.data.methods} />}
           {options.isLoading && <div className={dashboard.status}>Loading…</div>}
           {options.error && <div className={dashboard.status}>{cascadeErrorText(options.error)}</div>}
           {options.data && (

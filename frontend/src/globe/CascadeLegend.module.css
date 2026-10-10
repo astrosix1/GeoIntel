@@ -58,3 +58,25 @@
 .link:hover {
   text-decoration: underline;
 }
+
+/* Phones: the bottom corners hold the List and Details buttons and the map credits, so the key moves to the top and shrinks to rows. */
+@media (max-width: 768px) {
+  .legend {
+    top: var(--space-2);
+    bottom: auto;
+    left: var(--space-2);
+    max-width: calc(100% - 64px);
+  }
+
+  .title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .keys {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-3);
+  }
+}

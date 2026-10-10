@@ -37,7 +37,7 @@ def get_options():
     if graph is None:
         return _warming()
     countries = sorted(({'iso': iso, 'name': c['name']} for iso, c in graph['countries'].items()), key=lambda c: c['name'])
-    return jsonify({**options(), 'countries': countries})
+    return jsonify({**options(graph, cascade_trade.load()), 'countries': countries})
 
 
 def _compute(body):

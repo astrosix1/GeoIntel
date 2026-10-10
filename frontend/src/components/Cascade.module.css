@@ -205,3 +205,39 @@
   flex: 1;
   min-width: 100px;
 }
+
+.methods {
+  margin-top: var(--space-4);
+  font-size: var(--font-3);
+  color: var(--text-2);
+}
+
+.methods summary {
+  cursor: pointer;
+  color: var(--accent);
+}
+
+.methods h4 {
+  margin: var(--space-3) 0 var(--space-1);
+  font-size: var(--font-3);
+  color: var(--text);
+}
+
+.methods p,
+.methods ul {
+  margin: 0;
+}
+
+.methods ul {
+  padding-left: var(--space-4);
+}
+
+/* Read aloud by screen readers, not shown. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

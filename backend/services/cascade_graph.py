@@ -10,6 +10,7 @@ import json
 import logging
 import re
 import threading
+import time
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -114,6 +115,8 @@ def build_graph(profiles, built_at=None, allowed=None, population=None):
 
 
 _warming = threading.Lock()
+RETRY_AFTER_SECONDS = 120
+_last_attempt = [0.0]
 
 
 def cached_graph():
@@ -130,7 +133,11 @@ def warm_graph_async():
             logger.info('[Cascade] graph warm-up failed: %s', e)
         finally:
             _warming.release()
+    # A build that keeps failing (the source is down) is not restarted on every request: at most once in RETRY_AFTER_SECONDS.
+    if time.monotonic() - _last_attempt[0] < RETRY_AFTER_SECONDS:
+        return
     if _warming.acquire(blocking=False):
+        _last_attempt[0] = time.monotonic()
         threading.Thread(target=run, daemon=True).start()
 
 

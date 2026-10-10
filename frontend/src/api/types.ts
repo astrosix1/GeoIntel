@@ -911,6 +911,12 @@ export interface CascadeOptions {
   commodities: { key: string; label: string }[];
   countries: { iso: string; name: string }[];
   chokepoints: { key: string; label: string; summary: string }[];
+  methods?: CascadeMethods;
+}
+export interface CascadeMethods {
+  rules: Record<string, string>;
+  not_modelled: string[];
+  sources: { name: string; used_for: string; fresh: string }[];
 }
 export interface CascadeRequest {
   template?: string;

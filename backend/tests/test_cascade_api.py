@@ -260,3 +260,26 @@ class TestLinks:
         result = ct.run_template(graph, 'embargo', 'RU')
         assert any(n.startswith('Measures already in place') for n in result['notes'])
         assert not any(n.startswith('Measures already in place') for n in ct.run_template(graph, 'attack', 'RU')['notes'])
+
+
+class TestMethodsAndHardening:
+    def test_options_with_a_graph_carry_the_methods_page(self, graph):
+        methods = ct.options(graph, None)['methods']
+        assert {'trade', 'energy', 'commodity', 'people', 'treaty'} <= set(methods['rules'])
+        names = [s['name'] for s in methods['sources']]
+        assert 'CIA World Factbook' in names and 'UN Comtrade (public preview)' in names and any('hand-curated' in s['used_for'] for s in methods['sources'])
+        assert any('Not loaded' in s['fresh'] for s in methods['sources'] if s['name'].startswith('UN Comtrade'))
+        assert 'methods' not in ct.options()                                   # without a graph, only the picker lists
+
+    def test_the_graph_build_is_not_restarted_on_every_request(self):
+        from services import cascade_graph as cg
+        calls = []
+        with patch.object(cg, 'get_graph', side_effect=lambda: calls.append(1)), patch.object(cg.time, 'monotonic', return_value=1000.0):
+            cg._last_attempt[0] = 0.0
+            cg.warm_graph_async()
+            import time as _t
+            _t.sleep(0.2)
+            cg.warm_graph_async()                # inside the cooldown: ignored
+            _t.sleep(0.2)
+        assert len(calls) == 1
+        cg._last_attempt[0] = 0.0

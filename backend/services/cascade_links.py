@@ -126,3 +126,33 @@ def producer_note(iso, commodity):
         if name and row.get('commodity') == name and row.get('world_share') is not None:
             return f"{name}: the country produced {row['world_share']:g}% of world output (rank {row.get('rank')}, USGS {row.get('year')})."
     return None
+
+
+def _years(graph):
+    """The range of years the Factbook's partner shares are for in this graph, as text."""
+    years = sorted({y for c in graph['countries'].values() for y in (c.get('partners_as_of') or {}).values() if isinstance(y, int)})
+    return 'unknown years' if not years else str(years[0]) if len(years) == 1 else f'{years[0]} to {years[-1]}'
+
+
+def sources(graph, trade_table):
+    """The data behind Cascade, each with what it is used for and how fresh it is, for the methods page."""
+    chokepoints, treaties, sanctions = _chokepoints_reviewed(), _treaties().get('last_reviewed'), _sanctions().get('last_reviewed')
+    out = [
+        {'name': 'CIA World Factbook', 'used_for': 'Top trading partners and their shares, main exports, and each country\'s gas and oil production and use.',
+         'fresh': f"Partner shares are for {_years(graph)} depending on the country; read for this build on {(graph.get('built_at') or '')[:10] or 'an unknown date'}."},
+        {'name': 'UN Comtrade (public preview)', 'used_for': 'Each country\'s imports of oil, gas, coal, grain, vegetable oils, fertilizers, iron ore, copper, aluminium and chips, by supplier.',
+         'fresh': 'The newest of 2022, 2023 and 2021 that has data for the country.' if trade_table else 'Not loaded in this build: the Factbook\'s all-goods shares are used instead.'},
+        {'name': 'UN DESA migrant stock and World Bank population', 'used_for': 'Where each country\'s emigrants already live, as a share of the host country\'s population.',
+         'fresh': 'Migrant stock for 2024; population is the latest World Bank value.'},
+        {'name': 'USGS Mineral Commodity Summaries', 'used_for': 'How much of the world\'s copper, aluminium and iron ore a country produces.', 'fresh': 'The 2025 summaries.'},
+        {'name': 'US Energy Information Administration', 'used_for': 'Oil and LNG flows through the Strait of Hormuz and Bab el-Mandeb (hand-curated table).',
+         'fresh': f'Figures for 2023 and 2024; table last reviewed {chokepoints}.'},
+        {'name': 'NATO, CSTO and the US Department of State', 'used_for': 'Mutual-defence treaty members (hand-curated table).', 'fresh': f'Last reviewed {treaties}.'},
+        {'name': 'EU Council, US Treasury, UN Security Council', 'used_for': 'Long-standing sanctions already in place (hand-curated, not exhaustive).', 'fresh': f'Last reviewed {sanctions}.'},
+    ]
+    return out
+
+
+def _chokepoints_reviewed():
+    from services import cascade_chokepoints
+    return cascade_chokepoints.load().get('last_reviewed')
