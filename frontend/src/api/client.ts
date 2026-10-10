@@ -21,6 +21,8 @@ import type {
   CascadeOptions,
   CascadeRequest,
   CascadeResult,
+  SavedScenario,
+  SavedScenarioSummary,
   PlaceAlertPrefs,
   SituationView,
   HazardEvents,
@@ -444,6 +446,52 @@ export function runCascade(request: CascadeRequest): Promise<CascadeResult> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
   });
+}
+
+export type CascadeNarrativeReason = 'no_model' | 'no_effects' | 'model_error' | 'ungrounded' | string;
+
+export async function fetchSavedScenarios(): Promise<{ scenarios: SavedScenarioSummary[]; limit: number }> {
+  return cascadeRequest('/api/cascade/saved');
+}
+
+export async function saveScenario(name: string, request: CascadeRequest): Promise<SavedScenarioSummary> {
+  const res = await authedFetch('/api/cascade/saved', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, ...request }),
+  });
+  if (res.status === 409) throw new CascadeError('invalid', 'You have reached the limit of saved scenarios. Delete one to save another.');
+  if (res.status === 401) throw new CascadeError('sign_in_required');
+  if (res.status === 403) throw new CascadeError('premium_required');
+  if (res.status === 503) throw new CascadeError('warming');
+  if (res.status === 400) throw new CascadeError('invalid', (await res.json().catch(() => ({})))?.message);
+  if (!res.ok) throw new CascadeError('error');
+  return (await res.json()).scenario;
+}
+
+export async function fetchSavedScenario(id: string): Promise<SavedScenario> {
+  return (await cascadeRequest<{ scenario: SavedScenario }>(`/api/cascade/saved/${encodeURIComponent(id)}`)).scenario;
+}
+
+export async function deleteSavedScenario(id: string): Promise<void> {
+  const res = await authedFetch(`/api/cascade/saved/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  if (!res.ok && res.status !== 404) throw new CascadeError('error');
+}
+
+export async function fetchCascadeNarrative(request: CascadeRequest): Promise<{ text: string; model: string }> {
+  const res = await authedFetch('/api/cascade/narrative', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  if (res.status === 503) {
+    const body = await res.json().catch(() => ({}));
+    throw new CascadeError('error', body?.reason ?? 'unavailable');
+  }
+  if (res.status === 401) throw new CascadeError('sign_in_required');
+  if (res.status === 403) throw new CascadeError('premium_required');
+  if (!res.ok) throw new CascadeError('error');
+  return res.json();
 }
 
 export function deleteWatchPlace(id: string): Promise<void> {

@@ -18,6 +18,7 @@ KEYS = {
     'geointel_watch_places': ('id',),
     'geointel_alerts': ('place_id', 'hazard_key'),
     'geointel_user_prefs': ('user_id',),
+    'geointel_cascades': ('id',),
 }
 
 
@@ -59,6 +60,9 @@ class FakePostgrest:
             row.setdefault('created_at', self.now())
             row.setdefault('read_at', None)
             row.setdefault('emailed_at', None)
+        elif table == 'geointel_cascades':
+            row.setdefault('id', str(uuid.uuid4()))
+            row.setdefault('created_at', self.now())
         elif table == 'geointel_user_prefs':
             row.setdefault('hidden_outlets', [])
             row.setdefault('alert_email', True)

@@ -3,7 +3,7 @@ import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClie
 import type { CrisisScope } from '../api/client';
 import { TIME_RANGE_DAYS, useUiStore } from './uiStore';
 import type { TimeRange } from './uiStore';
-import type { CrisisDetail, CrisisSummary, PlaceAlertPrefs, ReportReason } from '../api/types';
+import type { CascadeRequest, CrisisDetail, CrisisSummary, PlaceAlertPrefs, ReportReason } from '../api/types';
 import {
   deleteComment,
   addWatchPlace,
@@ -13,6 +13,11 @@ import {
   fetchEventHazards,
   fetchEventAnalysis,
   fetchCascadeOptions,
+  fetchSavedScenarios,
+  saveScenario,
+  fetchSavedScenario,
+  deleteSavedScenario,
+  fetchCascadeNarrative,
   runCascade,
   savePlaceAlertPrefs,
   fetchSituation,
@@ -429,6 +434,31 @@ export function useCascadeOptionsQuery(enabled: boolean) {
     staleTime: 60 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
+}
+
+export function useSavedScenariosQuery(enabled: boolean) {
+  return useQuery({ queryKey: ['cascade-saved'], queryFn: fetchSavedScenarios, enabled, retry: false, staleTime: 60_000, refetchOnWindowFocus: false });
+}
+
+export function useSaveScenarioMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { name: string; request: CascadeRequest }) => saveScenario(v.name, v.request),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['cascade-saved'] }),
+  });
+}
+
+export function useDeleteScenarioMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: deleteSavedScenario, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['cascade-saved'] }) });
+}
+
+export function useOpenScenarioMutation() {
+  return useMutation({ mutationFn: fetchSavedScenario });
+}
+
+export function useNarrativeMutation() {
+  return useMutation({ mutationFn: fetchCascadeNarrative });
 }
 
 export function useRunCascadeMutation() {

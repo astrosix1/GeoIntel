@@ -919,3 +919,14 @@ export interface CascadeRequest {
   chokepoint?: string;
   crisis_id?: string;
 }
+
+// Saved cascade scenarios (premium): the trigger and the result as it was saved.
+export interface SavedScenarioSummary {
+  id: string;
+  name: string;
+  request: CascadeRequest;
+  created_at: string;
+}
+export interface SavedScenario extends SavedScenarioSummary {
+  result: CascadeResult;
+}
