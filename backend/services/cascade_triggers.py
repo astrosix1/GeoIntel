@@ -7,7 +7,7 @@ Five templates work today. Chokepoint closures need the curated chokepoint table
 until it exists, so nothing here pretends to model them.
 """
 from services import cascade_engine as engine
-from services import cascade_trade
+from services import cascade_chokepoints, cascade_links, cascade_trade
 from services.cascade_engine import COMMODITY_TERMS, HIGH, LOW, MODERATE, UnknownCountry
 
 COMMODITY_LABELS = {
@@ -19,8 +19,8 @@ COMMODITY_LABELS = {
 TEMPLATES = {
     'attack': {
         'label': 'A country is attacked or invaded',
-        'assumes': 'The country can no longer trade normally: it stops supplying its exports and stops buying its imports.',
-        'modes': ('supply_loss', 'demand_loss'), 'commodity': 'none',
+        'assumes': 'The country can no longer trade normally: it stops supplying its exports and stops buying its imports. People may flee, and its treaty partners are drawn in.',
+        'modes': ('supply_loss', 'demand_loss', 'displacement', 'treaty'), 'commodity': 'none',
     },
     'embargo': {
         'label': 'Sanctions or an embargo on a country',
@@ -39,9 +39,15 @@ TEMPLATES = {
     },
     'collapse': {
         'label': 'A government collapses',
-        'assumes': 'The country\'s trade breaks down in both directions while authority is contested.',
-        'modes': ('supply_loss', 'demand_loss'), 'commodity': 'none',
+        'assumes': 'The country\'s trade breaks down in both directions while authority is contested, and people may leave.',
+        'modes': ('supply_loss', 'demand_loss', 'displacement'), 'commodity': 'none',
     },
+}
+
+TEMPLATES['chokepoint'] = {
+    'label': 'A shipping chokepoint is closed',
+    'assumes': 'Ships cannot pass: the countries whose exports use the route lose them for a time, and their customers lose supply.',
+    'modes': ('chokepoint',), 'commodity': 'optional',
 }
 
 # Event types in the news feed -> the template that fits best when a user starts from an event.
@@ -59,6 +65,7 @@ def options():
     return {
         'templates': [{'key': k, 'label': t['label'], 'assumes': t['assumes'], 'commodity': t['commodity']} for k, t in TEMPLATES.items()],
         'commodities': [{'key': k, 'label': COMMODITY_LABELS.get(k, k)} for k in COMMODITY_TERMS],
+        'chokepoints': cascade_chokepoints.options(),
     }
 
 
@@ -140,12 +147,37 @@ def what_would_change(graph, table, country, commodity, effects):
     return out
 
 
-def run_template(graph, template, country, commodity=None, table=None):
+def _run_chokepoint(graph, spec, chokepoint, commodity, table):
+    if commodity is not None and commodity not in COMMODITY_TERMS:
+        raise BadTrigger(f'unknown commodity: {commodity}')
+    try:
+        effects, notes = cascade_chokepoints.run(graph, chokepoint, commodity, table)
+    except ValueError as e:
+        raise BadTrigger(str(e))
+    label = next(c['label'] for c in cascade_chokepoints.options() if c['key'] == chokepoint)
+    meta = engine.metadata(graph)
+    return {
+        'trigger': {'template': 'chokepoint', 'label': spec['label'], 'country': None, 'country_name': label, 'chokepoint': chokepoint,
+                    'commodity': commodity, 'commodity_label': COMMODITY_LABELS.get(commodity) if commodity else None},
+        'assumes': spec['assumes'],
+        'effects': effects,
+        'counts': {level: sum(1 for e in effects if e['exposure'] == level) for level in (HIGH, MODERATE, LOW)},
+        'would_change': [],
+        'notes': notes,
+        'method': meta['method'],
+        'not_modelled': meta['not_modelled'] + ['Rerouting around the chokepoint (for example around the Cape of Good Hope) and its added time and cost are not modelled.'],
+        'data': meta['data'],
+    }
+
+
+def run_template(graph, template, country, commodity=None, table=None, chokepoint=None):
     """Run a template for a country (ISO-2) and optional commodity. Raises BadTrigger for input that does not fit the template and
     UnknownCountry for a country the graph has no data on."""
     spec = TEMPLATES.get(template)
     if spec is None:
         raise BadTrigger(f'unknown trigger: {template}')
+    if template == 'chokepoint':
+        return _run_chokepoint(graph, spec, chokepoint, commodity, table)
     if spec['commodity'] == 'required' and not commodity:
         raise BadTrigger('this trigger needs a commodity')
     if spec['commodity'] == 'none':
@@ -157,9 +189,20 @@ def run_template(graph, template, country, commodity=None, table=None):
         # With one commodity the question is about that commodity leaving the country; the buying side has no commodity-level data.
         modes = tuple(m for m in modes if m != 'demand_loss')
         assumes = f"The country's exports of {COMMODITY_LABELS.get(commodity, commodity).lower()} are cut off; what it buys is unchanged."
-    runs = [engine.run(graph, {'kind': mode, 'country': country, 'commodity': commodity}, table) for mode in modes]
+    runs = []
+    for mode in modes:
+        if mode == 'displacement':
+            runs.append({'effects': cascade_links.diaspora(graph, country.upper()), 'notes': [], 'trigger': runs[0]['trigger'], 'method': runs[0]['method'],
+                         'not_modelled': runs[0]['not_modelled'], 'data': runs[0]['data']})
+        elif mode == 'treaty':
+            runs.append({'effects': cascade_links.treaty_effects(graph, country.upper()), 'notes': [], 'trigger': runs[0]['trigger'], 'method': runs[0]['method'],
+                         'not_modelled': runs[0]['not_modelled'], 'data': runs[0]['data']})
+        else:
+            runs.append(engine.run(graph, {'kind': mode, 'country': country, 'commodity': commodity}, table))
     base = runs[0]
     effects = _merge(runs)
+    context = [n for n in (cascade_links.sanctions_note(base['trigger']['country']) if template == 'embargo' else None,
+                           cascade_links.producer_note(base['trigger']['country'], commodity) if commodity else None) if n]
     return {
         'trigger': {'template': template, 'label': spec['label'], 'country': base['trigger']['country'],
                     'country_name': base['trigger']['country_name'], 'commodity': commodity,
@@ -168,8 +211,9 @@ def run_template(graph, template, country, commodity=None, table=None):
         'effects': effects,
         'counts': {level: sum(1 for e in effects if e['exposure'] == level) for level in (HIGH, MODERATE, LOW)},
         'would_change': what_would_change(graph, table, base['trigger']['country'], commodity, effects),
-        'notes': [n for r in runs for n in r['notes']],
-        'method': base['method'],
+        'notes': [n for r in runs for n in r['notes']] + context,
+        'method': {**base['method'], **({'people': cascade_links.METHOD['people']} if 'displacement' in modes else {}),
+                   **({'treaty': cascade_links.METHOD['treaty']} if 'treaty' in modes else {})},
         'not_modelled': base['not_modelled'],
         'data': base['data'],
     }

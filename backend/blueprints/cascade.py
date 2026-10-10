@@ -51,6 +51,7 @@ def post_run():
         return _warming()
     note = None
     template, country, commodity = body.get('template'), body.get('country'), body.get('commodity')
+    chokepoint = body.get('chokepoint')
     if body.get('crisis_id') is not None:
         session = Session()
         try:
@@ -65,10 +66,13 @@ def post_run():
             return jsonify({'error': 'invalid_trigger', 'message': f"No country data for {event['country']}."}), 400
         template, note = trigger_for_event(event['type'], country)
         commodity = None
-    if not isinstance(template, str) or not isinstance(country, str) or not (commodity is None or isinstance(commodity, str)):
+    if template == 'chokepoint':
+        country = country if isinstance(country, str) else 'XX'      # a chokepoint trigger has no country
+    if not isinstance(template, str) or not isinstance(country, str) or not (commodity is None or isinstance(commodity, str)) \
+            or not (chokepoint is None or isinstance(chokepoint, str)):
         return jsonify({'error': 'invalid_trigger', 'message': 'template and country are required'}), 400
     try:
-        result = run_template(graph, template, country.upper(), commodity or None, cascade_trade.load())
+        result = run_template(graph, template, country.upper(), commodity or None, cascade_trade.load(), chokepoint)
     except UnknownCountry as e:                     # a ValueError too, so it must come first
         return jsonify({'error': 'invalid_trigger', 'message': str(e)}), 404
     except (BadTrigger, ValueError) as e:

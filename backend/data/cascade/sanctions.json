@@ -1,0 +1,28 @@
+{
+  "last_reviewed": "2026-10-09",
+  "about": "Hand-curated and deliberately short: only long-standing measures that are stable and can be checked on the imposing body's own page. Not exhaustive, and measures change; check the linked page for the current position.",
+  "measures": {
+    "RU": [
+      {"by": "European Union", "since": 2014, "scope": "sectoral and individual sanctions, widened in 2022", "source": "Council of the EU", "url": "https://www.consilium.europa.eu/en/policies/sanctions-against-russia/"},
+      {"by": "United States", "since": 2014, "scope": "Russia-related sanctions programmes, widened in 2022", "source": "US Treasury, OFAC", "url": "https://ofac.treasury.gov/sanctions-programs-and-country-information/russia-related-sanctions"}
+    ],
+    "BY": [
+      {"by": "European Union", "since": 2020, "scope": "sanctions on Belarus, widened in 2022", "source": "Council of the EU", "url": "https://www.consilium.europa.eu/en/policies/sanctions-against-belarus/"},
+      {"by": "United States", "since": 2006, "scope": "Belarus sanctions programme", "source": "US Treasury, OFAC", "url": "https://ofac.treasury.gov/sanctions-programs-and-country-information/belarus-sanctions"}
+    ],
+    "KP": [
+      {"by": "United Nations Security Council", "since": 2006, "scope": "arms, finance and trade restrictions", "source": "UN Security Council", "url": "https://main.un.org/securitycouncil/en/sanctions/1718"},
+      {"by": "United States", "since": 2008, "scope": "North Korea sanctions programme", "source": "US Treasury, OFAC", "url": "https://ofac.treasury.gov/sanctions-programs-and-country-information/north-korea-sanctions"}
+    ],
+    "CU": [
+      {"by": "United States", "since": 1962, "scope": "trade embargo", "source": "US Treasury, OFAC", "url": "https://ofac.treasury.gov/sanctions-programs-and-country-information/cuba-sanctions"}
+    ],
+    "MM": [
+      {"by": "European Union", "since": 2021, "scope": "sanctions after the military takeover", "source": "Council of the EU", "url": "https://www.consilium.europa.eu/en/policies/sanctions-against-myanmar-burma/"},
+      {"by": "United States", "since": 2021, "scope": "Burma sanctions programme", "source": "US Treasury, OFAC", "url": "https://ofac.treasury.gov/sanctions-programs-and-country-information/burma-related-sanctions"}
+    ],
+    "IR": [
+      {"by": "United States", "since": 1979, "scope": "long-standing sanctions, reimposed in 2018", "source": "US Treasury, OFAC", "url": "https://ofac.treasury.gov/sanctions-programs-and-country-information/iran-sanctions"}
+    ]
+  }
+}

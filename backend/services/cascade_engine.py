@@ -11,6 +11,7 @@ Run it by hand:  python -m services.cascade_engine supply_loss RU --commodity ga
 """
 import argparse
 import json
+import re
 
 from services import cascade_trade
 
@@ -26,16 +27,16 @@ DEPENDENCE_MODERATE_PCT = 20.0 # at least this share: moderately dependent; belo
 SURPLUS_FACTOR = 1.1           # a country counts as a net exporter of a fuel when it produces 10% more than it uses
 
 COMMODITY_TERMS = {
-    'gas': ('natural gas', 'gas', 'lng', 'liquefied'),
-    'oil': ('petroleum', 'crude', 'oil', 'refined'),
-    'grain': ('wheat', 'grain', 'corn', 'maize', 'barley', 'cereal', 'sunflower', 'rice'),
+    'gas': ('natural gas', 'lng', 'liquefied natural gas', 'petroleum gas'),
+    'oil': ('crude oil', 'crude petroleum', 'petroleum', 'refined petroleum', 'fuel oil', 'mineral fuel'),
+    'grain': ('wheat', 'grain', 'corn', 'maize', 'barley', 'cereal', 'rice'),
     'coal': ('coal',),
-    'veg_oils': ('sunflower', 'palm oil', 'soybean oil', 'vegetable oil'),
+    'veg_oils': ('sunflower oil', 'sunflower seed oil', 'palm oil', 'soybean oil', 'vegetable oil'),
     'fertilizers': ('fertilizer', 'fertiliser', 'potash', 'ammonia', 'urea'),
     'iron_ore': ('iron ore',),
     'copper': ('copper',),
     'aluminium': ('aluminum', 'aluminium', 'bauxite', 'alumina'),
-    'chips': ('semiconductor', 'integrated circuit', 'electronic'),
+    'chips': ('semiconductor', 'integrated circuit'),
 }
 FUELS = ('gas', 'oil')
 HORIZONS = {'gas': 'days to weeks', 'oil': 'weeks', 'coal': 'weeks', 'grain': 'weeks to months', 'veg_oils': 'weeks to months',
@@ -104,11 +105,16 @@ def _amount(value, fuel):
     return f'{value / 1e6:,.2f} million barrels a day' if value >= 1e6 else f'{value / 1e3:,.0f} thousand barrels a day'
 
 
+def _has_word(text, term):
+    """Whether `term` appears in `text` as whole words: 'oil' must not match 'soil'."""
+    return re.search(r'(?<![a-z])' + re.escape(term) + r'(?![a-z])', text) is not None
+
+
 def supplies(entry, commodity):
     """(True/False, reason): whether the country is shown to supply a commodity, from its listed export goods and, for fuels, its
     production against its own use."""
     terms = COMMODITY_TERMS.get(commodity, ())
-    listed = [c for c in entry.get('export_commodities', []) if any(t in c for t in terms)]
+    listed = [c for c in entry.get('export_commodities', []) if any(_has_word(c, t) for t in terms)]
     if listed:
         return True, f"its main exports include {', '.join(listed[:3])}"
     if commodity in FUELS:
@@ -266,6 +272,21 @@ def _demand_loss(graph, iso, commodity):
 KINDS = {'supply_loss': _supply_loss, 'demand_loss': lambda graph, iso, commodity, table=None: _demand_loss(graph, iso, commodity)}
 
 
+def metadata(graph):
+    """The parts of every result that describe the method rather than the trigger: thresholds, what is not modelled, the data used."""
+    return {
+        'method': {
+            'trade': f'High from {TRADE_HIGH_PCT:g}% of imports or exports, Moderate from {TRADE_MODERATE_PCT:g}%, Low from {TRADE_LISTED_PCT:g}%.',
+            'energy': (f'Importers of the fuel: High when the supplier is at least {TRADE_HIGH_PCT:g}% of imports, or at least {TRADE_MODERATE_PCT:g}% '
+                       f'and the country imports {DEPENDENCE_HIGH_PCT:g}% or more of the fuel it uses; Low when it imports under {DEPENDENCE_MODERATE_PCT:g}%.'),
+            'commodity': (f'With the commodity trade table: High from {COMMODITY_SHARE_HIGH_PCT:g}% of what a country imports of the commodity, Moderate from '
+                          f'{COMMODITY_SHARE_MODERATE_PCT:g}%, Low from {COMMODITY_SHARE_LISTED_PCT:g}%; import bills under ${MIN_IMPORT_USD / 1e6:,.0f} million are ignored.'),
+        },
+        'not_modelled': NOT_MODELLED,
+        'data': {'source': graph.get('source'), 'built_at': graph.get('built_at'), 'countries_in_graph': len(graph['countries'])},
+    }
+
+
 def run(graph, trigger, table=None):
     """Run a trigger over a graph. `trigger` is {'kind': 'supply_loss' | 'demand_loss', 'country': ISO2, 'commodity': optional}.
     Returns the effects ranked High first, with the method, what is not modelled, and which data it used."""
@@ -284,13 +305,7 @@ def run(graph, trigger, table=None):
         'effects': effects,
         'counts': counts,
         'notes': notes,
-        'method': {
-            'trade': f'High from {TRADE_HIGH_PCT:g}% of imports or exports, Moderate from {TRADE_MODERATE_PCT:g}%, Low from {TRADE_LISTED_PCT:g}%.',
-            'energy': (f'Importers of the fuel: High when the supplier is at least {TRADE_HIGH_PCT:g}% of imports, or at least {TRADE_MODERATE_PCT:g}% '
-                       f'and the country imports {DEPENDENCE_HIGH_PCT:g}% or more of the fuel it uses; Low when it imports under {DEPENDENCE_MODERATE_PCT:g}%.'),
-        },
-        'not_modelled': NOT_MODELLED,
-        'data': {'source': graph.get('source'), 'built_at': graph.get('built_at'), 'countries_in_graph': len(graph['countries'])},
+        **metadata(graph),
     }
 
 

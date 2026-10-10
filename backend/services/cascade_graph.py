@@ -83,7 +83,7 @@ def _partners(block, unmapped):
     return out
 
 
-def build_graph(profiles, built_at=None, allowed=None):
+def build_graph(profiles, built_at=None, allowed=None, population=None):
     """The graph from {iso2: Factbook profile or None}. Pure. With `allowed`, only those countries become nodes (the Factbook also
     describes territories and uninhabited islands, which would only add noise); trade partners may still be anyone."""
     unmapped = set()
@@ -96,6 +96,7 @@ def build_graph(profiles, built_at=None, allowed=None):
         fuels = profile.get('energy_fuels') or {}
         entry = {
             'name': country_name(iso),
+            'population': (population or {}).get(iso, [None])[0],
             'export_partners': _partners(exports, unmapped),
             'import_partners': _partners(imports, unmapped),
             'partners_as_of': {'exports': (exports or {}).get('as_of'), 'imports': (imports or {}).get('as_of')},
@@ -144,7 +145,8 @@ def get_graph(force=False):
         profiles = dict(zip(isos, pool.map(FactbookConnector.fetch_profile, isos)))
     from services.country_indicators import real_countries
     allowed = real_countries() | {'TW'}      # Taiwan is not a World Bank country but is a node the cascade needs
-    graph = build_graph(profiles, allowed=allowed if len(allowed) > 50 else None)
+    from services.country_indicators import latest_all
+    graph = build_graph(profiles, allowed=allowed if len(allowed) > 50 else None, population=latest_all('SP.POP.TOTL'))
     if graph['countries']:
         cache_set(GRAPH_KEY, graph, ttl=GRAPH_TTL)
     logger.info(f"[Cascade] graph built: {len(graph['countries'])} countries, {len(graph['unmapped_partner_names'])} unmapped partner names")

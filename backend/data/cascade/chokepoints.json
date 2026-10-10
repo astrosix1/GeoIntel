@@ -1,0 +1,42 @@
+{
+  "last_reviewed": "2026-10-09",
+  "about": "Hand-curated. Only chokepoints whose flows and users could be checked against a published source are listed; others are added when they can be sourced. 'basis' says whether a country's use of the route is stated by the source or assumed from geography.",
+  "chokepoints": {
+    "hormuz": {
+      "label": "Strait of Hormuz",
+      "summary": "Oil flow averaged 20 million barrels a day in 2024, about 20% of global petroleum liquids consumption and more than a quarter of seaborne oil trade. Around one-fifth of global LNG trade also passed through it, mainly from Qatar. 84% of its crude went to Asia.",
+      "source": "US Energy Information Administration, Today in Energy",
+      "url": "https://www.eia.gov/todayinenergy/detail.php?id=65504",
+      "year": 2024,
+      "exporters": [
+        {"iso": "SA", "commodities": ["oil"], "through": "most", "basis": "stated",
+         "note": "Saudi Arabia moves more crude through the strait than any other country (38% of Hormuz crude flows, 5.5 million barrels a day, in 2024). The 5 million barrel a day East-West pipeline bypasses part of it."},
+        {"iso": "AE", "commodities": ["oil"], "through": "part", "basis": "stated",
+         "note": "A 1.5 million barrel a day pipeline carries oil from onshore fields to Fujairah on the Gulf of Oman, outside the strait."},
+        {"iso": "IR", "commodities": ["oil"], "through": "most", "basis": "stated",
+         "note": "The Goreh-Jask pipeline to the Gulf of Oman has 0.3 million barrels a day of capacity and has not been used since 2021."},
+        {"iso": "QA", "commodities": ["gas", "oil"], "through": "all", "basis": "stated",
+         "note": "Around one-fifth of global LNG trade passed through the strait in 2024, primarily from Qatar."},
+        {"iso": "IQ", "commodities": ["oil"], "through": "most", "basis": "assumed",
+         "note": "Iraq's southern export terminals are inside the Gulf. The source gives no per-country volume for Iraq."},
+        {"iso": "KW", "commodities": ["oil"], "through": "all", "basis": "assumed",
+         "note": "Kuwait's export terminals are inside the Gulf. The source gives no per-country volume for Kuwait."},
+        {"iso": "BH", "commodities": ["oil"], "through": "all", "basis": "assumed",
+         "note": "Bahrain's exports leave the Gulf by sea. The source gives no per-country volume for Bahrain."}
+      ]
+    },
+    "red_sea": {
+      "label": "Bab el-Mandeb and the Suez route (Red Sea)",
+      "summary": "Oil flow through Bab el-Mandeb was 8.7 million barrels a day in 2023 and fell to 4.0 million in the first eight months of 2024 as ships took the longer route around the Cape of Good Hope, which carried 9.2 million barrels a day in the same period, up from 6.0 million in 2023.",
+      "source": "US Energy Information Administration, Today in Energy",
+      "url": "https://www.eia.gov/todayinenergy/detail.php?id=63446",
+      "year": 2024,
+      "exporters": [
+        {"iso": "SA", "commodities": ["oil"], "through": "part", "basis": "stated",
+         "note": "Saudi Arabia is named as a main exporter using the route (9.5 million barrels a day of crude output in 2023); it also exports from Gulf terminals."},
+        {"iso": "IR", "commodities": ["oil"], "through": "part", "basis": "stated",
+         "note": "Iran is named as a main exporter using the route (4.0 million barrels a day of crude output in 2023)."}
+      ]
+    }
+  }
+}

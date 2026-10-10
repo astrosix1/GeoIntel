@@ -895,13 +895,13 @@ export interface CascadeEffect {
   caveats: string[];
 }
 export interface CascadeResult {
-  trigger: { template: string; label: string; country: string; country_name: string; commodity: string | null; commodity_label: string | null };
+  trigger: { template: string; label: string; country: string | null; country_name: string; chokepoint?: string; commodity: string | null; commodity_label: string | null };
   assumes: string;
   started_from?: string;
   effects: CascadeEffect[];
   counts: Record<CascadeExposure, number>;
   notes: string[];
-  method: { trade: string; energy: string };
+  method: Record<string, string>;
   would_change: { text: string; source: string; as_of: number | null }[];
   not_modelled: string[];
   data: { source: string | null; built_at: string | null; countries_in_graph: number };
@@ -910,10 +910,12 @@ export interface CascadeOptions {
   templates: { key: string; label: string; assumes: string; commodity: 'none' | 'optional' | 'required' }[];
   commodities: { key: string; label: string }[];
   countries: { iso: string; name: string }[];
+  chokepoints: { key: string; label: string; summary: string }[];
 }
 export interface CascadeRequest {
   template?: string;
   country?: string;
   commodity?: string | null;
+  chokepoint?: string;
   crisis_id?: string;
 }

@@ -77,10 +77,11 @@ class TestTemplates:
         assert ct.trigger_for_event('something_else', 'UA')[0] == 'attack'
         assert 'attack' not in ct.trigger_for_event('conflict', 'UA')[1].lower() or 'treated as' in ct.trigger_for_event('conflict', 'UA')[1]
 
-    def test_options_list_templates_and_commodities_and_no_chokepoint_yet(self):
+    def test_options_list_templates_commodities_and_the_sourced_chokepoints(self):
         opts = ct.options()
-        assert {t['key'] for t in opts['templates']} == {'attack', 'embargo', 'export_ban', 'hazard', 'collapse'}
+        assert {t['key'] for t in opts['templates']} == {'attack', 'embargo', 'export_ban', 'hazard', 'collapse', 'chokepoint'}
         assert {c['key'] for c in opts['commodities']} >= {'gas', 'oil', 'grain', 'chips'}
+        assert {c['key'] for c in opts['chokepoints']} == {'hormuz', 'red_sea'}
 
     def test_no_probability_wording(self, graph):
         assert 'probab' not in json.dumps(ct.run_template(graph, 'attack', 'RU')).lower()
@@ -157,3 +158,105 @@ class TestWhatWouldChange:
 
     def test_nothing_is_invented_when_no_data(self, graph):
         assert ct.run_template(graph, 'attack', 'RU')['would_change'] == [] or all('Other countries' not in w['text'] for w in ct.run_template(graph, 'attack', 'RU')['would_change'])
+
+
+class TestChokepoints:
+    @pytest.fixture()
+    def graph(self):
+        fuels = lambda p, c, key='gas': {key: {'production': {'value': p, 'unit': 'm3', 'as_of': 2023}, 'consumption': {'value': c, 'unit': 'm3', 'as_of': 2023}}}
+        return build_graph({
+            'QA': {**profile(commodities=['liquefied natural gas']), 'energy_fuels': fuels(180e9, 40e9)},
+            'SA': {**profile(commodities=['crude petroleum']), 'energy_fuels': fuels(120e9, 120e9)},
+            'AE': profile(commodities=['crude petroleum']),
+            'IQ': profile(commodities=['crude petroleum']),
+            'JP': {**profile(imports=partners(('Qatar', 12), ('Saudi Arabia', 40), ('UAE', 20))), 'energy_fuels': fuels(2e9, 100e9)},
+            'IN': {**profile(imports=partners(('Qatar', 10), ('Saudi Arabia', 16))), 'energy_fuels': fuels(30e9, 60e9, 'gas')},
+        })
+
+    def test_hormuz_hits_the_exporters_and_their_customers(self, graph):
+        result = ct.run_template(graph, 'chokepoint', None, chokepoint='hormuz')
+        by = {e['iso']: e for e in result['effects']}
+        assert by['QA']['exposure'] == 'High' and by['QA']['mechanisms'][0] == 'Export route closed'          # all of its exports use the route
+        assert by['AE']['exposure'] == 'Moderate'                                                              # a bypass pipeline carries part
+        assert by['JP']['exposure'] == 'High'                                                                  # buys gas from Qatar
+        assert result['trigger']['template'] == 'chokepoint' and result['trigger']['country_name'] == 'Strait of Hormuz'
+        assert 'last reviewed' in result['notes'][0] and 'EIA' not in result['notes'][0] or 'Energy Information' in result['notes'][0]
+
+    def test_an_assumed_use_of_the_route_says_so(self, graph):
+        result = ct.run_template(graph, 'chokepoint', None, chokepoint='hormuz')
+        assert any('assumed from geography' in c for e in result['effects'] for c in e['caveats'])
+
+    def test_a_partial_route_caps_the_importers_at_moderate(self, graph):
+        result = ct.run_template(graph, 'chokepoint', None, 'oil', chokepoint='red_sea')
+        assert result['effects'] and all(e['exposure'] != 'High' for e in result['effects'])
+        assert all(any('capped at Moderate' in c for c in e['caveats']) for e in result['effects'] if e['iso'] == 'SA')
+
+    def test_a_commodity_filter_limits_the_exporters(self, graph):
+        result = ct.run_template(graph, 'chokepoint', None, 'gas', chokepoint='hormuz')
+        assert [e['iso'] for e in result['effects'] if 'Export route closed' in e['mechanisms']] == ['QA']
+
+    def test_unknown_chokepoint_and_api(self, graph):
+        with pytest.raises(ct.BadTrigger):
+            ct.run_template(graph, 'chokepoint', None, chokepoint='nowhere')
+        with pytest.raises(ct.BadTrigger):
+            ct.run_template(graph, 'chokepoint', None)
+
+    def test_no_probability_wording(self, graph):
+        assert 'probab' not in json.dumps(ct.run_template(graph, 'chokepoint', None, chokepoint='hormuz')).lower()
+
+
+class TestWholeWordMatching:
+    def test_oil_does_not_match_soil_or_sunflower_oil_and_refined_copper_is_not_a_fuel(self):
+        from services import cascade_engine as ce
+        assert not ce.supplies({'export_commodities': ['refined copper', 'soil conditioners', 'sunflower oil']}, 'oil')[0]
+        assert ce.supplies({'export_commodities': ['crude petroleum']}, 'oil')[0]
+        assert ce.supplies({'export_commodities': ['sunflower oil']}, 'veg_oils')[0]
+        assert not ce.supplies({'export_commodities': ['gasoline']}, 'gas')[0]
+
+
+class TestLinks:
+    @pytest.fixture()
+    def graph(self):
+        node = lambda **kw: {**profile(imports=partners(('Russia', 1))), **kw}
+        g = build_graph({'SY': node(), 'TR': node(), 'JO': node(), 'DE': node(), 'US': node(), 'GB': node(), 'JP': node(), 'RU': node(commodities=['natural gas'])},
+                        population={'TR': [85e6, 2023], 'JO': [11e6, 2023], 'DE': [84e6, 2023], 'US': [335e6, 2023], 'GB': [68e6, 2023], 'JP': [124e6, 2023], 'SY': [23e6, 2023]})
+        return g
+
+    def test_diaspora_effects_use_the_host_countrys_population(self, graph):
+        from services import cascade_links as links
+        with patch.object(links, '_migration', return_value={'countries': {'SY': {'emigrants': {'destinations': [['TR', 3563983], ['JO', 1593643], ['DE', 860697], ['US', 100000], ['GB', 5000]]}}}}):
+            by = {e['iso']: e for e in links.diaspora(graph, 'SY')}
+        assert by['JO']['exposure'] == 'High' and by['TR']['exposure'] == 'High' and by['DE']['exposure'] == 'High'     # 14%, 4.2%, 1.0%
+        assert 'US' not in by                                                                                            # 0.03% is below the lowest threshold...
+        assert 'GB' not in by                                                                                            # ...and 5,000 people are too few
+        assert by['JO']['evidence'][0]['text'].startswith('1,593,643 people born in Syria live in Jordan')
+
+    def test_thresholds(self):
+        from services import cascade_links as links
+        assert [links._level(p) for p in (1.0, 0.99, 0.3, 0.29, 0.05, 0.049)] == ['High', 'Moderate', 'Moderate', 'Low', 'Low', None]
+
+    def test_treaty_effects_name_the_clause_and_never_the_country_itself(self, graph):
+        from services import cascade_links as links
+        by = {e['iso']: e for e in links.treaty_effects(graph, 'US')}
+        assert 'US' not in by and by['DE']['exposure'] == 'Moderate' and by['JP']['exposure'] == 'Moderate'
+        assert 'an attack against all of them' in by['DE']['evidence'][0]['text'] or 'attack against all' in by['DE']['evidence'][0]['text']
+        assert 'each party decides' in by['DE']['caveats'][0]
+        assert links.treaty_effects(graph, 'SY') == []                       # not a party to any listed treaty
+
+    def test_sanctions_and_producer_context(self):
+        from services import cascade_links as links
+        assert 'European Union since 2014' in links.sanctions_note('RU') and links.sanctions_note('FR') is None
+        assert links.producer_note('CL', 'copper') is None or 'USGS' in links.producer_note('CL', 'copper')
+
+    def test_an_attack_runs_trade_people_and_treaty_together(self, graph):
+        from services import cascade_links as links
+        with patch.object(links, '_migration', return_value={'countries': {'US': {'emigrants': {'destinations': [['GB', 900000]]}}}}):
+            result = ct.run_template(graph, 'attack', 'US')
+        gb = next(e for e in result['effects'] if e['iso'] == 'GB')
+        assert 'People: existing ties to the country' in gb['mechanisms'] and 'Treaty: mutual-defence commitment' in gb['mechanisms']
+        assert 'people' in result['method'] and 'treaty' in result['method']
+
+    def test_an_embargo_carries_the_sanctions_note(self, graph):
+        result = ct.run_template(graph, 'embargo', 'RU')
+        assert any(n.startswith('Measures already in place') for n in result['notes'])
+        assert not any(n.startswith('Measures already in place') for n in ct.run_template(graph, 'attack', 'RU')['notes'])

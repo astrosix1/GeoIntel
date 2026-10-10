@@ -52,8 +52,10 @@ export default function CascadeWorkspace() {
   const [template, setTemplate] = useState('embargo');
   const [country, setCountry] = useState('');
   const [commodity, setCommodity] = useState('');
+  const [chokepoint, setChokepoint] = useState('');
   const spec = options.data?.templates.find((t) => t.key === template);
   const needsCommodity = spec?.commodity === 'required' || spec?.commodity === 'optional';
+  const isChokepoint = template === 'chokepoint';
 
   return (
     <Drawer open={open} title="Cascade" onClose={() => setOpen(false)}>
@@ -68,8 +70,10 @@ export default function CascadeWorkspace() {
               className={styles.form}
               onSubmit={(e) => {
                 e.preventDefault();
-                if (!country) return;
-                run.mutate({ template, country, commodity: needsCommodity && commodity ? commodity : null });
+                if (isChokepoint ? !chokepoint : !country) return;
+                run.mutate(isChokepoint
+                  ? { template, chokepoint, commodity: commodity || null }
+                  : { template, country, commodity: needsCommodity && commodity ? commodity : null });
               }}
             >
               <label className={styles.field}>
@@ -83,17 +87,32 @@ export default function CascadeWorkspace() {
                 </select>
               </label>
               {spec && <p className={styles.assumes}>{spec.assumes}</p>}
-              <label className={styles.field}>
-                <span>Where</span>
-                <select className={styles.select} value={country} onChange={(e) => setCountry(e.target.value)} required>
-                  <option value="">Choose a country</option>
-                  {options.data.countries.map((c) => (
-                    <option key={c.iso} value={c.iso}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {isChokepoint ? (
+                <label className={styles.field}>
+                  <span>Which route</span>
+                  <select className={styles.select} value={chokepoint} onChange={(e) => setChokepoint(e.target.value)} required>
+                    <option value="">Choose a route</option>
+                    {options.data.chokepoints.map((c) => (
+                      <option key={c.key} value={c.key}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <label className={styles.field}>
+                  <span>Where</span>
+                  <select className={styles.select} value={country} onChange={(e) => setCountry(e.target.value)} required>
+                    <option value="">Choose a country</option>
+                    {options.data.countries.map((c) => (
+                      <option key={c.iso} value={c.iso}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {isChokepoint && chokepoint && <p className={styles.assumes}>{options.data.chokepoints.find((c) => c.key === chokepoint)?.summary}</p>}
               {needsCommodity && (
                 <label className={styles.field}>
                   <span>Commodity{spec?.commodity === 'optional' ? ' (optional)' : ''}</span>
@@ -107,7 +126,7 @@ export default function CascadeWorkspace() {
                   </select>
                 </label>
               )}
-              <Button type="submit" disabled={run.isPending || !country}>
+              <Button type="submit" disabled={run.isPending || (isChokepoint ? !chokepoint : !country)}>
                 {run.isPending ? 'Running…' : 'Run cascade'}
               </Button>
               {run.error && <div className={styles.error}>{cascadeErrorText(run.error)}</div>}

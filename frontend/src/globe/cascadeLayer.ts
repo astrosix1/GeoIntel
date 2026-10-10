@@ -15,7 +15,7 @@ const KEY: maplibregl.ExpressionSpecification = ['case', ['!=', ['get', 'ISO_A2'
 export function exposureColorExpression(result: CascadeResult): maplibregl.ExpressionSpecification {
   const by = (level: 'High' | 'Moderate' | 'Low') => result.effects.filter((e) => e.exposure === level).map((e) => e.iso);
   const expression: unknown[] = ['match', KEY];
-  const trigger = [result.trigger.country];
+  const trigger = result.trigger.country ? [result.trigger.country] : [];
   for (const [isos, color] of [[trigger, EXPOSURE_COLORS.Trigger], [by('High'), EXPOSURE_COLORS.High], [by('Moderate'), EXPOSURE_COLORS.Moderate], [by('Low'), EXPOSURE_COLORS.Low]] as const) {
     if (isos.length > 0) expression.push(isos, color);
   }

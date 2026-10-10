@@ -1,0 +1,50 @@
+{
+  "last_reviewed": "2026-10-09",
+  "about": "Hand-curated mutual-defence commitments, from the treaty owners' own pages. A treaty obligation is not an automatic response: each party decides what action it takes. Review before relying on the member lists.",
+  "treaties": {
+    "nato": {
+      "label": "NATO (North Atlantic Treaty, Article 5)",
+      "clause": "an armed attack against one or more members is considered an attack against all of them",
+      "source": "NATO, Collective defence and Article 5",
+      "url": "https://www.nato.int/cps/en/natohq/topics_110496.htm",
+      "members": ["AL", "BE", "BG", "CA", "HR", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IS", "IT", "LV", "LT", "LU", "ME", "NL", "MK", "NO", "PL", "PT", "RO", "SK", "SI", "ES", "SE", "TR", "GB", "US"]
+    },
+    "csto": {
+      "label": "CSTO (Collective Security Treaty, Article 4)",
+      "clause": "an act of aggression against one member is considered an act of aggression against all members",
+      "source": "Collective Security Treaty Organization",
+      "url": "https://en.odkb-csto.org/",
+      "members": ["RU", "BY", "KZ", "KG", "TJ", "AM"],
+      "note": "Armenia has frozen its participation."
+    },
+    "us_japan": {
+      "label": "US-Japan Security Treaty",
+      "clause": "each party would act to meet the common danger if either is attacked in territories under Japanese administration",
+      "source": "US Department of State, US collective defense arrangements",
+      "url": "https://www.state.gov/u-s-collective-defense-arrangements/",
+      "members": ["US", "JP"]
+    },
+    "us_korea": {
+      "label": "US-Republic of Korea Mutual Defense Treaty",
+      "clause": "each party would act to meet the common danger in the event of an armed attack on either",
+      "source": "US Department of State, US collective defense arrangements",
+      "url": "https://www.state.gov/u-s-collective-defense-arrangements/",
+      "members": ["US", "KR"]
+    },
+    "us_philippines": {
+      "label": "US-Philippines Mutual Defense Treaty",
+      "clause": "each party would act to meet the common danger in the event of an armed attack on either in the Pacific area",
+      "source": "US Department of State, US collective defense arrangements",
+      "url": "https://www.state.gov/u-s-collective-defense-arrangements/",
+      "members": ["US", "PH"]
+    },
+    "anzus": {
+      "label": "ANZUS Treaty",
+      "clause": "each party would act to meet the common danger in the event of an armed attack on any of them in the Pacific",
+      "source": "US Department of State, US collective defense arrangements",
+      "url": "https://www.state.gov/u-s-collective-defense-arrangements/",
+      "members": ["US", "AU"],
+      "note": "New Zealand's obligations to the United States have been suspended since 1986."
+    }
+  }
+}

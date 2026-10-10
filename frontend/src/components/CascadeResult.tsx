@@ -111,8 +111,9 @@ export default function CascadeResult({ result, onOpenCountry, onShowMap }: { re
       <div className={styles.foot}>
         <h4>How exposure is decided</h4>
         <ul>
-          <li>{result.method.trade}</li>
-          <li>{result.method.energy}</li>
+          {Object.entries(result.method).map(([key, text]) => (
+            <li key={key}>{text}</li>
+          ))}
         </ul>
         <h4>Not modelled</h4>
         <ul>
