@@ -185,19 +185,22 @@
 /* Key / value facts */
 .facts {
   display: grid;
-  grid-template-columns: max-content 1fr;
+  /* The label column may shrink and wrap, but the value column always keeps room to read: a long label such as
+     "Within hurricane-force winds (119 km/h or more)" must not squeeze its value down to one letter a line. */
+  grid-template-columns: minmax(0, max-content) minmax(12ch, 1fr);
   gap: var(--space-1) var(--space-3);
   margin: 0;
 }
 
 .facts dt {
   color: var(--text-3);
+  overflow-wrap: break-word;
 }
 
 .facts dd {
   margin: 0;
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 /* List row: one dense line by default; an optional second line of detail. */
