@@ -11,19 +11,17 @@ the app needs shares, not the whole table. Output records the source, licence an
 import argparse
 import json
 import sys
-import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 API = 'https://comtradeapi.un.org/public/v1/preview/C/A/HS'
 REFERENCE = 'https://comtradeapi.un.org/files/v1/app/reference/'
 YEARS = (2022, 2023, 2021)
 TOP_PARTNERS = 12
-WORKERS = 1            # one call at a time: the preview has a call-volume quota, so slow and steady
+BATCH = 8              # reporters per call: a call returns up to 500 rows and a country-commodity is about 40, so this stays under the cap
 PAUSE = 1.0
 OUT = Path(__file__).resolve().parent.parent / 'data' / 'cascade' / 'trade.json'
 
@@ -44,7 +42,6 @@ COMMODITIES = {
 
 # Comtrade's own code for Taiwan is "Other Asia, nes".
 PARTNER_OVERRIDES = {490: 'TW'}
-_lock = threading.Lock()
 
 
 class QuotaExceeded(Exception):
@@ -85,58 +82,86 @@ def reference():
     return reporters, partners
 
 
-def one(reporter_code, hs, partners):
-    """{'year', 'total', 'shares': {iso: percent of the total}} for the newest year with data, or None."""
+def entry_from(rows, partners, year):
+    """{'year', 'total', 'shares': {iso: percent of the total}} from one reporter's rows, or None when there is no total."""
+    rows = [r for r in rows if r.get('partner2Code') == 0 and r.get('motCode') == 0 and r.get('customsCode') == 'C00']
+    total = next((r['primaryValue'] for r in rows if r['partnerCode'] == 0), None)
+    if not total:
+        return None
+    named = {}
+    for r in rows:
+        iso = partners.get(r['partnerCode'])
+        if iso and r['partnerCode'] != 0 and r['primaryValue'] > 0:
+            named[iso] = named.get(iso, 0.0) + r['primaryValue']
+    top = dict(sorted(named.items(), key=lambda kv: -kv[1])[:TOP_PARTNERS])
+    # Shares, not the raw values: a derived market share is "transformed" data under the UN Comtrade re-dissemination policy.
+    return {'year': year, 'total': round(total), 'shares': {k: round(100.0 * v / total, 1) for k, v in top.items()}}
+
+
+def fetch_batch(codes, hs, year):
+    """The rows for several reporters in ONE call (the quota counts calls, not rows). Returns (rows by reporter code, truncated), where
+    truncated means the preview's 500-row cap was hit and the batch must be split."""
+    time.sleep(PAUSE)
+    query = urllib.parse.urlencode({'reporterCode': ','.join(str(c) for c in codes), 'period': year, 'cmdCode': hs, 'flowCode': 'M'})
+    body = fetch_json(f'{API}?{query}') or {}
+    rows = body.get('data') or []
+    by = {}
+    for r in rows:
+        by.setdefault(r['reporterCode'], []).append(r)
+    return by, len(rows) >= 500
+
+
+def resolve(codes, hs, partners, size):
+    """{reporter code: entry or None} for these reporters: batched calls for the newest year, then the older years for those still empty."""
+    out = {}
+    remaining = list(codes)
     for year in YEARS:
-        time.sleep(PAUSE)
-        query = urllib.parse.urlencode({'reporterCode': reporter_code, 'period': year, 'cmdCode': hs, 'flowCode': 'M'})
-        body = fetch_json(f'{API}?{query}')
-        rows = [r for r in (body or {}).get('data', []) if r.get('partner2Code') == 0 and r.get('motCode') == 0 and r.get('customsCode') == 'C00']
-        total = next((r['primaryValue'] for r in rows if r['partnerCode'] == 0), None)
-        if not total:
-            continue
-        named = {}
-        for r in rows:
-            iso = partners.get(r['partnerCode'])
-            if iso and r['partnerCode'] != 0 and r['primaryValue'] > 0:
-                named[iso] = named.get(iso, 0.0) + r['primaryValue']
-        top = dict(sorted(named.items(), key=lambda kv: -kv[1])[:TOP_PARTNERS])
-        # Shares, not the raw values: a derived market share is "transformed" data under the UN Comtrade re-dissemination policy.
-        return {'year': year, 'total': round(total), 'shares': {k: round(100.0 * v / total, 1) for k, v in top.items()}}
-    return None
+        for i in range(0, len(remaining), size):
+            chunk = remaining[i:i + size]
+            by, truncated = fetch_batch(chunk, hs, year)
+            if truncated and len(chunk) > 1:
+                out.update(resolve(chunk, hs, partners, max(1, len(chunk) // 2)) if year == YEARS[0] else {})
+                continue
+            for code in chunk:
+                entry = entry_from(by.get(code, []), partners, year)
+                if entry:
+                    out[code] = entry
+        remaining = [c for c in remaining if c not in out]
+        if not remaining:
+            break
+    for code in remaining:
+        out[code] = None
+    return out
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--limit', type=int, help='only the first N reporters (for a trial run)')
     parser.add_argument('--resume', default=str(OUT) + '.partial')
+    parser.add_argument('--batch', type=int, default=BATCH, help='reporters per call')
     args = parser.parse_args()
     reporters, partners = reference()
     codes = sorted(reporters)[:args.limit] if args.limit else sorted(reporters)
     resume = Path(args.resume)
     done = json.loads(resume.read_text(encoding='utf-8')) if resume.exists() else {}
-    jobs = [(c, key) for c in codes for key in COMMODITIES if f'{c}:{key}' not in done]
-    print(f'{len(codes)} reporters, {len(jobs)} calls to make ({len(done)} already done)')
+    print(f'{len(codes)} reporters, {len(COMMODITIES)} commodity groups, {len(done)} entries already done', flush=True)
 
-    def work(job):
-        code, key = job
-        while True:
-            try:
-                result = one(code, COMMODITIES[key][1], partners)
-                break
-            except QuotaExceeded as q:
-                with _lock:
+    for key, (label, hs) in COMMODITIES.items():
+        pending = [c for c in codes if f'{c}:{key}' not in done]
+        for i in range(0, len(pending), args.batch):
+            chunk = pending[i:i + args.batch]
+            while True:
+                try:
+                    result = resolve(chunk, hs, partners, args.batch)
+                    break
+                except QuotaExceeded as q:
                     resume.write_text(json.dumps(done), encoding='utf-8')
-                print(f'  quota used up; waiting {q.wait // 60} minutes ({len(done)} done so far)', flush=True)
-                time.sleep(q.wait + 30)
-        with _lock:
-            done[f'{code}:{key}'] = result
-            if len(done) % 25 == 0:
-                resume.write_text(json.dumps(done), encoding='utf-8')
-                print(f'  {len(done)} done', flush=True)
-
-    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
-        list(pool.map(work, jobs))
+                    print(f'  quota used up; waiting {q.wait // 60} minutes ({len(done)} entries so far)', flush=True)
+                    time.sleep(q.wait + 30)
+            for code, entry in result.items():
+                done[f'{code}:{key}'] = entry
+            resume.write_text(json.dumps(done), encoding='utf-8')
+            print(f'  {label}: {min(i + args.batch, len(pending))}/{len(pending)} reporters ({len(done)} entries)', flush=True)
     resume.write_text(json.dumps(done), encoding='utf-8')
 
     imports = {}

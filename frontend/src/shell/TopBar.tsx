@@ -66,6 +66,7 @@ export default function TopBar() {
   const activeMode = useUiStore((s) => s.activeMode);
   const setActiveMode = useUiStore((s) => s.setActiveMode);
   const setDashboardOpen = useUiStore((s) => s.setDashboardOpen);
+  const setCascadeOpen = useUiStore((s) => s.setCascadeOpen);
   const setDashboardTab = useUiStore((s) => s.setDashboardTab);
   const { signedIn, premium, loading } = useEntitlements();
   const unread = useAlertsQuery().data?.unread ?? 0;
@@ -109,6 +110,9 @@ export default function TopBar() {
       <div className={styles.group}>
         <DrawButton />
         <LayersMenu />
+        <Button icon="bolt" onClick={() => setCascadeOpen(true)}>
+          <span className={styles.hideSmall}>Cascade</span>
+        </Button>
         {dashboardWithDot}
         {account}
       </div>

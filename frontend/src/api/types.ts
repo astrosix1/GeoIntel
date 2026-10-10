@@ -875,3 +875,44 @@ export interface SituationView {
   pattern: EventPattern | null;
   read_pages: number;
 }
+
+// POST /api/cascade/run: who is exposed when something happens, with the evidence (no probabilities anywhere).
+export type CascadeExposure = 'High' | 'Moderate' | 'Low';
+export interface CascadeEvidence {
+  text: string;
+  source: string;
+  as_of: number | null;
+}
+export interface CascadeEffect {
+  iso: string;
+  name: string;
+  exposure: CascadeExposure;
+  mechanism: string;
+  mechanisms: string[];
+  horizon: string;
+  driver_percent: number;
+  evidence: CascadeEvidence[];
+  caveats: string[];
+}
+export interface CascadeResult {
+  trigger: { template: string; label: string; country: string; country_name: string; commodity: string | null; commodity_label: string | null };
+  assumes: string;
+  started_from?: string;
+  effects: CascadeEffect[];
+  counts: Record<CascadeExposure, number>;
+  notes: string[];
+  method: { trade: string; energy: string };
+  not_modelled: string[];
+  data: { source: string | null; built_at: string | null; countries_in_graph: number };
+}
+export interface CascadeOptions {
+  templates: { key: string; label: string; assumes: string; commodity: 'none' | 'optional' | 'required' }[];
+  commodities: { key: string; label: string }[];
+  countries: { iso: string; name: string }[];
+}
+export interface CascadeRequest {
+  template?: string;
+  country?: string;
+  commodity?: string | null;
+  crisis_id?: string;
+}

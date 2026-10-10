@@ -169,6 +169,8 @@ interface UiState {
   // can never show a layer to a non-premium user.
   // "My dashboard" overlay (premium), opened from the account chip.
   dashboardOpen: boolean;
+  cascadeOpen: boolean;
+  setCascadeOpen: (open: boolean) => void;
   dashboardTab: DashboardTab;
   setDashboardOpen: (open: boolean) => void;
   setDashboardTab: (tab: DashboardTab) => void;
@@ -289,6 +291,8 @@ export const useUiStore = create<UiState>((set) => ({
   setTimeRange: (range) => set({ timeRange: range }),
 
   dashboardOpen: false,
+  cascadeOpen: false,
+  setCascadeOpen: (open) => set({ cascadeOpen: open }),
   dashboardTab: 'saved',
   setDashboardOpen: (open) => set({ dashboardOpen: open }),
   setDashboardTab: (tab) => set({ dashboardTab: tab }),

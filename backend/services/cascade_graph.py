@@ -9,6 +9,7 @@ get_graph() builds it once a day (cached); build_graph() is the pure part, so it
 import json
 import logging
 import re
+import threading
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -109,6 +110,27 @@ def build_graph(profiles, built_at=None, allowed=None):
         'countries': countries,
         'unmapped_partner_names': sorted(n for n in unmapped if n),
     }
+
+
+_warming = threading.Lock()
+
+
+def cached_graph():
+    """The graph if it is already built, else None (never builds: building takes about a minute)."""
+    return cache_get(GRAPH_KEY)
+
+
+def warm_graph_async():
+    """Start building the graph in the background unless a build is already running. Returns immediately."""
+    def run():
+        try:
+            get_graph()
+        except Exception as e:  # never matters to the caller
+            logger.info('[Cascade] graph warm-up failed: %s', e)
+        finally:
+            _warming.release()
+    if _warming.acquire(blocking=False):
+        threading.Thread(target=run, daemon=True).start()
 
 
 def get_graph(force=False):

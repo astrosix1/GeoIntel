@@ -37,6 +37,7 @@ from blueprints.me import me_bp
 from blueprints.dashboard import dashboard_bp
 from blueprints.drawings import drawings_bp
 from blueprints.comments import comments_bp
+from blueprints.cascade import cascade_bp
 
 load_dotenv()
 
@@ -196,6 +197,7 @@ def create_app():
     app.register_blueprint(drawings_bp)
     app.register_blueprint(comments_bp)
     app.register_blueprint(watchlist_bp)
+    app.register_blueprint(cascade_bp)
 
     # ════════════════════════════════════════════════════════════
     # APP INITIALIZATION
@@ -290,6 +292,15 @@ def scheduled_alert_eval():
         logger.error(f"Scheduled alert evaluation error: {e}")
 
 
+def scheduled_cascade_graph():
+    """Rebuild the cascade simulator's country graph (about a minute of Factbook fetches), once a day."""
+    try:
+        from services.cascade_graph import get_graph
+        get_graph(force=True)
+    except Exception as e:
+        logger.error(f"Scheduled cascade graph error: {e}")
+
+
 def scheduled_condition_alerts():
     """Raise forecast-limit alerts (heat, cold, rain, gusts, UV) for watchlist places."""
     try:
@@ -372,6 +383,12 @@ def init_scheduler():
             logger.info('Country rank warm-up skipped: %s', e)
 
     threading.Thread(target=_warm_country_ranks, daemon=True).start()
+
+    # The cascade simulator's country graph takes about a minute to build: build it now, then refresh it daily.
+    from services.cascade_graph import warm_graph_async
+    warm_graph_async()
+    scheduler.add_job(func=scheduled_cascade_graph, trigger='interval', hours=24, id='cascade_graph', name='Refresh the cascade country graph',
+                      replace_existing=True, max_instances=1, coalesce=True)
     logger.info("Background scheduler started")
 
 

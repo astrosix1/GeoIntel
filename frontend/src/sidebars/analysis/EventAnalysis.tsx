@@ -12,6 +12,7 @@ import {
 } from '../../state/queries';
 import { useUiStore } from '../../state/uiStore';
 import EventPattern from './EventPattern';
+import EventCascade from './EventCascade';
 import SituationBlock from './SituationBlock';
 import { BriefingBlocks } from './BriefingBlocks';
 import Comments from './Comments';
@@ -266,6 +267,8 @@ export default function EventAnalysis({ crisis }: { crisis: CrisisSummary }) {
 
       {situation && <SituationBlock situation={situation} currentId={crisis.id} />}
       {patternData && <EventPattern data={patternData} />}
+
+      <EventCascade key={crisis.id} crisisId={crisis.id} />
 
       {/* Scenarios are hidden for now; the component stays in ./Scenarios for when they are reworked. */}
         </>

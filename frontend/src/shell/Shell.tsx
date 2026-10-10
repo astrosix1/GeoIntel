@@ -11,6 +11,7 @@ import AnalysisSidebar from '../sidebars/AnalysisSidebar';
 import EdgeTab from '../sidebars/EdgeTab';
 import EventsSidebar from '../sidebars/EventsSidebar';
 import Dashboard from '../components/Dashboard';
+import CascadeWorkspace from '../components/CascadeWorkspace';
 import { useDrawStore } from '../state/drawStore';
 import { useSettings, usePanelsDocked } from '../state/settings';
 import { useUiStore } from '../state/uiStore';
@@ -93,6 +94,7 @@ export default function Shell() {
         <StatusBar />
       </div>
       <Dashboard />
+      <CascadeWorkspace />
     </>
   );
 }

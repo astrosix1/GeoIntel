@@ -18,6 +18,9 @@ import type {
   HazardDetail,
   EventHazardLinks,
   EventAnalysisData,
+  CascadeOptions,
+  CascadeRequest,
+  CascadeResult,
   PlaceAlertPrefs,
   SituationView,
   HazardEvents,
@@ -404,6 +407,43 @@ export async function savePlaceAlertPrefs(id: string, alertPrefs: PlaceAlertPref
       body: JSON.stringify({ alert_prefs: alertPrefs, apply_to_all: applyToAll }),
     })
   ).places;
+}
+
+export type CascadeErrorKind = 'sign_in_required' | 'premium_required' | 'warming' | 'invalid' | 'error';
+
+export class CascadeError extends Error {
+  kind: CascadeErrorKind;
+  detail?: string;
+  constructor(kind: CascadeErrorKind, detail?: string) {
+    super(kind);
+    this.kind = kind;
+    this.detail = detail;
+  }
+}
+
+async function cascadeRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await authedFetch(path, init);
+  if (res.status === 401) throw new CascadeError('sign_in_required');
+  if (res.status === 403) throw new CascadeError('premium_required');
+  if (res.status === 503) throw new CascadeError('warming');
+  if (res.status === 400 || res.status === 404) {
+    const body = await res.json().catch(() => ({}));
+    throw new CascadeError('invalid', body?.message);
+  }
+  if (!res.ok) throw new CascadeError('error');
+  return res.json();
+}
+
+export function fetchCascadeOptions(): Promise<CascadeOptions> {
+  return cascadeRequest<CascadeOptions>('/api/cascade/options');
+}
+
+export function runCascade(request: CascadeRequest): Promise<CascadeResult> {
+  return cascadeRequest<CascadeResult>('/api/cascade/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
 }
 
 export function deleteWatchPlace(id: string): Promise<void> {

@@ -12,6 +12,8 @@ import {
   fetchHazardDetail,
   fetchEventHazards,
   fetchEventAnalysis,
+  fetchCascadeOptions,
+  runCascade,
   savePlaceAlertPrefs,
   fetchSituation,
   fetchHazardEvents,
@@ -415,6 +417,22 @@ export function useSavePlaceAlertPrefsMutation() {
     mutationFn: (v: { id: string; prefs: PlaceAlertPrefs; applyToAll: boolean }) => savePlaceAlertPrefs(v.id, v.prefs, v.applyToAll),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['watch'] }),
   });
+}
+
+export function useCascadeOptionsQuery(enabled: boolean) {
+  return useQuery({
+    queryKey: ['cascade-options'],
+    queryFn: fetchCascadeOptions,
+    enabled,
+    retry: (count, error) => (error as { kind?: string }).kind === 'warming' && count < 6,
+    retryDelay: 10_000,
+    staleTime: 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function useRunCascadeMutation() {
+  return useMutation({ mutationFn: runCascade });
 }
 
 export function useDeletePlaceMutation() {
